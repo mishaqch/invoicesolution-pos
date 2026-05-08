@@ -135,6 +135,9 @@ interface PersistInvoiceArgs {
   payments: PosPaymentInput[];
   is_held?: boolean;
   held_label?: string | null;
+  /** API-shape body that the sync worker will POST to /api/sync/invoices/.
+   *  If omitted, the worker won't have the right wire format — pass it. */
+  syncPayload?: Record<string, unknown>;
 }
 
 export function persistInvoice(args: PersistInvoiceArgs): void {
@@ -201,14 +204,13 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
     if (!args.is_held) {
       // Only enqueue completed sales for sync; held sales stay local until
       // the cashier actually charges them.
+      const payload = args.syncPayload ?? {
+        invoice: args.invoice, items: args.items, payments: args.payments,
+      };
       insertQueueRow.run(
         args.invoice.client_uuid,
         args.invoice.id,
-        JSON.stringify({
-          invoice: args.invoice,
-          items: args.items,
-          payments: args.payments,
-        }),
+        JSON.stringify(payload),
       );
     }
   });

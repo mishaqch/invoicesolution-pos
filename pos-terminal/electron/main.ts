@@ -1,7 +1,8 @@
 /**
  * Electron main process.
- *  - Creates the renderer window (fullscreen in prod, windowed in dev).
- *  - Opens the SQLite handle and exposes it to the renderer via IPC (preload).
+ *  - Creates the renderer window.
+ *  - Opens the SQLite handle and exposes it to the renderer via IPC.
+ *  - Spawns the sync worker (utilityProcess) and bridges it to the renderer.
  */
 
 import { BrowserWindow, app } from "electron";
@@ -9,16 +10,19 @@ import path from "node:path";
 
 import { openDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc";
+import { startSyncWorker, stopSyncWorker } from "./sync/manager";
 
 const isDev = !!process.env["ELECTRON_RENDERER_URL"];
 
 function resolveDbPath(): string {
-  // Dev: keep the SQLite next to the project for easy inspection.
-  // Prod: Electron's userData folder.
   if (isDev) {
     return path.resolve(process.cwd(), process.env["POS_DB_PATH"] ?? "pos.sqlite");
   }
   return path.join(app.getPath("userData"), "pos.sqlite");
+}
+
+function resolveApiBase(): string {
+  return process.env["VITE_API_URL"] ?? "http://localhost:8000";
 }
 
 function createWindow() {
@@ -45,13 +49,19 @@ function createWindow() {
 }
 
 void app.whenReady().then(() => {
-  openDb(resolveDbPath());
+  const dbPath = resolveDbPath();
+  openDb(dbPath);
   registerIpcHandlers();
+  startSyncWorker({ dbPath, apiBase: resolveApiBase() });
   createWindow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("before-quit", () => {
+  stopSyncWorker();
 });
 
 app.on("window-all-closed", () => {

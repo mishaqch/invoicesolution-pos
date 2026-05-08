@@ -167,6 +167,31 @@ const api = {
     open: (): Promise<{ success: boolean; reason?: string }> =>
       ipcRenderer.invoke("drawer:open"),
   },
+  sync: {
+    setTokens: (access: string | null, refresh: string | null): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("sync:set-tokens", access, refresh),
+    kick: (): Promise<{ ok: true }> => ipcRenderer.invoke("sync:kick"),
+    status: (): Promise<{
+      counts: { pending: number; ok: number; failed: number };
+      last_processed_at: string | null;
+      last_error: string | null;
+    }> => ipcRenderer.invoke("sync:status"),
+    retryFailed: (): Promise<{ retried: number }> =>
+      ipcRenderer.invoke("sync:retry-failed"),
+    onStatus: (cb: (s: {
+      counts: { pending: number; ok: number; failed: number };
+      last_processed_at: string | null;
+      last_error: string | null;
+    }) => void) => {
+      const handler = (_e: unknown, s: unknown) => cb(s as Parameters<typeof cb>[0]);
+      ipcRenderer.on("sync:status-changed", handler);
+      return () => ipcRenderer.off("sync:status-changed", handler);
+    },
+  },
+  numbering: {
+    next: (args: { branchCode: string; terminalIndex: number }): Promise<string> =>
+      ipcRenderer.invoke("numbering:next", args),
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);

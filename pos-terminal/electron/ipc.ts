@@ -6,11 +6,18 @@
  * Phase 2: sales (persist invoice / hold / recall / list / detail),
  *          cash sessions (open/close/totals),
  *          printer (printReceipt) + drawer (open).
+ * Phase 3: sync worker bridge (status subscription, kick, manual retry,
+ *          token push to worker), and the kv_meta-based local invoice
+ *          numbering.
  */
 
-import { ipcMain } from "electron";
+import { ipcMain, type IpcMainInvokeEvent, BrowserWindow } from "electron";
 
 import { getDb, getMeta, setMeta } from "./db/client";
+import { nextInvoiceNumber } from "./db/numbering";
+import {
+  currentStatus, kickWorker, manualRetryFailed, setAuthTokens, subscribe,
+} from "./sync/manager";
 import {
   closeCashSession,
   getInvoiceWithLines,
@@ -136,4 +143,33 @@ export function registerIpcHandlers() {
   // Printer + drawer
   ipcMain.handle("printer:print-receipt", async (_e, payload) => printReceipt(payload));
   ipcMain.handle("drawer:open", async () => openCashDrawer());
+
+  // Phase 3 — sync worker bridge
+  ipcMain.handle(
+    "sync:set-tokens",
+    (_e, accessToken: string | null, refreshToken: string | null) => {
+      setAuthTokens(accessToken, refreshToken);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle("sync:kick", () => {
+    kickWorker();
+    return { ok: true };
+  });
+  ipcMain.handle("sync:status", () => currentStatus());
+  ipcMain.handle("sync:retry-failed", () => ({ retried: manualRetryFailed() }));
+
+  // Push sync status changes to all renderer windows.
+  subscribe((s) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send("sync:status-changed", s);
+    }
+  });
+
+  // Phase 3 — local invoice numbering
+  ipcMain.handle(
+    "numbering:next",
+    (_e: IpcMainInvokeEvent, args: { branchCode: string; terminalIndex: number }) =>
+      nextInvoiceNumber(args),
+  );
 }

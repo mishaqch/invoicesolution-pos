@@ -6,6 +6,7 @@ import { ProductGrid } from "@/features/sale/ProductGrid";
 import { TotalsPane } from "@/features/sale/TotalsPane";
 import { useInitialCatalogSync } from "@/features/catalog/useInitialSync";
 import { usePosContext } from "@/features/sale/usePosContext";
+import { SyncStatusDot } from "@/features/sync/SyncStatusDot";
 import { useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 
@@ -65,6 +66,7 @@ export default function SaleRoute() {
           {holdLabel && <span className="ml-2 text-amber-700">· Held: {holdLabel}</span>}
         </div>
         <div className="flex items-center gap-3">
+          <SyncStatusDot />
           <button
             type="button"
             onClick={() => navigate("/held-sales")}

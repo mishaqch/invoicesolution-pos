@@ -3,12 +3,16 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { ApiError, api } from "@/lib/api";
 import { Money } from "@/lib/money";
 import { newClientUuid } from "@/lib/uuid";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 import { usePosContext } from "@/features/sale/usePosContext";
+
+function terminalIndexFromName(name: string): number {
+  const digits = name.match(/\d+/);
+  return digits ? parseInt(digits[0], 10) : 1;
+}
 
 export default function PaymentRoute() {
   const navigate = useNavigate();
@@ -45,12 +49,84 @@ export default function PaymentRoute() {
     }
     setBusy(true);
     setError(null);
+
     try {
-      const body = {
-        branch: ctx.branch.id,
+      // Phase 3 inversion: the cashier never blocks on the network.
+      //   1. Generate local_invoice_number + invoice id locally.
+      //   2. Persist invoice + items + payments + outbound_queue row in
+      //      a single SQLite transaction.
+      //   3. Return success to the cashier (drawer + receipt fire here).
+      //   4. The sync worker drains outbound_queue in the background.
+      const localNumber = await window.api.numbering.next({
+        branchCode: ctx.branch.code,
+        terminalIndex: terminalIndexFromName(ctx.terminal.name),
+      });
+      const invoiceId = newClientUuid();
+      const invoiceDate = new Date().toISOString().slice(0, 10);
+
+      const items = totals.lines.map((q, i) => ({
+        id: newClientUuid(),
+        invoice_id: invoiceId,
+        line_number: i + 1,
+        product_id: q.product_id,
+        product_name: q.product_name,
+        product_sku: q.product_sku,
+        uom_code: q.uom_code,
+        hs_code: q.hs_code,
+        quantity: q.quantity,
+        unit_price: q.unit_price,
+        discount_pct: q.discount_pct,
+        discount_amount: q.discount_amount,
+        tax_rate: q.tax_rate,
+        tax_amount: q.tax_amount.toStorageString(),
+        line_total: q.line_total.toStorageString(),
+        notes: null,
+      }));
+
+      const payments = [{
+        id: newClientUuid(),
+        invoice_id: invoiceId,
+        payment_method: "cash" as const,
+        amount: tend.toStorageString(),
+        status: "completed" as const,
+      }];
+
+      const buyerRegistrationType: "Registered" | "Unregistered" = customer
+        ? customer.registration_type === "registered" ? "Registered" : "Unregistered"
+        : "Unregistered";
+
+      const localInvoice = {
+        id: invoiceId,
+        client_uuid: clientUuid,
+        local_invoice_number: localNumber,
+        invoice_date: invoiceDate,
+        customer_id: customer?.id ?? null,
+        buyer_name: customer?.name ?? null,
+        buyer_phone: customer?.phone ?? null,
+        buyer_ntn_cnic: customer?.ntn ?? customer?.cnic ?? null,
+        buyer_registration_type: buyerRegistrationType,
+        branch_id: ctx.branch.id,
+        terminal_id: ctx.terminal.id,
+        cashier_id: user.id,
+        cash_session_id: ctx.session.id,
+        subtotal: totals.subtotal.toStorageString(),
+        discount_total: totals.discount_total.toStorageString(),
+        tax_total: totals.tax_total.toStorageString(),
+        grand_total: totals.grand_total.toStorageString(),
+        paid_total: tend.toStorageString(),
+        change_given: change.isPositive() ? change.toStorageString() : "0.0000",
+        notes: null,
+      };
+
+      // Sync wire format (matches IngestInvoiceSerializer on the server).
+      const syncPayload = {
+        client_uuid: clientUuid,
         terminal: ctx.terminal.id,
+        branch: ctx.branch.id,
+        cashier: user.id,
         cash_session: ctx.session.id,
         customer: customer?.id ?? null,
+        local_invoice_number: localNumber,
         cart_lines: lines.map((l) => ({
           product: l.product_id,
           quantity: l.quantity,
@@ -61,128 +137,48 @@ export default function PaymentRoute() {
           is_taxable: l.is_taxable,
         })),
         cart_discount_pct: cartDiscountPct,
-        payments: [{ payment_method: "cash", amount: tend.toStorageString() }],
-        client_uuid: clientUuid,
+        payments: payments.map((p) => ({
+          payment_method: p.payment_method, amount: p.amount,
+        })),
       };
 
-      // Server-side checkout is the source of truth: it generates the local
-      // invoice number, computes totals on its end, persists in Postgres
-      // (incl. stock movement, audit log). Our local mirror writes after.
-      type CheckoutResp = {
-        id: string;
-        local_invoice_number: string;
-        invoice_date: string;
-        subtotal: string; discount_total: string; tax_total: string;
-        grand_total: string; paid_total: string; change_given: string;
-        items: { id: string; line_number: number; product: string;
-                  product_name: string; product_sku: string;
-                  uom_code: string; hs_code: string | null;
-                  quantity: string; unit_price: string;
-                  discount_pct: string; discount_amount: string;
-                  tax_rate: string; tax_amount: string; line_total: string; }[];
-        payments: { id: string; payment_method: string; amount: string;
-                    status: string; created_at: string }[];
-      };
-
-      const invoice = await api<CheckoutResp>(
-        "/sales/invoices/checkout/",
-        { method: "POST", body: JSON.stringify(body) },
-      );
-
-      // Mirror to local SQLite for offline reprint + history.
       await window.api.sales.persistInvoice({
-        invoice: {
-          id: invoice.id,
-          client_uuid: clientUuid,
-          local_invoice_number: invoice.local_invoice_number,
-          invoice_date: invoice.invoice_date,
-          customer_id: customer?.id ?? null,
-          buyer_name: customer?.name ?? null,
-          buyer_phone: customer?.phone ?? null,
-          buyer_ntn_cnic: customer?.ntn ?? customer?.cnic ?? null,
-          buyer_registration_type: customer
-            ? customer.registration_type === "registered" ? "Registered" : "Unregistered"
-            : "Unregistered",
-          branch_id: ctx.branch.id,
-          terminal_id: ctx.terminal.id,
-          cashier_id: user.id,
-          cash_session_id: ctx.session.id,
-          subtotal: invoice.subtotal,
-          discount_total: invoice.discount_total,
-          tax_total: invoice.tax_total,
-          grand_total: invoice.grand_total,
-          paid_total: invoice.paid_total,
-          change_given: invoice.change_given,
-          notes: null,
-        },
-        items: invoice.items.map((it) => ({
-          id: it.id,
-          invoice_id: invoice.id,
-          line_number: it.line_number,
-          product_id: it.product,
-          product_name: it.product_name,
-          product_sku: it.product_sku,
-          uom_code: it.uom_code,
-          hs_code: it.hs_code,
-          quantity: it.quantity,
-          unit_price: it.unit_price,
-          discount_pct: it.discount_pct,
-          discount_amount: it.discount_amount,
-          tax_rate: it.tax_rate,
-          tax_amount: it.tax_amount,
-          line_total: it.line_total,
-          notes: null,
-        })),
-        payments: invoice.payments.map((p) => ({
-          id: p.id,
-          invoice_id: invoice.id,
-          payment_method: p.payment_method,
-          amount: p.amount,
-          status: p.status as "completed",
-        })),
+        invoice: localInvoice,
+        items,
+        payments,
+        syncPayload,
       });
 
-      // Drawer + receipt — best-effort, never block the cashier.
+      // Best-effort drawer + receipt — never block the cashier.
       void window.api.drawer.open();
       void window.api.printer.print({
         business_name: useSessionStore.getState().tenant?.business_name ?? "POS",
         branch_name: ctx.branch.name,
         ntn: useSessionStore.getState().tenant?.ntn ?? "",
-        invoice: {
-          id: invoice.id,
-          client_uuid: clientUuid,
-          local_invoice_number: invoice.local_invoice_number,
-          invoice_date: invoice.invoice_date,
-          subtotal: invoice.subtotal,
-          discount_total: invoice.discount_total,
-          tax_total: invoice.tax_total,
-          grand_total: invoice.grand_total,
-          paid_total: invoice.paid_total,
-          change_given: invoice.change_given,
-          customer_id: null, buyer_name: null, buyer_phone: null,
-          buyer_ntn_cnic: null, buyer_registration_type: null,
-          branch_id: ctx.branch.id, terminal_id: ctx.terminal.id,
-          cashier_id: user.id, cash_session_id: ctx.session.id,
-          notes: null,
-        },
-        items: invoice.items,
-        payments: invoice.payments,
+        invoice: localInvoice,
+        items,
+        payments,
         width: 48,
       });
+
+      // Kick the worker so it drains immediately.
+      void window.api.sync.kick();
 
       navigate("/success", {
         replace: true,
         state: {
-          invoice_id: invoice.id,
-          local: invoice.local_invoice_number,
-          grand: invoice.grand_total,
+          invoice_id: invoiceId,
+          local: localNumber,
+          grand: totals.grand_total.toStorageString(),
           tendered: tend.toStorageString(),
-          change: invoice.change_given,
+          change: change.isPositive() ? change.toStorageString() : "0.0000",
         },
       });
       useSaleStore.getState().resetForNewSale();
     } catch (err) {
-      setError(err instanceof ApiError ? `API ${err.status}` : "Checkout failed.");
+      // Local-first means this branch is rare: only fires if SQLite
+      // itself errored or numbering failed. Both are programmer bugs.
+      setError(err instanceof Error ? err.message : "Checkout failed.");
     } finally {
       setBusy(false);
     }

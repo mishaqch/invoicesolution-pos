@@ -29,11 +29,21 @@ export const useSessionStore = create<SessionState>()(
       tenant: null,
       role: null,
 
-      signIn: ({ access, refresh, user, tenant, role }) =>
-        set({ access, refresh, user, tenant, role }),
+      signIn: ({ access, refresh, user, tenant, role }) => {
+        set({ access, refresh, user, tenant, role });
+        // Push tokens to the sync worker so it can drain the queue.
+        // window.api may not exist in non-Electron test contexts; guard.
+        if (typeof window !== "undefined" && window.api?.sync) {
+          void window.api.sync.setTokens(access, refresh);
+        }
+      },
 
-      logout: () =>
-        set({ access: null, refresh: null, user: null, tenant: null, role: null }),
+      logout: () => {
+        set({ access: null, refresh: null, user: null, tenant: null, role: null });
+        if (typeof window !== "undefined" && window.api?.sync) {
+          void window.api.sync.setTokens(null, null);
+        }
+      },
     }),
     {
       name: "pos-terminal-session",
