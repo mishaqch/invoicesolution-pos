@@ -41,6 +41,7 @@ def create_invoice(
     payments: list[dict],
     client_uuid: UUID | str,
     notes: str | None = None,
+    local_invoice_number: str | None = None,
     request=None,
 ) -> Invoice:
     # Idempotency: if we've already seen this client_uuid, return the prior row.
@@ -58,7 +59,7 @@ def create_invoice(
         cashier=cashier,
         cash_session=cash_session,
         customer=customer,
-        local_invoice_number=next_invoice_number(terminal=terminal),
+        local_invoice_number=local_invoice_number or next_invoice_number(terminal=terminal),
         invoice_type="sale",
         invoice_date=dt.date.today(),
         # Buyer snapshot
