@@ -45,6 +45,8 @@ const INVENTORY: Item[] = [
 const ADMIN: Item[] = [
   { to: "/branches", label: "Branches", icon: Building2 },
   { to: "/sync", label: "Sync health", icon: Activity, end: true },
+  { to: "/payments/settings", label: "Payment methods", icon: FileText },
+  { to: "/payments/cheques", label: "Cheques", icon: FileText },
   { to: "/customers", label: "Customers", icon: Users, disabled: true },
   { to: "/reports", label: "Reports", icon: BarChart3, disabled: true },
   { to: "/fbr", label: "FBR", icon: FileText, end: true },

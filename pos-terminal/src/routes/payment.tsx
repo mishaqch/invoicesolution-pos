@@ -1,13 +1,26 @@
-import { ArrowLeft, Banknote, CreditCard, Smartphone } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { MethodPicker } from "@/features/payment/MethodPicker";
+import {
+  BankTransferSubFlow,
+  CardSubFlow,
+  CashSubFlow,
+  ChequeSubFlow,
+  RaastSubFlow,
+  StoreCreditSubFlow,
+  WalletSubFlow,
+} from "@/features/payment/SubFlows";
+import { TenderList } from "@/features/payment/TenderList";
+import { usePaymentMethods } from "@/features/payment/usePaymentMethods";
+import { usePosContext } from "@/features/sale/usePosContext";
 import { Money } from "@/lib/money";
 import { newClientUuid } from "@/lib/uuid";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
-import { usePosContext } from "@/features/sale/usePosContext";
+import { useTenderStore, type PaymentMethodCode, type Tender } from "@/stores/tender";
 
 function terminalIndexFromName(name: string): number {
   const digits = name.match(/\d+/);
@@ -23,40 +36,50 @@ export default function PaymentRoute() {
   const ctx = usePosContext();
   const user = useSessionStore((s) => s.user);
 
-  const [tendered, setTendered] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const tenders = useTenderStore((s) => s.tenders);
+  const addTender = useTenderStore((s) => s.add);
+  const removeTender = useTenderStore((s) => s.remove);
+  const resetTenders = useTenderStore((s) => s.reset);
+  const totalTendered = useTenderStore((s) => s.totalTendered);
+  const isComplete = useTenderStore((s) => s.isComplete);
 
-  const totals = quoteCart({ lines, cartDiscountPct });
-  const grand = totals.grand_total;
-  const tend = tendered ? Money.fromStr(tendered) : Money.zero();
-  const change = tend.sub(grand);
+  const { config: methodConfig, error: methodConfigError } = usePaymentMethods();
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethodCode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // Reset tenders when entering this route fresh.
+  useEffect(() => () => resetTenders(), [resetTenders]);
 
   if (lines.length === 0) {
     navigate("/sale", { replace: true });
     return null;
   }
 
-  function setQuickPick(value: string) {
-    setTendered(value);
+  const totals = quoteCart({ lines, cartDiscountPct });
+  const grand = totals.grand_total;
+  const tendered = totalTendered();
+  const remaining = grand.sub(tendered);
+  const complete = isComplete(grand);
+
+  const storeCredit = customer
+    ? Money.fromStr((customer as unknown as { store_credit?: string }).store_credit ?? "0")
+    : Money.zero();
+
+  function onAddTender(t: Omit<Tender, "id">) {
+    addTender(t);
+    setSelectedMethod(null);  // collapse the sub-flow back to method picker
   }
 
-  async function complete() {
+  async function complete_sale() {
     if (!ctx.branch || !ctx.terminal || !ctx.session || !user) return;
-    if (tend.lt(grand)) {
+    if (!complete) {
       setError("Tendered amount is less than the total.");
       return;
     }
     setBusy(true);
     setError(null);
-
     try {
-      // Phase 3 inversion: the cashier never blocks on the network.
-      //   1. Generate local_invoice_number + invoice id locally.
-      //   2. Persist invoice + items + payments + outbound_queue row in
-      //      a single SQLite transaction.
-      //   3. Return success to the cashier (drawer + receipt fire here).
-      //   4. The sync worker drains outbound_queue in the background.
       const localNumber = await window.api.numbering.next({
         branchCode: ctx.branch.code,
         terminalIndex: terminalIndexFromName(ctx.terminal.name),
@@ -83,13 +106,13 @@ export default function PaymentRoute() {
         notes: null,
       }));
 
-      const payments = [{
+      const payments = tenders.map((t) => ({
         id: newClientUuid(),
         invoice_id: invoiceId,
-        payment_method: "cash" as const,
-        amount: tend.toStorageString(),
+        payment_method: t.payment_method,
+        amount: t.amount,
         status: "completed" as const,
-      }];
+      }));
 
       const buyerRegistrationType: "Registered" | "Unregistered" = customer
         ? customer.registration_type === "registered" ? "Registered" : "Unregistered"
@@ -113,12 +136,15 @@ export default function PaymentRoute() {
         discount_total: totals.discount_total.toStorageString(),
         tax_total: totals.tax_total.toStorageString(),
         grand_total: totals.grand_total.toStorageString(),
-        paid_total: tend.toStorageString(),
-        change_given: change.isPositive() ? change.toStorageString() : "0.0000",
+        paid_total: tendered.toStorageString(),
+        change_given: remaining.isNegative()
+          ? remaining.neg().toStorageString()
+          : "0.0000",
         notes: null,
       };
 
-      // Sync wire format (matches IngestInvoiceSerializer on the server).
+      // Sync wire format includes the method-specific fields per tender so
+      // the server-side adapter can validate + populate the right columns.
       const syncPayload = {
         client_uuid: clientUuid,
         terminal: ctx.terminal.id,
@@ -137,8 +163,21 @@ export default function PaymentRoute() {
           is_taxable: l.is_taxable,
         })),
         cart_discount_pct: cartDiscountPct,
-        payments: payments.map((p) => ({
-          payment_method: p.payment_method, amount: p.amount,
+        payments: tenders.map((t) => ({
+          payment_method: t.payment_method,
+          amount: t.amount,
+          card_last4: t.card_last4 ?? null,
+          card_auth_code: t.card_auth_code ?? null,
+          card_rrn: t.card_rrn ?? null,
+          wallet_transaction_id: t.wallet_transaction_id ?? null,
+          wallet_phone: t.wallet_phone ?? null,
+          raast_transaction_id: t.raast_transaction_id ?? null,
+          raast_iban: t.raast_iban ?? null,
+          bank_name: t.bank_name ?? null,
+          bank_account_last4: t.bank_account_last4 ?? null,
+          bank_reference: t.bank_reference ?? null,
+          cheque_number: t.cheque_number ?? null,
+          cheque_date: t.cheque_date ?? null,
         })),
       };
 
@@ -149,8 +188,10 @@ export default function PaymentRoute() {
         syncPayload,
       });
 
-      // Best-effort drawer + receipt — never block the cashier.
-      void window.api.drawer.open();
+      // Drawer fires only on confirmed cash payment.
+      const hasCash = tenders.some((t) => t.payment_method === "cash");
+      if (hasCash) void window.api.drawer.open();
+
       void window.api.printer.print({
         business_name: useSessionStore.getState().tenant?.business_name ?? "POS",
         branch_name: ctx.branch.name,
@@ -161,7 +202,6 @@ export default function PaymentRoute() {
         width: 48,
       });
 
-      // Kick the worker so it drains immediately.
       void window.api.sync.kick();
 
       navigate("/success", {
@@ -170,14 +210,15 @@ export default function PaymentRoute() {
           invoice_id: invoiceId,
           local: localNumber,
           grand: totals.grand_total.toStorageString(),
-          tendered: tend.toStorageString(),
-          change: change.isPositive() ? change.toStorageString() : "0.0000",
+          tendered: tendered.toStorageString(),
+          change: remaining.isNegative()
+            ? remaining.neg().toStorageString()
+            : "0.0000",
         },
       });
       useSaleStore.getState().resetForNewSale();
+      resetTenders();
     } catch (err) {
-      // Local-first means this branch is rare: only fires if SQLite
-      // itself errored or numbering failed. Both are programmer bugs.
       setError(err instanceof Error ? err.message : "Checkout failed.");
     } finally {
       setBusy(false);
@@ -196,80 +237,102 @@ export default function PaymentRoute() {
         <div className="font-mono text-base">Total: Rs {grand.display()}</div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 p-6">
-        <div className="grid grid-cols-2 gap-4 text-center">
-          <div className="rounded-md border bg-background p-4">
-            <div className="text-xs text-muted-foreground">Tendered</div>
-            <div className="mt-1 font-mono text-2xl">Rs {tend.display()}</div>
-          </div>
-          <div
-            className={`rounded-md border p-4 ${
-              change.isNegative()
-                ? "bg-amber-50 text-amber-900"
-                : "bg-green-50 text-green-900"
-            }`}
-          >
-            <div className="text-xs">{change.isNegative() ? "Remaining" : "Change"}</div>
-            <div className="mt-1 font-mono text-2xl">
-              Rs {change.isNegative() ? change.neg().display() : change.display()}
+      <main className="mx-auto grid w-full max-w-4xl flex-1 grid-cols-1 gap-4 p-6 md:grid-cols-2">
+        <section className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 text-center">
+            <div className="rounded-md border bg-background p-3">
+              <div className="text-xs text-muted-foreground">Tendered</div>
+              <div className="font-mono text-xl">Rs {tendered.display()}</div>
+            </div>
+            <div
+              className={`rounded-md border p-3 ${
+                complete ? "bg-green-50 text-green-900" : "bg-amber-50 text-amber-900"
+              }`}
+            >
+              <div className="text-xs">{complete ? "Done" : "Remaining"}</div>
+              <div className="font-mono text-xl">
+                Rs {remaining.isNegative() ? "0.00" : remaining.display()}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          {(["cash", "card", "easypaisa", "jazzcash", "raast", "bank"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              disabled={m !== "cash"}
-              className={`flex h-16 flex-col items-center justify-center rounded-md border text-xs font-medium ${
-                m === "cash"
-                  ? "border-primary bg-primary/5"
-                  : "opacity-50 cursor-not-allowed"
-              }`}
-              title={m !== "cash" ? "Other methods land in Phase 5" : undefined}
-            >
-              {m === "cash" && <Banknote className="h-5 w-5" />}
-              {m === "card" && <CreditCard className="h-5 w-5" />}
-              {(m === "easypaisa" || m === "jazzcash" || m === "raast") && <Smartphone className="h-5 w-5" />}
-              <span className="mt-1 capitalize">{m}</span>
-            </button>
-          ))}
-        </div>
+          <TenderList tenders={tenders} onRemove={removeTender} />
 
-        <div>
-          <label className="text-sm font-medium">Cash tendered</label>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={tendered}
-            onChange={(e) => setTendered(e.target.value)}
-            placeholder={grand.display()}
-            className="mt-1 h-12 w-full rounded-md border bg-background px-3 font-mono text-lg outline-none focus:ring-2 focus:ring-ring"
-            autoFocus
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => setQuickPick(grand.toStorageString())}>
-              Exact
-            </Button>
-            {["100", "500", "1000", "5000"].map((v) => (
-              <Button key={v} variant="outline" size="sm" onClick={() => setQuickPick(v)}>
-                Rs {v}
-              </Button>
-            ))}
-          </div>
-        </div>
+          {methodConfigError && (
+            <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+              Couldn't load method config from the server. Falling back to cash only.
+            </p>
+          )}
 
-        <Button
-          size="lg"
-          className="h-14 text-lg"
-          disabled={busy || tend.lt(grand)}
-          onClick={complete}
-        >
-          {busy ? "Completing…" : "Complete sale"}
-        </Button>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+          <Button
+            className="w-full h-14 text-lg"
+            disabled={busy || !complete || tenders.length === 0}
+            onClick={complete_sale}
+          >
+            {busy ? "Completing…" : "Complete sale"}
+          </Button>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </section>
+
+        <section className="space-y-4">
+          {selectedMethod === null ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Pick a payment method</p>
+              {methodConfig && (
+                <MethodPicker
+                  enabled={methodConfig.enabled_payment_methods}
+                  selected={selectedMethod}
+                  onSelect={setSelectedMethod}
+                />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-md border bg-background p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium capitalize">
+                  {selectedMethod.replace("_", " ")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMethod(null)}
+                  className="text-xs text-muted-foreground hover:underline"
+                >
+                  Pick another
+                </button>
+              </div>
+              {methodConfig && renderSubFlow({
+                method: selectedMethod, remaining, config: methodConfig,
+                hasCustomer: !!customer, storeCredit,
+                onAdd: onAddTender,
+              })}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
+}
+
+function renderSubFlow({
+  method, remaining, config, hasCustomer, storeCredit, onAdd,
+}: {
+  method: PaymentMethodCode;
+  remaining: Money;
+  config: import("@/features/payment/usePaymentMethods").PaymentMethodConfig;
+  hasCustomer: boolean;
+  storeCredit: Money;
+  onAdd: (t: Omit<Tender, "id">) => void;
+}): React.ReactNode {
+  const common = { remaining, config, hasCustomer, storeCredit, onAdd };
+  switch (method) {
+    case "cash": return <CashSubFlow {...common} />;
+    case "card_credit": return <CardSubFlow {...common} kind="card_credit" />;
+    case "card_debit": return <CardSubFlow {...common} kind="card_debit" />;
+    case "easypaisa": return <WalletSubFlow {...common} kind="easypaisa" />;
+    case "jazzcash": return <WalletSubFlow {...common} kind="jazzcash" />;
+    case "raast": return <RaastSubFlow {...common} />;
+    case "bank_transfer": return <BankTransferSubFlow {...common} />;
+    case "store_credit": return <StoreCreditSubFlow {...common} />;
+    case "cheque": return <ChequeSubFlow {...common} />;
+  }
 }

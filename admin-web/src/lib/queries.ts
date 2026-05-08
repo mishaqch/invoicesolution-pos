@@ -489,3 +489,80 @@ export function useActivateProductionToken() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fbr-status"] }),
   });
 }
+
+// ---------- Payments (Phase 5) ----------
+
+export interface PaymentSettings {
+  enabled_payment_methods: string[];
+  easypaisa_merchant_id: string;
+  easypaisa_qr_url: string;
+  jazzcash_merchant_id: string;
+  jazzcash_qr_url: string;
+  raast_iban: string;
+  raast_qr_url: string;
+  bank_account_name: string;
+  bank_account_iban: string;
+  bank_account_bank: string;
+  updated_at: string;
+}
+
+export function usePaymentSettings() {
+  return useQuery({
+    queryKey: ["payment-settings"],
+    queryFn: () => api<PaymentSettings>("/payments/settings/"),
+  });
+}
+
+export function useUpdatePaymentSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<PaymentSettings>) =>
+      api<PaymentSettings>("/payments/settings/", {
+        method: "PATCH", body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["payment-settings"] }),
+  });
+}
+
+export interface ChequeRow {
+  id: string;
+  invoice: string | null;
+  customer: string | null;
+  amount: string;
+  cheque_number: string | null;
+  bank_name: string | null;
+  cheque_date: string | null;
+  cheque_status: "pending" | "cleared" | "bounced" | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export function useCheques(statusFilter?: string) {
+  const query = statusFilter ? `?status=${statusFilter}` : "";
+  return useQuery({
+    queryKey: ["cheques", statusFilter],
+    queryFn: () =>
+      api<{ count: number; results: ChequeRow[] }>(`/payments/cheques/${query}`),
+  });
+}
+
+export function useClearCheque() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api(`/payments/cheques/${id}/clear/`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cheques"] }),
+  });
+}
+
+export function useBounceCheque() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api(`/payments/cheques/${id}/bounce/`, {
+        method: "POST", body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cheques"] }),
+  });
+}

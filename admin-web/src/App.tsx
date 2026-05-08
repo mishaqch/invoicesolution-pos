@@ -26,6 +26,8 @@ import ManualAmendmentPage from "@/routes/fbr/manual-amendment";
 import ScenariosPage from "@/routes/fbr/scenarios";
 import FbrSetupWizard from "@/routes/fbr/setup";
 import SubmissionsPage from "@/routes/fbr/submissions";
+import ChequesPage from "@/routes/payments/cheques";
+import PaymentSettingsPage from "@/routes/payments/settings";
 
 const queryClient = new QueryClient();
 
@@ -84,6 +86,11 @@ export default function App() {
               <Route path="submissions" element={<SubmissionsPage />} />
               <Route path="cancel-budget" element={<CancelBudgetPage />} />
               <Route path="manual-amendment" element={<ManualAmendmentPage />} />
+            </Route>
+
+            <Route path="payments">
+              <Route path="settings" element={<PaymentSettingsPage />} />
+              <Route path="cheques" element={<ChequesPage />} />
             </Route>
           </Route>
 
