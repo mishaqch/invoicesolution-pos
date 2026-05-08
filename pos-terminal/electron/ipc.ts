@@ -1,11 +1,11 @@
 /**
- * IPC handlers. Phase 0 only wires meta + queue; auth.pinLogin lives in the
- * renderer (it's a plain HTTPS POST, no native deps needed).
+ * IPC handlers. Phase 1 adds catalog sync + product list/search.
  */
 
 import { ipcMain } from "electron";
 
 import { getDb, getMeta, setMeta } from "./db/client";
+import { listProducts, productsCount, searchProducts, syncCatalog } from "./db/sync";
 
 export function registerIpcHandlers() {
   ipcMain.handle("meta:get", (_e, key: string) => getMeta(key));
@@ -46,4 +46,19 @@ export function registerIpcHandlers() {
       .get() as { n: number };
     return row.n;
   });
+
+  // Phase 1
+  ipcMain.handle(
+    "catalog:sync",
+    (_e, opts: { apiBase: string; accessToken: string }) => syncCatalog(opts),
+  );
+  ipcMain.handle(
+    "catalog:search",
+    (_e, query: string, limit?: number) => searchProducts(query, limit),
+  );
+  ipcMain.handle(
+    "catalog:list",
+    (_e, limit?: number) => listProducts(limit),
+  );
+  ipcMain.handle("catalog:count", () => productsCount());
 }
