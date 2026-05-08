@@ -39,6 +39,10 @@ backend/staticfiles/
 backend/media/
 backend/.env
 
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
 # ----- Node / JS -----
 node_modules/
 .npm

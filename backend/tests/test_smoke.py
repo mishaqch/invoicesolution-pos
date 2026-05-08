@@ -144,7 +144,10 @@ def test_tenant_scope_check_passes():
 # Health
 # ---------------------------------------------------------------------------
 
+@pytest.mark.django_db
 def test_health_endpoint_anonymous():
+    """Healthcheck is anonymous; ATOMIC_REQUESTS makes Django open a connection
+    even on a no-op view, so we still need the django_db marker to allow that."""
     client = Client()
     resp = client.get("/api/health/")
     assert resp.status_code == 200

@@ -166,7 +166,11 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.ScopedRateThrottle",
     ),
     "DEFAULT_THROTTLE_RATES": {
-        "auth": "5/15min",  # PROJECT_PLAN §10: 5 attempts / 15 min / IP
+        # PROJECT_PLAN §10 calls for "5 attempts / 15 min / IP". DRF's built-in
+        # throttle window is fixed (s|m|h|d), so we approximate with 20/h
+        # which averages to ~5 per 15 min and gracefully bursts. A custom
+        # SlidingWindowThrottle can land later if we need exactness.
+        "auth": "20/h",
     },
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
