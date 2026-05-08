@@ -566,3 +566,61 @@ export function useBounceCheque() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cheques"] }),
   });
 }
+
+// ---------- Returns (Phase 6) ----------
+
+export interface ReturnItemRow {
+  id: string;
+  original_sale_item: string;
+  product: string;
+  quantity: string;
+  unit_price: string;
+  tax_amount: string;
+  line_total: string;
+  restocked: boolean;
+  movement_type: string;
+}
+
+export interface AdminReturn {
+  id: string;
+  branch: string;
+  terminal: string;
+  cashier: string;
+  customer: string | null;
+  original_invoice: string;
+  return_number: string;
+  fbr_credit_note_number: string | null;
+  return_date: string;
+  reason: string;
+  reason_notes: string;
+  refund_method: string;
+  refund_amount: string;
+  fbr_route: "amend" | "credit_note" | null;
+  status: string;
+  items: ReturnItemRow[];
+  created_at: string;
+  updated_at: string;
+}
+
+export function useReturns(filters: {
+  branch?: string; refund_method?: string; from?: string; to?: string;
+} = {}) {
+  const cleaned: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) cleaned[k] = v;
+  const query = new URLSearchParams(cleaned).toString();
+  return useQuery({
+    queryKey: ["returns", filters],
+    queryFn: () =>
+      api<{ count: number; results: AdminReturn[] }>(
+        `/returns/${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useReturn(id: string | undefined) {
+  return useQuery({
+    queryKey: ["return", id],
+    queryFn: () => api<AdminReturn>(`/returns/${id}/`),
+    enabled: !!id,
+  });
+}

@@ -28,6 +28,8 @@ import FbrSetupWizard from "@/routes/fbr/setup";
 import SubmissionsPage from "@/routes/fbr/submissions";
 import ChequesPage from "@/routes/payments/cheques";
 import PaymentSettingsPage from "@/routes/payments/settings";
+import ReturnDetail from "@/routes/returns/detail";
+import ReturnsList from "@/routes/returns/list";
 
 const queryClient = new QueryClient();
 
@@ -91,6 +93,11 @@ export default function App() {
             <Route path="payments">
               <Route path="settings" element={<PaymentSettingsPage />} />
               <Route path="cheques" element={<ChequesPage />} />
+            </Route>
+
+            <Route path="returns">
+              <Route index element={<ReturnsList />} />
+              <Route path=":id" element={<ReturnDetail />} />
             </Route>
           </Route>
 

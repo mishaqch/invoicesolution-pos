@@ -76,6 +76,13 @@ export default function SaleRoute() {
           </button>
           <button
             type="button"
+            onClick={() => navigate("/return")}
+            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+          >
+            Return
+          </button>
+          <button
+            type="button"
             onClick={() => navigate("/day-close")}
             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
           >

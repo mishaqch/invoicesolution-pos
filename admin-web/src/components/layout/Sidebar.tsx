@@ -27,6 +27,7 @@ const TOP: Item[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/sales", label: "Sales", icon: ShoppingCart, end: true },
   { to: "/sales/held", label: "Held sales", icon: ShoppingCart },
+  { to: "/returns", label: "Returns", icon: ShoppingCart, end: true },
 ];
 
 const CATALOG: Item[] = [
