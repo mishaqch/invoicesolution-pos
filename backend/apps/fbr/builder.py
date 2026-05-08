@@ -166,6 +166,19 @@ def build_invoice_payload(
         ],
     }
 
+    # Phase 6 — credit/debit notes reference the original invoice's FBR
+    # number so PRAL can link them. The field name `referenceInvoiceNo`
+    # follows the v1.6 manual; if PRAL diverges we adjust here only.
+    if invoice.invoice_type in ("credit_note", "debit_note") and invoice.reference_invoice_id:
+        ref = (
+            type(invoice).objects
+            .only("fbr_invoice_number", "local_invoice_number")
+            .get(pk=invoice.reference_invoice_id)
+        )
+        payload["referenceInvoiceNo"] = (
+            ref.fbr_invoice_number or ref.local_invoice_number
+        )
+
     if environment == "sandbox":
         payload["scenarioId"] = scenario_id
     # In production, we deliberately do NOT include scenarioId — per §1.4

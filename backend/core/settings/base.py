@@ -75,6 +75,8 @@ INSTALLED_APPS = [
     "apps.fbr",
     # Local — Phase 5
     "apps.payments",
+    # Local — Phase 6
+    "apps.returns",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
