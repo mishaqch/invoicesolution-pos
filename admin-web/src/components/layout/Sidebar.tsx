@@ -47,7 +47,7 @@ const ADMIN: Item[] = [
   { to: "/sync", label: "Sync health", icon: Activity, end: true },
   { to: "/customers", label: "Customers", icon: Users, disabled: true },
   { to: "/reports", label: "Reports", icon: BarChart3, disabled: true },
-  { to: "/fbr", label: "FBR", icon: FileText, disabled: true },
+  { to: "/fbr", label: "FBR", icon: FileText, end: true },
   { to: "/settings", label: "Settings", icon: Settings, disabled: true },
 ];
 

@@ -342,3 +342,150 @@ export function useTerminals() {
     queryFn: () => api<{ count: number; results: AdminTerminal[] }>("/terminals/"),
   });
 }
+
+// ---------- FBR (Phase 4) ----------
+
+export interface FbrTokenInfo {
+  id: string;
+  environment: "sandbox" | "production";
+  api_endpoint: string;
+  is_active: boolean;
+  has_token: boolean;
+  activated_at: string | null;
+  expires_at: string | null;
+}
+
+export interface FbrStatus {
+  tenant_id: string;
+  environment: "sandbox" | "production" | "none";
+  sandbox: FbrTokenInfo | null;
+  production: FbrTokenInfo | null;
+  last_successful_submission_at: string | null;
+  eligible_scenarios: { code: string; description: string }[];
+  passed_scenarios: string[];
+  all_scenarios_passed: boolean;
+}
+
+export function useFbrStatus() {
+  return useQuery({
+    queryKey: ["fbr-status"],
+    queryFn: () => api<FbrStatus>("/fbr/status/"),
+    refetchInterval: 30_000,
+  });
+}
+
+export interface FbrScenarioRow {
+  id: string;
+  scenario_code: string;
+  scenario_description: string;
+  status: "pending" | "submitting" | "success" | "failed";
+  fbr_invoice_number: string | null;
+  last_attempt_at: string | null;
+  error_message: string | null;
+}
+
+export function useFbrScenarios() {
+  return useQuery({
+    queryKey: ["fbr-scenarios"],
+    queryFn: () =>
+      api<{ count: number; results: FbrScenarioRow[] }>("/fbr/scenarios/"),
+    refetchInterval: 5_000,
+  });
+}
+
+export function useRunScenarios() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      api<{ results: Record<string, string> }>("/fbr/scenarios/run-all/", {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["fbr-scenarios"] });
+      qc.invalidateQueries({ queryKey: ["fbr-status"] });
+    },
+  });
+}
+
+export interface FbrSubmissionRow {
+  id: string;
+  invoice: string | null;
+  environment: "sandbox" | "production";
+  endpoint: string;
+  http_status: number | null;
+  status_code: string | null;
+  fbr_invoice_number: string | null;
+  attempt_number: number;
+  duration_ms: number | null;
+  error_message: string | null;
+  submitted_at: string;
+}
+
+export function useFbrSubmissions(filters: { invoice?: string; status_code?: string } = {}) {
+  const cleaned: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) cleaned[k] = v;
+  const query = new URLSearchParams(cleaned).toString();
+  return useQuery({
+    queryKey: ["fbr-submissions", filters],
+    queryFn: () =>
+      api<{ count: number; results: FbrSubmissionRow[] }>(
+        `/fbr/submissions/${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useRetrySubmission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (invoiceId: string) =>
+      api(`/fbr/submissions/retry/${invoiceId}/`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fbr-submissions"] }),
+  });
+}
+
+export interface FbrCancelBudgetData {
+  id: string;
+  month_start: string;
+  previous_month_sales: string;
+  budget_amount: string;
+  consumed_amount: string;
+  remaining_amount: string;
+  last_recalculated_at: string;
+  consumptions: {
+    id: string;
+    invoice: string;
+    consumption_type: "edit" | "cancel";
+    amount: string;
+    consumed_at: string;
+  }[];
+}
+
+export function useFbrCancelBudget() {
+  return useQuery({
+    queryKey: ["fbr-cancel-budget"],
+    queryFn: () => api<FbrCancelBudgetData>("/fbr/cancel-budget/"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useSubmitSandboxToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { token: string; api_endpoint?: string }) =>
+      api("/fbr/tokens/sandbox/", {
+        method: "POST", body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fbr-status"] }),
+  });
+}
+
+export function useActivateProductionToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { token: string; api_endpoint?: string }) =>
+      api("/fbr/tokens/production/", {
+        method: "POST", body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fbr-status"] }),
+  });
+}

@@ -1,8 +1,10 @@
 import { Check, Printer, ShoppingCart } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { useFbrConfirmation } from "@/features/sale/useFbrConfirmation";
+import { useSessionStore } from "@/stores/session";
 
 interface State {
   invoice_id?: string;
@@ -17,10 +19,42 @@ export default function SuccessRoute() {
   const { state } = useLocation();
   const s = (state as State) ?? {};
 
+  const [fbrNo, setFbrNo] = useState<string | null>(null);
+  const tenant = useSessionStore((st) => st.tenant);
+
+  useFbrConfirmation({
+    invoiceId: s.invoice_id,
+    onValid: (inv) => {
+      setFbrNo(inv.fbr_invoice_number);
+      // Best-effort QR re-print. Never blocks the cashier.
+      void window.api.printer.print({
+        business_name: tenant?.business_name ?? "POS",
+        branch_name: "(reprint)",
+        ntn: tenant?.ntn ?? "",
+        invoice: {
+          id: inv.id,
+          local_invoice_number: inv.local_invoice_number,
+          invoice_date: inv.invoice_date,
+          subtotal: "0", discount_total: "0", tax_total: "0",
+          grand_total: inv.grand_total,
+          paid_total: inv.paid_total,
+          change_given: inv.change_given,
+          fbr_invoice_number: inv.fbr_invoice_number,
+          fbr_qr_payload: inv.fbr_qr_payload,
+        } as never,
+        items: [],
+        payments: [],
+        width: 48,
+      });
+    },
+  });
+
+  // Auto-advance — slightly longer if we're still waiting for FBR confirm.
   useEffect(() => {
-    const t = window.setTimeout(() => navigate("/sale", { replace: true }), 8000);
+    const ms = fbrNo ? 5000 : 12_000;
+    const t = window.setTimeout(() => navigate("/sale", { replace: true }), ms);
     return () => window.clearTimeout(t);
-  }, [navigate]);
+  }, [navigate, fbrNo]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-green-50 p-8">
@@ -40,8 +74,12 @@ export default function SuccessRoute() {
           <dd className="text-right font-mono">Rs {s.change}</dd>
         </dl>
 
-        <div className="mt-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
-          FBR pending — submission lands in Phase 4
+        <div
+          className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs ${
+            fbrNo ? "bg-green-100 text-green-900" : "bg-amber-100 text-amber-900"
+          }`}
+        >
+          {fbrNo ? `FBR #${fbrNo.slice(0, 16)}…` : "FBR pending — submitting…"}
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-2">
@@ -49,11 +87,10 @@ export default function SuccessRoute() {
             variant="outline"
             onClick={() => {
               if (s.invoice_id) {
-                window.api.printer.print({
-                  // Receipt re-render uses the persisted local row
-                  business_name: "(reprint)",
+                void window.api.printer.print({
+                  business_name: tenant?.business_name ?? "(reprint)",
                   branch_name: "(reprint)",
-                  ntn: "(reprint)",
+                  ntn: tenant?.ntn ?? "",
                   invoice: { id: s.invoice_id } as never,
                   items: [],
                   payments: [],
@@ -69,7 +106,7 @@ export default function SuccessRoute() {
           </Button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Returns to a new sale automatically in 8 seconds.
+          Returns to a new sale automatically in {fbrNo ? "5" : "12"} seconds.
         </p>
       </div>
     </div>

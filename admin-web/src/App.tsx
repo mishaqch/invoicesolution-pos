@@ -20,6 +20,12 @@ import InvoiceDetail from "@/routes/sales/invoice-detail";
 import InvoicesList from "@/routes/sales/invoices";
 import SyncHealth from "@/routes/sync/sync-health";
 import TerminalSyncDetail from "@/routes/sync/terminal-detail";
+import CancelBudgetPage from "@/routes/fbr/cancel-budget";
+import FbrDashboard from "@/routes/fbr/dashboard";
+import ManualAmendmentPage from "@/routes/fbr/manual-amendment";
+import ScenariosPage from "@/routes/fbr/scenarios";
+import FbrSetupWizard from "@/routes/fbr/setup";
+import SubmissionsPage from "@/routes/fbr/submissions";
 
 const queryClient = new QueryClient();
 
@@ -69,6 +75,15 @@ export default function App() {
             <Route path="sync">
               <Route index element={<SyncHealth />} />
               <Route path="terminals/:id" element={<TerminalSyncDetail />} />
+            </Route>
+
+            <Route path="fbr">
+              <Route index element={<FbrDashboard />} />
+              <Route path="setup" element={<FbrSetupWizard />} />
+              <Route path="scenarios" element={<ScenariosPage />} />
+              <Route path="submissions" element={<SubmissionsPage />} />
+              <Route path="cancel-budget" element={<CancelBudgetPage />} />
+              <Route path="manual-amendment" element={<ManualAmendmentPage />} />
             </Route>
           </Route>
 
