@@ -1,0 +1,9 @@
+{
+  "name": "@pos/shared",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Types shared between admin-web and pos-terminal.",
+  "type": "module",
+  "main": "./types/index.ts",
+  "types": "./types/index.ts"
+}

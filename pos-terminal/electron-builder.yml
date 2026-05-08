@@ -1,0 +1,28 @@
+# Electron-builder config — stub for Phase 0.
+# Real installer signing + auto-update channel land in Phase 8.
+
+appId: com.pos.pakistanpos
+productName: Pakistan POS
+directories:
+  output: release/${version}
+  buildResources: build
+files:
+  - "out/**/*"
+  - "package.json"
+
+# Native modules need to be rebuilt against Electron's Node ABI on install.
+nodeGypRebuild: false
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+linux:
+  target:
+    - AppImage
+    - deb
+mac:
+  target:
+    - dmg

@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pos
+          POSTGRES_USER: pos
+          POSTGRES_PASSWORD: pos
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pos -d pos"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+
+    env:
+      DJANGO_SETTINGS_MODULE: core.settings.test
+      DJANGO_SECRET_KEY: test-secret
+      DATABASE_URL: postgres://pos:pos@localhost:5432/pos
+      REDIS_URL: redis://localhost:6379/0
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Migrations check
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Tests
+        run: pytest -ra
+
+  admin-web:
+    name: Admin web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: admin-web/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  pos-terminal:
+    name: POS terminal
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pos-terminal
+    env:
+      # Skip downloading Electron in CI — we only typecheck/lint, not build.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: pos-terminal/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
