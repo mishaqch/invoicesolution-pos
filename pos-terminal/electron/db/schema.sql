@@ -107,3 +107,114 @@ CREATE TABLE IF NOT EXISTS meta_sync (
   last_synced_at TEXT NOT NULL,
   cursor         TEXT
 );
+
+-- ---------------------------------------------------------------------------
+-- Phase 2 — invoices, sale_items, payments, customers, cash_sessions
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS customers (
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL,
+  phone             TEXT,
+  email             TEXT,
+  cnic              TEXT,
+  ntn               TEXT,
+  registration_type TEXT NOT NULL DEFAULT 'unregistered',
+  province          TEXT,
+  store_credit      TEXT NOT NULL DEFAULT '0',
+  current_balance   TEXT NOT NULL DEFAULT '0',
+  is_active         INTEGER NOT NULL DEFAULT 1,
+  updated_at        TEXT NOT NULL,
+  deleted_at        TEXT
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS customers_fts USING fts5(
+  id UNINDEXED, name, phone, cnic
+);
+
+CREATE TABLE IF NOT EXISTS cash_sessions (
+  id                  TEXT PRIMARY KEY,
+  branch_id           TEXT NOT NULL,
+  terminal_id         TEXT NOT NULL,
+  cashier_id          TEXT NOT NULL,
+  opened_at           TEXT NOT NULL,
+  opened_with_amount  TEXT NOT NULL,
+  closed_at           TEXT,
+  closed_with_amount  TEXT,
+  expected_amount     TEXT,
+  variance            TEXT,
+  variance_reason     TEXT,
+  total_sales         TEXT NOT NULL DEFAULT '0',
+  cash_in             TEXT NOT NULL DEFAULT '0',
+  cash_out            TEXT NOT NULL DEFAULT '0',
+  status              TEXT NOT NULL DEFAULT 'open'
+);
+
+CREATE INDEX IF NOT EXISTS idx_cash_sessions_open
+  ON cash_sessions(terminal_id) WHERE status = 'open';
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id                       TEXT PRIMARY KEY,
+  client_uuid              TEXT NOT NULL UNIQUE,
+  local_invoice_number     TEXT NOT NULL,
+  status                   TEXT NOT NULL DEFAULT 'pending_sync',
+  invoice_date             TEXT NOT NULL,
+
+  customer_id              TEXT,
+  buyer_name               TEXT,
+  buyer_phone              TEXT,
+  buyer_ntn_cnic           TEXT,
+  buyer_registration_type  TEXT,
+
+  branch_id                TEXT NOT NULL,
+  terminal_id              TEXT NOT NULL,
+  cashier_id               TEXT NOT NULL,
+  cash_session_id          TEXT,
+
+  subtotal                 TEXT NOT NULL,
+  discount_total           TEXT NOT NULL DEFAULT '0',
+  tax_total                TEXT NOT NULL DEFAULT '0',
+  grand_total              TEXT NOT NULL,
+  paid_total               TEXT NOT NULL DEFAULT '0',
+  change_given             TEXT NOT NULL DEFAULT '0',
+
+  is_held                  INTEGER NOT NULL DEFAULT 0,
+  held_label               TEXT,
+
+  notes                    TEXT,
+  created_at               TEXT NOT NULL,
+  updated_at               TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_invoices_held ON invoices(is_held) WHERE is_held = 1;
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_session ON invoices(cash_session_id);
+
+CREATE TABLE IF NOT EXISTS sale_items (
+  id                TEXT PRIMARY KEY,
+  invoice_id        TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  line_number       INTEGER NOT NULL,
+  product_id        TEXT NOT NULL,
+  product_name      TEXT NOT NULL,
+  product_sku       TEXT NOT NULL,
+  uom_code          TEXT NOT NULL,
+  hs_code           TEXT,
+  quantity          TEXT NOT NULL,
+  unit_price        TEXT NOT NULL,
+  discount_pct      TEXT NOT NULL DEFAULT '0',
+  discount_amount   TEXT NOT NULL DEFAULT '0',
+  tax_rate          TEXT NOT NULL DEFAULT '0',
+  tax_amount        TEXT NOT NULL DEFAULT '0',
+  line_total        TEXT NOT NULL,
+  notes             TEXT,
+  UNIQUE(invoice_id, line_number)
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+  id              TEXT PRIMARY KEY,
+  invoice_id      TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  payment_method  TEXT NOT NULL,
+  amount          TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'completed',
+  created_at      TEXT NOT NULL
+);

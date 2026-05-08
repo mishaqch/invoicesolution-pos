@@ -26,11 +26,84 @@ export interface PosProductSqliteRow {
   deleted_at: string | null;
 }
 
+export interface PosCashSessionRow {
+  id: string;
+  branch_id: string;
+  terminal_id: string;
+  cashier_id: string;
+  opened_at: string;
+  opened_with_amount: string;
+  closed_at: string | null;
+  closed_with_amount: string | null;
+  expected_amount: string | null;
+  variance: string | null;
+  variance_reason: string | null;
+  total_sales: string;
+  cash_in: string;
+  cash_out: string;
+  status: "open" | "closed";
+}
+
+export interface PosInvoiceRow {
+  id: string;
+  client_uuid: string;
+  local_invoice_number: string;
+  status: string;
+  invoice_date: string;
+  customer_id: string | null;
+  buyer_name: string | null;
+  buyer_phone: string | null;
+  buyer_ntn_cnic: string | null;
+  buyer_registration_type: string | null;
+  branch_id: string;
+  terminal_id: string;
+  cashier_id: string;
+  cash_session_id: string | null;
+  subtotal: string;
+  discount_total: string;
+  tax_total: string;
+  grand_total: string;
+  paid_total: string;
+  change_given: string;
+  is_held: number;
+  held_label: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PosSaleItemRow {
+  id: string;
+  invoice_id: string;
+  line_number: number;
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  uom_code: string;
+  hs_code: string | null;
+  quantity: string;
+  unit_price: string;
+  discount_pct: string;
+  discount_amount: string;
+  tax_rate: string;
+  tax_amount: string;
+  line_total: string;
+  notes: string | null;
+}
+
+export interface PosPaymentRow {
+  id: string;
+  invoice_id: string;
+  payment_method: string;
+  amount: string;
+  status: string;
+  created_at: string;
+}
+
 const api = {
   meta: {
     get: (key: string): Promise<string | null> => ipcRenderer.invoke("meta:get", key),
-    set: (key: string, value: string): Promise<void> =>
-      ipcRenderer.invoke("meta:set", key, value),
+    set: (key: string, value: string): Promise<void> => ipcRenderer.invoke("meta:set", key, value),
   },
   queue: {
     enqueue: (entry: {
@@ -52,6 +125,47 @@ const api = {
     list: (limit?: number): Promise<PosProductSqliteRow[]> =>
       ipcRenderer.invoke("catalog:list", limit),
     count: (): Promise<number> => ipcRenderer.invoke("catalog:count"),
+  },
+  sales: {
+    persistInvoice: (args: unknown): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("sales:persist-invoice", args),
+    list: (opts: { held?: boolean; limit?: number } = {}): Promise<PosInvoiceRow[]> =>
+      ipcRenderer.invoke("sales:list", opts),
+    get: (invoice_id: string): Promise<{
+      invoice: PosInvoiceRow;
+      items: PosSaleItemRow[];
+      payments: PosPaymentRow[];
+    } | null> => ipcRenderer.invoke("sales:get", invoice_id),
+    hold: (invoice_id: string, label: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("sales:hold", invoice_id, label),
+    recall: (invoice_id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("sales:recall", invoice_id),
+  },
+  session: {
+    open: (payload: PosCashSessionRow): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("session:open", payload),
+    current: (terminal_id: string): Promise<PosCashSessionRow | null> =>
+      ipcRenderer.invoke("session:current", terminal_id),
+    totals: (session_id: string): Promise<{ total_sales: string }> =>
+      ipcRenderer.invoke("session:totals", session_id),
+    close: (
+      id: string,
+      args: {
+        closed_at: string;
+        closed_with_amount: string;
+        expected_amount: string;
+        variance: string;
+        variance_reason: string;
+      },
+    ): Promise<{ ok: true }> => ipcRenderer.invoke("session:close", id, args),
+  },
+  printer: {
+    print: (payload: unknown): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
+      ipcRenderer.invoke("printer:print-receipt", payload),
+  },
+  drawer: {
+    open: (): Promise<{ success: boolean; reason?: string }> =>
+      ipcRenderer.invoke("drawer:open"),
   },
 };
 
