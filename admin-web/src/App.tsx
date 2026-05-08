@@ -15,6 +15,9 @@ import Adjustments from "@/routes/inventory/adjustments";
 import Movements from "@/routes/inventory/movements";
 import StockByBranch from "@/routes/inventory/stock-by-branch";
 import LoginRoute from "@/routes/login";
+import HeldSalesAdminList from "@/routes/sales/held-sales";
+import InvoiceDetail from "@/routes/sales/invoice-detail";
+import InvoicesList from "@/routes/sales/invoices";
 
 const queryClient = new QueryClient();
 
@@ -53,6 +56,12 @@ export default function App() {
               <Route path="stock" element={<StockByBranch />} />
               <Route path="movements" element={<Movements />} />
               <Route path="adjustments" element={<Adjustments />} />
+            </Route>
+
+            <Route path="sales">
+              <Route index element={<InvoicesList />} />
+              <Route path="held" element={<HeldSalesAdminList />} />
+              <Route path=":id" element={<InvoiceDetail />} />
             </Route>
           </Route>
 

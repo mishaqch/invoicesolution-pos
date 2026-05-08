@@ -159,3 +159,106 @@ export function useAudits() {
 }
 
 export type { Branch, Category, HsCode, PosProduct, Product, TaxRate, UnitOfMeasure };
+
+// ---------- Sales (Phase 2) ----------
+
+export interface InvoiceLine {
+  id: string;
+  line_number: number;
+  product: string;
+  product_name: string;
+  product_sku: string;
+  uom_code: string;
+  quantity: string;
+  unit_price: string;
+  discount_pct: string;
+  discount_amount: string;
+  tax_rate: string;
+  tax_amount: string;
+  line_total: string;
+  is_edited: boolean;
+  is_cancelled: boolean;
+}
+
+export interface InvoicePayment {
+  id: string;
+  payment_method: string;
+  amount: string;
+  status: string;
+  card_last4: string | null;
+  created_at: string;
+}
+
+export interface AdminInvoice {
+  id: string;
+  branch: string;
+  terminal: string;
+  cashier: string;
+  customer: string | null;
+  local_invoice_number: string;
+  fbr_invoice_number: string | null;
+  invoice_type: string;
+  invoice_date: string;
+  buyer_name: string | null;
+  buyer_phone: string | null;
+  subtotal: string;
+  discount_total: string;
+  tax_total: string;
+  grand_total: string;
+  paid_total: string;
+  change_given: string;
+  status: string;
+  is_held: boolean;
+  held_label: string | null;
+  notes: string | null;
+  items: InvoiceLine[];
+  payments: InvoicePayment[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface InvoiceFilters {
+  branch?: string;
+  status?: string;
+  cashier?: string;
+  customer?: string;
+  from?: string;
+  to?: string;
+  held?: string;
+}
+
+export function useInvoices(filters: InvoiceFilters = {}) {
+  const cleaned: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) cleaned[k] = v;
+  const query = new URLSearchParams(cleaned).toString();
+  return useQuery({
+    queryKey: ["invoices", filters],
+    queryFn: () =>
+      api<{ count: number; results: AdminInvoice[] }>(
+        `/sales/invoices/${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useInvoice(id: string | undefined) {
+  return useQuery({
+    queryKey: ["invoice", id],
+    queryFn: () => api<AdminInvoice>(`/sales/invoices/${id}/`),
+    enabled: !!id,
+  });
+}
+
+export function useCancelInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api<AdminInvoice>(`/sales/invoices/${id}/cancel/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice", data.id] });
+    },
+  });
+}

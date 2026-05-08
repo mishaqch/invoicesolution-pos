@@ -24,7 +24,8 @@ interface Item {
 
 const TOP: Item[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/sales", label: "Sales", icon: ShoppingCart, disabled: true },
+  { to: "/sales", label: "Sales", icon: ShoppingCart, end: true },
+  { to: "/sales/held", label: "Held sales", icon: ShoppingCart },
 ];
 
 const CATALOG: Item[] = [
