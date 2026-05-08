@@ -24,6 +24,10 @@ EXEMPT = {
     # AuditLog: tenant FK is intentionally nullable so audits survive
     # tenant deletion (legal: a deleted tenant's audit trail is still ours).
     ("audit", "auditlog"),
+    # FbrIpWhitelist: tenant FK is nullable — NULL rows are global infra IPs
+    # we declared once for our own server (PRAL whitelists the same 1-3 IPs
+    # for all tenants).
+    ("fbr", "fbripwhitelist"),
 }
 
 

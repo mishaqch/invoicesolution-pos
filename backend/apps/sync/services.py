@@ -113,6 +113,15 @@ def ingest_invoice(*, tenant_id, terminal_id, payload: dict, request=None) -> In
     transaction.savepoint_commit(sid)
 
     sync_row.mark_processed(invoice.id)
+
+    # Phase 4 — kick off FBR submission asynchronously. If the tenant has
+    # no token yet (still onboarding), the task no-ops cleanly.
+    try:
+        from apps.fbr.tasks import submit_invoice_to_fbr
+        submit_invoice_to_fbr.delay(str(invoice.id))
+    except Exception:  # never let task enqueue failure break ingestion
+        logger.exception("failed to enqueue FBR submission for %s", invoice.id)
+
     return IngestResult(entity_id=invoice.id, sync_log=sync_row, was_duplicate=False)
 
 

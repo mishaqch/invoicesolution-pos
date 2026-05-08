@@ -34,6 +34,12 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="insecure-base-not-for-prod")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# FBR token encryption key. Generate with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# In dev / tests, falls back to a deterministic key derived from SECRET_KEY
+# so the test suite is reproducible without forcing every dev to set the var.
+FBR_FERNET_KEY = env("FBR_FERNET_KEY", default="")
+
 # ---------------------------------------------------------------------------
 # Apps
 # ---------------------------------------------------------------------------
@@ -63,8 +69,10 @@ INSTALLED_APPS = [
     "apps.customers",
     "apps.sales",
     "apps.audit",
-    # Local — placeholders, registered to reserve migration order (no models yet).
+    # Local — Phase 3
     "apps.sync",
+    # Local — Phase 4
+    "apps.fbr",
 ]
 
 AUTH_USER_MODEL = "accounts.User"

@@ -127,6 +127,11 @@ class Invoice(TenantScopedModel):
     is_held = models.BooleanField(default=False)
     held_label = models.CharField(max_length=50, blank=True, null=True)
 
+    # Phase 4 — invoices linked to a submitted Annexure-C cannot be edited.
+    # Phase 6 returns logic flips this when a credit note's reference invoice
+    # is in a submitted return.
+    is_annexure_c_linked = models.BooleanField(default=False)
+
     class Meta:
         db_table = "invoices"
         constraints = [

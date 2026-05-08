@@ -24,6 +24,17 @@ app.conf.beat_schedule = {
         "task": "inventory.low_stock_digest",
         "schedule": crontab(hour=7, minute=0),
     },
+    # Phase 4 — FBR
+    "fbr-finalize-aged-invoices-hourly": {
+        "task": "fbr.finalize_aged_invoices",
+        "schedule": crontab(minute=0),
+    },
+    "fbr-recompute-monthly-budgets": {
+        "task": "fbr.recompute_monthly_budgets",
+        # 00:05 PKT on the 1st of each month. Django's TIME_ZONE is PKT,
+        # and Celery is configured to use that timezone too.
+        "schedule": crontab(hour=0, minute=5, day_of_month=1),
+    },
 }
 
 
