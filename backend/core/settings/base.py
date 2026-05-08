@@ -59,8 +59,11 @@ INSTALLED_APPS = [
     "apps.catalog",
     "apps.inventory",
     "apps.notifications",
-    # Local — placeholders, registered to reserve migration order (no models yet).
+    # Local — Phase 2
+    "apps.customers",
+    "apps.sales",
     "apps.audit",
+    # Local — placeholders, registered to reserve migration order (no models yet).
     "apps.sync",
 ]
 

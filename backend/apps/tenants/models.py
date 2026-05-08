@@ -257,3 +257,80 @@ class Terminal(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} @ {self.branch_id}"
+
+
+class CashSession(models.Model):
+    """A day-open / day-close cycle. One per terminal at a time per the
+    `idx_cash_sessions_terminal_open` partial uniqueness rule.
+
+    Tracking lives on the cash_sessions row; the actual cash math runs in
+    apps/sales/services/sessions.py. Money in DECIMAL(14,4).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+
+    tenant = models.ForeignKey(
+        Tenant, on_delete=models.CASCADE, related_name="cash_sessions"
+    )
+    branch = models.ForeignKey(
+        Branch, on_delete=models.PROTECT, related_name="cash_sessions"
+    )
+    terminal = models.ForeignKey(
+        Terminal, on_delete=models.PROTECT, related_name="cash_sessions"
+    )
+    cashier = models.ForeignKey(
+        "accounts.User", on_delete=models.PROTECT, related_name="cash_sessions"
+    )
+
+    opened_at = models.DateTimeField()
+    opened_with_amount = models.DecimalField(max_digits=14, decimal_places=4)
+    closed_at = models.DateTimeField(blank=True, null=True)
+    closed_with_amount = models.DecimalField(
+        max_digits=14, decimal_places=4, blank=True, null=True
+    )
+    expected_amount = models.DecimalField(
+        max_digits=14, decimal_places=4, blank=True, null=True
+    )
+    variance = models.DecimalField(
+        max_digits=14, decimal_places=4, blank=True, null=True
+    )
+    variance_reason = models.TextField(blank=True, default="")
+
+    total_sales = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    total_returns = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    cash_in = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    cash_out = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+
+    status = models.CharField(
+        max_length=20,
+        choices=(("open", "Open"), ("closed", "Closed")),
+        default="open",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "cash_sessions"
+        indexes = [
+            models.Index(
+                fields=["terminal"], name="idx_cash_sessions_term_open",
+                condition=models.Q(status="open"),
+            ),
+            models.Index(
+                fields=["tenant", "-opened_at"],
+                name="idx_cash_sessions_tenant_date",
+            ),
+        ]
+        constraints = [
+            # At most one open session per terminal.
+            models.UniqueConstraint(
+                fields=["terminal"], condition=models.Q(status="open"),
+                name="uniq_open_session_per_terminal",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"CashSession {self.terminal_id} {self.opened_at:%Y-%m-%d}"

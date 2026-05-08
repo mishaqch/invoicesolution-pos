@@ -21,6 +21,9 @@ EXEMPT = {
     # TenantMembership: legitimately spans tenants (a single user can list
     # all of their memberships across tenants).
     ("tenants", "tenantmembership"),
+    # AuditLog: tenant FK is intentionally nullable so audits survive
+    # tenant deletion (legal: a deleted tenant's audit trail is still ours).
+    ("audit", "auditlog"),
 }
 
 
