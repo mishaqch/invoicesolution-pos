@@ -1,0 +1,146 @@
+import { ArrowLeft, RotateCw } from "lucide-react";
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useRetrySyncRow, useSyncLog, useSyncStatus, useTerminals } from "@/lib/queries";
+
+export default function TerminalSyncDetail() {
+  const { id } = useParams<{ id: string }>();
+  const [statusFilter, setStatusFilter] = useState("");
+  const { data: status } = useSyncStatus(id);
+  const { data: log } = useSyncLog({
+    terminal_id: id,
+    status: statusFilter || undefined,
+  });
+  const terminals = useTerminals();
+  const retry = useRetrySyncRow();
+
+  const terminal = terminals.data?.results.find((t) => t.id === id);
+  const summary = status?.results[0];
+
+  return (
+    <div className="space-y-4">
+      <Link
+        to="/sync"
+        className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="mr-1 h-4 w-4" /> Back to sync health
+      </Link>
+
+      <h1 className="text-2xl font-semibold tracking-tight">
+        {terminal?.name ?? "Terminal"}
+      </h1>
+
+      {summary && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Status</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <div className="text-muted-foreground">Pending</div>
+              <div className="font-mono text-2xl">{summary.pending}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Failed</div>
+              <div
+                className={`font-mono text-2xl ${
+                  summary.failed > 0 ? "text-destructive" : ""
+                }`}
+              >
+                {summary.failed}
+              </div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Last sync</div>
+              <div className="text-xs">
+                {summary.last_processed_at
+                  ? new Date(summary.last_processed_at).toLocaleString()
+                  : "—"}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="max-w-xs"
+        >
+          <option value="">All</option>
+          <option value="received">Received (in flight)</option>
+          <option value="processed">Processed</option>
+          <option value="failed">Failed</option>
+          <option value="duplicate">Duplicate</option>
+        </Select>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm">Recent sync events</CardTitle></CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Received</TableHead>
+                <TableHead>Entity</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Error</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(log?.results ?? []).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                    No events.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                log?.results.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(row.received_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{row.entity_type}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.action}</TableCell>
+                    <TableCell>
+                      <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+                    </TableCell>
+                    <TableCell className="max-w-md text-xs text-muted-foreground">
+                      {row.error_message ?? ""}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {row.status === "failed" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={retry.isPending}
+                          onClick={() => retry.mutate(row.id)}
+                        >
+                          <RotateCw className="mr-1 h-3 w-3" /> Retry
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function statusVariant(s: string): "default" | "secondary" | "destructive" | "outline" {
+  if (s === "processed") return "default";
+  if (s === "failed") return "destructive";
+  if (s === "duplicate") return "secondary";
+  return "outline";
+}

@@ -262,3 +262,83 @@ export function useCancelInvoice() {
     },
   });
 }
+
+// ---------- Sync (Phase 3) ----------
+
+export interface TerminalSyncStatus {
+  terminal: string;
+  pending: number;
+  failed: number;
+  last_processed_at: string | null;
+  last_seen_at: string | null;
+}
+
+export interface SyncLogEntry {
+  id: string;
+  terminal: string;
+  client_uuid: string;
+  entity_type: string;
+  entity_id: string | null;
+  action: string;
+  status: "received" | "processed" | "failed" | "duplicate";
+  error_message: string | null;
+  received_at: string;
+  processed_at: string | null;
+}
+
+export function useSyncStatus(terminalId?: string) {
+  return useQuery({
+    queryKey: ["sync-status", terminalId],
+    queryFn: () =>
+      api<{ results: TerminalSyncStatus[] }>(
+        `/sync/status/${terminalId ? `?terminal_id=${terminalId}` : ""}`,
+      ),
+    refetchInterval: 5000,
+  });
+}
+
+export function useSyncLog(filters: { terminal_id?: string; status?: string } = {}) {
+  const cleaned: Record<string, string> = {};
+  for (const [k, v] of Object.entries(filters)) if (v) cleaned[k] = v;
+  const query = new URLSearchParams(cleaned).toString();
+  return useQuery({
+    queryKey: ["sync-log", filters],
+    queryFn: () =>
+      api<{ count: number; results: SyncLogEntry[] }>(
+        `/sync/log/${query ? `?${query}` : ""}`,
+      ),
+    refetchInterval: 5000,
+  });
+}
+
+export function useRetrySyncRow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api(`/sync/log/${id}/retry/`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sync-log"] });
+      qc.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+}
+
+export interface AdminTerminal {
+  id: string;
+  branch: string;
+  name: string;
+  device_fingerprint: string;
+  os_version: string | null;
+  app_version: string | null;
+  is_active: boolean;
+  last_seen_at: string | null;
+  last_synced_at: string | null;
+  customer_display_enabled: boolean;
+}
+
+export function useTerminals() {
+  return useQuery({
+    queryKey: ["terminals"],
+    queryFn: () => api<{ count: number; results: AdminTerminal[] }>("/terminals/"),
+  });
+}

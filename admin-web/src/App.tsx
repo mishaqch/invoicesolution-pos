@@ -18,6 +18,8 @@ import LoginRoute from "@/routes/login";
 import HeldSalesAdminList from "@/routes/sales/held-sales";
 import InvoiceDetail from "@/routes/sales/invoice-detail";
 import InvoicesList from "@/routes/sales/invoices";
+import SyncHealth from "@/routes/sync/sync-health";
+import TerminalSyncDetail from "@/routes/sync/terminal-detail";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +64,11 @@ export default function App() {
               <Route index element={<InvoicesList />} />
               <Route path="held" element={<HeldSalesAdminList />} />
               <Route path=":id" element={<InvoiceDetail />} />
+            </Route>
+
+            <Route path="sync">
+              <Route index element={<SyncHealth />} />
+              <Route path="terminals/:id" element={<TerminalSyncDetail />} />
             </Route>
           </Route>
 

@@ -1,4 +1,5 @@
 import {
+  Activity,
   BarChart3,
   Boxes,
   Building2,
@@ -43,6 +44,7 @@ const INVENTORY: Item[] = [
 
 const ADMIN: Item[] = [
   { to: "/branches", label: "Branches", icon: Building2 },
+  { to: "/sync", label: "Sync health", icon: Activity, end: true },
   { to: "/customers", label: "Customers", icon: Users, disabled: true },
   { to: "/reports", label: "Reports", icon: BarChart3, disabled: true },
   { to: "/fbr", label: "FBR", icon: FileText, disabled: true },
