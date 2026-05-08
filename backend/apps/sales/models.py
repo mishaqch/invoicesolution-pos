@@ -329,6 +329,17 @@ class Payment(TenantScopedModel):
     )
     notes = models.TextField(blank=True, null=True)
 
+    # Phase 5 — refund framework. Set on a refund row pointing back to the
+    # original payment. Phase 6 returns logic populates this; Phase 5 just
+    # makes the column available so the refund flow has a place to land.
+    refund_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="refunds",
+    )
+
     class Meta:
         db_table = "payments"
         indexes = [

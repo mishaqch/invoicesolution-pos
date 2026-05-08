@@ -334,3 +334,61 @@ class CashSession(models.Model):
 
     def __str__(self) -> str:
         return f"CashSession {self.terminal_id} {self.opened_at:%Y-%m-%d}"
+
+
+# ---------------------------------------------------------------------------
+# Per-tenant settings (DATABASE_SCHEMA.md §11). Phase 5 ships the payment-
+# relevant subset; receipt/FBR/notification subsets land in Phase 8 polish.
+# ---------------------------------------------------------------------------
+
+
+PAYMENT_METHODS = (
+    "cash",
+    "card_credit",
+    "card_debit",
+    "easypaisa",
+    "jazzcash",
+    "raast",
+    "bank_transfer",
+    "store_credit",
+    "cheque",
+)
+
+
+class TenantSettings(models.Model):
+    tenant = models.OneToOneField(
+        Tenant,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="settings",
+    )
+
+    # Payment config
+    enabled_payment_methods = ArrayField(
+        models.CharField(max_length=30),
+        default=list,
+        blank=True,
+    )
+
+    easypaisa_merchant_id = models.CharField(max_length=50, blank=True, default="")
+    easypaisa_qr_url = models.TextField(blank=True, default="")
+
+    jazzcash_merchant_id = models.CharField(max_length=50, blank=True, default="")
+    jazzcash_qr_url = models.TextField(blank=True, default="")
+
+    raast_iban = models.CharField(max_length=34, blank=True, default="")
+    raast_qr_url = models.TextField(blank=True, default="")
+
+    bank_account_name = models.CharField(max_length=100, blank=True, default="")
+    bank_account_iban = models.CharField(max_length=34, blank=True, default="")
+    bank_account_bank = models.CharField(max_length=50, blank=True, default="")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "tenant_settings"
+
+    def __str__(self) -> str:
+        return f"Settings {self.tenant_id}"

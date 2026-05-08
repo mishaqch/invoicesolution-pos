@@ -7,5 +7,6 @@ class TenantsConfig(AppConfig):
     label = "tenants"
 
     def ready(self) -> None:
-        # Register the tenant-scoping system check.
+        # Register the tenant-scoping system check + signals.
         from . import checks  # noqa: F401
+        from . import signals  # noqa: F401

@@ -129,15 +129,18 @@ def create_invoice(
             reason=f"Sale {invoice.local_invoice_number}",
         )
 
+    # Phase 5 — route every tender through the per-method adapter so the
+    # method-specific fields (card_last4, wallet_transaction_id, etc.) are
+    # validated + populated, and side effects (store_credit debit, ledger
+    # entry, cheque pending status) fire correctly.
+    from apps.payments.adapters import get_adapter
     for p in payments:
-        Payment.objects.create(
-            tenant_id=tenant_id,
+        adapter = get_adapter(p["payment_method"])
+        adapter.record_payment(
             invoice=invoice,
-            customer=customer,
-            payment_method=p["payment_method"],
             amount=Decimal(str(p["amount"])),
-            received_by=cashier,
-            status="completed",
+            data=p,
+            user=cashier,
         )
 
     # Customer ledger entry — only for registered customers (per Phase 2 plan).

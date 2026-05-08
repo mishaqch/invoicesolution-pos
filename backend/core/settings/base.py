@@ -73,6 +73,8 @@ INSTALLED_APPS = [
     "apps.sync",
     # Local — Phase 4
     "apps.fbr",
+    # Local — Phase 5
+    "apps.payments",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
