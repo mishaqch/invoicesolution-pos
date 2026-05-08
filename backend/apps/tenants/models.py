@@ -9,6 +9,7 @@ from __future__ import annotations
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
+from apps.tenants.managers import TenantScopedManager
 from core.uuid7 import uuid7
 
 # ---------------------------------------------------------------------------
@@ -153,3 +154,106 @@ class TenantMembership(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id} → {self.tenant_id} ({self.role})"
+
+
+# ---------------------------------------------------------------------------
+# Locations & devices (DATABASE_SCHEMA.md §2)
+# ---------------------------------------------------------------------------
+
+
+class Branch(models.Model):
+    """A physical outlet."""
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="branches",
+    )
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=20)
+    address = models.TextField()
+    city = models.CharField(max_length=100)
+    province = models.CharField(max_length=20, choices=PROVINCES)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+
+    is_active = models.BooleanField(default=True)
+    is_default = models.BooleanField(default=False)
+    fbr_pos_id = models.CharField(max_length=50, blank=True, null=True)
+
+    receipt_header = models.TextField(blank=True, null=True)
+    receipt_footer = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    deleted_at = models.DateTimeField(blank=True, null=True)
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "branches"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant", "code"],
+                name="uniq_branch_tenant_code",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["tenant"],
+                name="idx_branches_tenant",
+                condition=models.Q(deleted_at__isnull=True),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
+
+class Terminal(models.Model):
+    """A POS terminal device. Each Electron install registers as one."""
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+
+    tenant = models.ForeignKey(
+        Tenant,
+        on_delete=models.CASCADE,
+        related_name="terminals",
+    )
+    branch = models.ForeignKey(
+        Branch,
+        on_delete=models.CASCADE,
+        related_name="terminals",
+    )
+    name = models.CharField(max_length=100)
+    device_fingerprint = models.CharField(max_length=128, unique=True)
+    os_version = models.CharField(max_length=50, blank=True, null=True)
+    app_version = models.CharField(max_length=20, blank=True, null=True)
+
+    printer_config = models.JSONField(default=dict, blank=True)
+    scanner_config = models.JSONField(default=dict, blank=True)
+    drawer_config = models.JSONField(default=dict, blank=True)
+    customer_display_enabled = models.BooleanField(default=False)
+
+    is_active = models.BooleanField(default=True)
+    last_seen_at = models.DateTimeField(blank=True, null=True)
+    last_synced_at = models.DateTimeField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "terminals"
+        indexes = [
+            models.Index(
+                fields=["branch"],
+                name="idx_terminals_branch",
+                condition=models.Q(is_active=True),
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} @ {self.branch_id}"

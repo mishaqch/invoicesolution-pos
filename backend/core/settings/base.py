@@ -55,6 +55,10 @@ INSTALLED_APPS = [
     # Local — Phase 0
     "apps.tenants",
     "apps.accounts",
+    # Local — Phase 1
+    "apps.catalog",
+    "apps.inventory",
+    "apps.notifications",
     # Local — placeholders, registered to reserve migration order (no models yet).
     "apps.audit",
     "apps.sync",
@@ -162,6 +166,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 50,
     "DEFAULT_THROTTLE_CLASSES": (
         "rest_framework.throttling.ScopedRateThrottle",
     ),

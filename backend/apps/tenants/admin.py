@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Tenant, TenantMembership
+from .models import Branch, Tenant, TenantMembership, Terminal
 
 
 @admin.register(Tenant)
@@ -19,3 +19,21 @@ class TenantMembershipAdmin(admin.ModelAdmin):
     list_filter = ("role", "is_active")
     readonly_fields = ("id", "created_at", "updated_at")
     autocomplete_fields = ("tenant", "user")
+
+
+@admin.register(Branch)
+class BranchAdmin(admin.ModelAdmin):
+    list_display = ("name", "code", "tenant", "city", "province", "is_active", "is_default")
+    search_fields = ("name", "code", "tenant__business_name", "city")
+    list_filter = ("province", "is_active", "is_default")
+    readonly_fields = ("id", "created_at", "updated_at")
+    autocomplete_fields = ("tenant",)
+
+
+@admin.register(Terminal)
+class TerminalAdmin(admin.ModelAdmin):
+    list_display = ("name", "branch", "tenant", "is_active", "last_seen_at")
+    search_fields = ("name", "device_fingerprint", "branch__name")
+    list_filter = ("is_active", "customer_display_enabled")
+    readonly_fields = ("id", "created_at", "updated_at", "last_seen_at", "last_synced_at")
+    autocomplete_fields = ("tenant", "branch")

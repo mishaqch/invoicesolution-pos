@@ -18,6 +18,8 @@ from apps.tenants.managers import TenantScopedManager
 
 # (app_label, model_name) — opt out of the manager requirement.
 EXEMPT = {
+    # TenantMembership: legitimately spans tenants (a single user can list
+    # all of their memberships across tenants).
     ("tenants", "tenantmembership"),
 }
 
