@@ -4,8 +4,21 @@ from __future__ import annotations
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 
 from apps.tenants.models import Tenant, TenantMembership
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache_between_tests():
+    """Clear Django cache (used by DRF throttles) before every test.
+
+    Without this, the LocMem cache accumulates throttle counters across the
+    test suite and cascading 429s ensue.
+    """
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture

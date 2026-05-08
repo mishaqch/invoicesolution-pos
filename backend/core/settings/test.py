@@ -23,3 +23,8 @@ CELERY_TASK_EAGER_PROPAGATES = True
 # Don't hit a real Redis for broker URL in tests.
 CELERY_BROKER_URL = "memory://"
 CELERY_RESULT_BACKEND = "cache+memory://"
+
+# NB: throttle counters live in Django cache (LocMem in tests). The
+# autouse fixture in tests/conftest.py clears the cache between tests so
+# each one starts with a fresh quota; we leave the throttle CLASSES alone
+# so we still verify the production-shaped throttling behaviour.
