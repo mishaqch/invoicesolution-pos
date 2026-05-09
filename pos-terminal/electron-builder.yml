@@ -1,28 +1,70 @@
-# Electron-builder config — stub for Phase 0.
-# Real installer signing + auto-update channel land in Phase 8.
+# electron-builder config — Phase 8.
+#
+# Phase 0 shipped a minimal stub; Phase 8 fills in code-signing hooks,
+# NSIS installer options, auto-update channel.
+#
+# Usage in CI:
+#   CSC_LINK=<path-to-cert.p12 or https url>  \
+#   CSC_KEY_PASSWORD=<cert password>          \
+#   GH_TOKEN=<github token for auto-update>   \
+#   npm run package
+#
+# Without CSC_LINK + CSC_KEY_PASSWORD the build still emits a working
+# .exe — but unsigned. Windows Smartscreen will warn users on first
+# run. Do NOT ship unsigned builds to customers.
 
-appId: com.pos.pakistanpos
+appId: pk.pakistanpos.terminal
 productName: Pakistan POS
+copyright: Copyright (c) 2026 Pakistan POS
+
 directories:
   output: release/${version}
   buildResources: build
+
 files:
   - "out/**/*"
+  - "dist/**/*"
+  - "dist-electron/**/*"
   - "package.json"
+  - "!**/*.{md,markdown,test.js,spec.js}"
+  - "!**/.eslintrc*"
 
-# Native modules need to be rebuilt against Electron's Node ABI on install.
-nodeGypRebuild: false
+asar: true
+
+# better-sqlite3 has native bindings — keep it out of the asar so the
+# .node loader can find the prebuild.
 asarUnpack:
   - node_modules/better-sqlite3/**/*
+
+nodeGypRebuild: false
 
 win:
   target:
     - target: nsis
       arch: [x64]
+  signingHashAlgorithms: [sha256]
+  publisherName: Pakistan POS
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
 linux:
   target:
     - AppImage
     - deb
+  category: Office
+  maintainer: support@pakistanpos.example.com
+
 mac:
   target:
     - dmg
+
+# Auto-update from a GitHub Releases channel. The deployer creates a
+# private repo for releases and sets GH_TOKEN in CI.
+publish:
+  provider: github
+  releaseType: release

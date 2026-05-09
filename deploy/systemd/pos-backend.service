@@ -1,0 +1,27 @@
+[Unit]
+Description=POS backend (Gunicorn / Django)
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=pos
+Group=pos
+WorkingDirectory=/srv/pos/backend
+EnvironmentFile=/etc/pos/backend.env
+ExecStart=/srv/pos/venv/bin/gunicorn core.wsgi:application \
+    --bind 127.0.0.1:8000 \
+    --workers 3 \
+    --timeout 30 \
+    --access-logfile - \
+    --error-logfile -
+Restart=always
+RestartSec=5
+
+# Hardening — enable cautiously after first deploy proves stable.
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

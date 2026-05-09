@@ -1,0 +1,37 @@
+# Postgres tuning for the POS workload (per DATABASE_SCHEMA.md §12).
+#
+# Target VPS: 2 CPU / 4 GB RAM (Contabo / Hetzner small).
+# Workload: ~10-50 small tenants, write-heavy from sync, read-heavy
+# from reports.
+#
+# Apply by appending to /etc/postgresql/16/main/postgresql.conf — DO
+# NOT just replace the file.
+
+# Memory
+shared_buffers = 1GB                 # 25% of RAM
+effective_cache_size = 3GB           # 75% of RAM (an estimate, not an alloc)
+work_mem = 16MB                      # per-sort/hash; many small tenants → keep low
+maintenance_work_mem = 256MB
+
+# Write performance — POS workload is write-heavy (every sale).
+checkpoint_completion_target = 0.9
+wal_buffers = 16MB
+default_statistics_target = 100
+
+# Random vs sequential — SSD-only deployment.
+random_page_cost = 1.1
+effective_io_concurrency = 200
+
+# Concurrent connections — gunicorn workers + celery + admin.
+max_connections = 100
+
+# Logging — log slow queries (>1s) so report regressions surface.
+log_min_duration_statement = 1000
+log_line_prefix = '%t [%p] %u@%d '
+log_lock_waits = on
+
+# Autovacuum tuning for the write-heavy invoices table. Drop the scale
+# factor so vacuum kicks in on smaller deltas; the table grows fast
+# but most rows never UPDATE after first insert.
+autovacuum_vacuum_scale_factor = 0.05
+autovacuum_analyze_scale_factor = 0.025

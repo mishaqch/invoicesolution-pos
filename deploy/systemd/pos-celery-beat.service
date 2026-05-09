@@ -1,0 +1,24 @@
+[Unit]
+Description=POS Celery beat (scheduler)
+After=network.target redis.service postgresql.service
+Wants=redis.service postgresql.service
+
+[Service]
+Type=simple
+User=pos
+Group=pos
+WorkingDirectory=/srv/pos/backend
+EnvironmentFile=/etc/pos/backend.env
+ExecStart=/srv/pos/venv/bin/celery -A core beat \
+    --loglevel=info \
+    --logfile=/var/log/pos/celery-beat.log \
+    --schedule=/var/lib/pos/celerybeat-schedule
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
