@@ -18,5 +18,20 @@ export default defineConfig(({ mode }) => {
         "/api": env.VITE_API_URL ?? "http://localhost:8000",
       },
     },
+    build: {
+      // Phase 8 — keep first paint <1s on 3G. Vendor split lets the
+      // browser cache react/router/query independently from app code,
+      // which dominates the bundle once the report viewer + wizard ship.
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            "react-vendor": ["react", "react-dom", "react-router-dom"],
+            "query-vendor": ["@tanstack/react-query"],
+            "form-vendor": ["react-hook-form", "@hookform/resolvers", "zod"],
+          },
+        },
+      },
+      chunkSizeWarningLimit: 600,
+    },
   };
 });
