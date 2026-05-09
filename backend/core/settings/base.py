@@ -77,6 +77,8 @@ INSTALLED_APPS = [
     "apps.payments",
     # Local — Phase 6
     "apps.returns",
+    # Local — Phase 7
+    "apps.reports",
 ]
 
 AUTH_USER_MODEL = "accounts.User"

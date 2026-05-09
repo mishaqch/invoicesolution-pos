@@ -17,6 +17,8 @@ dependencies = [
     "cryptography==43.0.1",
     "qrcode[pil]==7.4.2",
     "requests==2.32.3",
+    "openpyxl==3.1.5",
+    "reportlab==4.2.5",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +35,9 @@ dev = [
 # ---------------------------------------------------------------------------
 # Tool config
 # ---------------------------------------------------------------------------
+
+[tool.setuptools]
+packages = ["core", "apps"]
 
 [tool.ruff]
 target-version = "py312"

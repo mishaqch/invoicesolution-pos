@@ -35,6 +35,22 @@ app.conf.beat_schedule = {
         # and Celery is configured to use that timezone too.
         "schedule": crontab(hour=0, minute=5, day_of_month=1),
     },
+    # Phase 7 — reports aggregates
+    "reports-rebuild-aggregates-business-hours": {
+        "task": "reports.rebuild_aggregates_today",
+        # Every 5 minutes during business hours (09:00–22:00 PKT).
+        "schedule": crontab(minute="*/5", hour="9-22"),
+    },
+    "reports-rebuild-aggregates-overnight": {
+        "task": "reports.rebuild_aggregates_today",
+        # Hourly off-hours.
+        "schedule": crontab(minute=0, hour="0-8,23"),
+    },
+    "reports-rebuild-aggregates-yesterday": {
+        "task": "reports.rebuild_aggregates_yesterday",
+        # 02:00 PKT — finalize yesterday so late-arriving syncs land.
+        "schedule": crontab(hour=2, minute=0),
+    },
 }
 
 
