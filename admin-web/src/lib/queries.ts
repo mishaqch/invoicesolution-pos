@@ -658,14 +658,25 @@ export interface ManualInvoiceLine {
 
 export interface ManualInvoicePayment {
   payment_method:
-    | "cash" | "card" | "easypaisa" | "jazzcash" | "raast"
-    | "cheque" | "bank_transfer" | "store_credit" | "credit";
+    | "cash" | "card_credit" | "card_debit"
+    | "easypaisa" | "jazzcash" | "raast"
+    | "cheque" | "bank_transfer" | "store_credit";
   amount: string;
-  reference?: string;
-  cheque_number?: string | null;
-  cheque_bank?: string | null;
-  cheque_due_date?: string | null;
-  cheque_status?: string | null;
+  // Card (card_credit / card_debit) — last4 + auth_code required, rrn optional
+  card_last4?: string;
+  card_auth_code?: string;
+  card_rrn?: string;
+  card_terminal_id?: string;
+  // Wallet (easypaisa / jazzcash)
+  wallet_transaction_id?: string;
+  // Raast
+  raast_transaction_id?: string;
+  // Cheque
+  cheque_number?: string;
+  bank_name?: string;
+  cheque_date?: string;
+  // Bank transfer (also uses bank_name)
+  bank_reference?: string;
 }
 
 export interface ManualInvoiceInput {

@@ -226,6 +226,30 @@ class InvoiceViewSet(
         invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
 
+    @action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        """Render the invoice as an FBR-compliant PDF.
+
+        Layout matches the PRAL Digital Invoicing User Manual page 24:
+        tenant logo + business info, FBR DI logo + QR (when validated),
+        seller/buyer/summary blocks, line items table with C/E status
+        flags. The QR is only rendered for FBR-validated invoices —
+        a missing FBR number means the QR is intentionally absent so
+        customers can see the invoice hasn't been confirmed yet.
+        """
+        from django.http import HttpResponse
+        from .services.invoice_pdf import render_invoice_pdf
+
+        invoice = self.get_object()
+        # The renderer needs the related tenant for header branding.
+        invoice.tenant  # touch to materialise the FK
+        pdf_bytes = render_invoice_pdf(invoice)
+        resp = HttpResponse(pdf_bytes, content_type="application/pdf")
+        filename = f"invoice-{invoice.local_invoice_number}.pdf"
+        disposition = "attachment" if request.query_params.get("download") else "inline"
+        resp["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+        return resp
+
     def _fetch_tenant_object(self, model, pk):
         try:
             return model.objects.for_tenant(self.request.tenant_id).get(pk=pk)

@@ -248,3 +248,82 @@ def test_per_item_cancel_outside_72h_rejected(
     )
     assert resp.status_code == 400
     assert "72-hour" in resp.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_invoice_pdf_renders_and_returns_valid_pdf(
+    tenant, branch, terminal, owner_user, stocked_product,
+):
+    """The /pdf/ endpoint should return a valid PDF document."""
+    api = APIClient()
+    _login(api, owner_user.email)
+    body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "1", "unit_price": "1000",
+            "tax_rate": "18", "is_taxable": True,
+            "hs_code": "0101.2100",
+            "uom_code": "PCS",
+        }],
+        "payments": [{"payment_method": "cash", "amount": "1180"}],
+        "client_uuid": str(uuid.uuid4()),
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        create = api.post("/api/sales/invoices/manual/", body, format="json")
+    invoice_id = create.json()["id"]
+
+    resp = api.get(f"/api/sales/invoices/{invoice_id}/pdf/")
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == "application/pdf"
+    body_bytes = b"".join(resp.streaming_content) if hasattr(resp, "streaming_content") else resp.content
+    assert body_bytes[:4] == b"%PDF"
+    assert len(body_bytes) > 1000  # has actual content (header + body + table)
+
+
+@pytest.mark.django_db
+def test_invoice_pdf_includes_fbr_qr_when_validated(
+    tenant, branch, terminal, owner_user, stocked_product,
+):
+    """An FBR-validated invoice (has fbr_invoice_number + fbr_qr_payload)
+    should embed the QR image; a non-validated one should not."""
+    from apps.sales.services.invoice_pdf import render_invoice_pdf
+
+    api = APIClient()
+    _login(api, owner_user.email)
+    body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "1", "unit_price": "1000",
+            "tax_rate": "18", "is_taxable": True,
+        }],
+        "payments": [{"payment_method": "cash", "amount": "1180"}],
+        "client_uuid": str(uuid.uuid4()),
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        create = api.post("/api/sales/invoices/manual/", body, format="json")
+    inv = Invoice.objects.get(pk=create.json()["id"])
+
+    pdf_no_fbr = render_invoice_pdf(inv)
+    assert pdf_no_fbr[:4] == b"%PDF"
+    size_without_qr = len(pdf_no_fbr)
+
+    # Now stamp a valid FBR response and re-render — bytes go up because
+    # the QR image is now embedded.
+    from apps.fbr.qr import build_qr_payload
+    inv.fbr_invoice_number = "8885801DI20260510TEST123"
+    inv.fbr_qr_payload = build_qr_payload(
+        fbr_invoice_number=inv.fbr_invoice_number,
+        validated_at=inv.created_at,
+        amount=inv.grand_total,
+        seller_ntn=tenant.ntn,
+    )
+    inv.status = "valid"
+    inv.save()
+    pdf_with_fbr = render_invoice_pdf(inv)
+    assert pdf_with_fbr[:4] == b"%PDF"
+    # The QR image embed adds significant bytes — sanity check it grew.
+    assert len(pdf_with_fbr) > size_without_qr

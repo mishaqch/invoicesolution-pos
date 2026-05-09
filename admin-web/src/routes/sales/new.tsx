@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { ApiError } from "@/lib/api";
 import {
   useBranches,
   useCreateManualInvoice,
@@ -32,8 +33,8 @@ interface DraftLine {
 }
 
 const PAYMENT_METHODS: ManualInvoicePayment["payment_method"][] = [
-  "cash", "card", "easypaisa", "jazzcash", "raast",
-  "cheque", "bank_transfer", "credit", "store_credit",
+  "cash", "card_credit", "card_debit", "easypaisa", "jazzcash", "raast",
+  "cheque", "bank_transfer", "store_credit",
 ];
 
 function rs(amount: number | string): string {
@@ -97,6 +98,12 @@ export default function NewInvoiceRoute() {
     }
   }, [terminals.data, terminalId]);
 
+  // Track whether the single payment amount has been edited manually.
+  // While untouched (or matching the previous auto-fill), keep the
+  // amount synced to the grand total. Once split-tender (>1 row) the
+  // sync stops — multiple payments need manual amounts.
+  const [paymentAutoFilled, setPaymentAutoFilled] = useState(true);
+
   // Live totals — recompute on every cart edit. Mirrors the POS
   // pricing engine's logic at the line-level (qty * unit_price -
   // discount, tax = (line_net) * rate%).
@@ -133,6 +140,17 @@ export default function NewInvoiceRoute() {
     [payments],
   );
 
+  // Auto-fill the single payment row to match the grand total whenever
+  // the cart changes. Stops as soon as the user splits the tender or
+  // explicitly types a non-matching amount.
+  useEffect(() => {
+    if (payments.length !== 1 || !paymentAutoFilled) return;
+    const target = totals.grand.toFixed(2);
+    if (payments[0].amount !== target) {
+      setPayments((curr) => curr.map((p, i) => (i === 0 ? { ...p, amount: target } : p)));
+    }
+  }, [totals.grand, payments, paymentAutoFilled]);
+
   function addProduct(p: any) {
     setLines((curr) => [...curr, {
       product_id: p.id,
@@ -163,10 +181,17 @@ export default function NewInvoiceRoute() {
   }
 
   function addPayment() {
+    // Split tender — user takes manual control of amounts.
+    setPaymentAutoFilled(false);
     setPayments((curr) => [...curr, { payment_method: "cash", amount: "0" }]);
   }
   function removePayment(idx: number) {
-    setPayments((curr) => curr.filter((_, i) => i !== idx));
+    setPayments((curr) => {
+      const next = curr.filter((_, i) => i !== idx);
+      // Back down to one row → resume auto-fill.
+      if (next.length === 1) setPaymentAutoFilled(true);
+      return next;
+    });
   }
 
   async function submit() {
@@ -207,8 +232,27 @@ export default function NewInvoiceRoute() {
       });
       // Take the user to the new invoice's detail page.
       navigate(`/sales/${result.id}`);
-    } catch (e: any) {
-      setError(e?.message ?? "Save failed.");
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.data && typeof e.data === "object") {
+        // DRF validation errors are { field: ["message", ...] } or
+        // { field: [{ subfield: ["msg"] }] }. Render flat.
+        const parts: string[] = [];
+        const walk = (obj: any, prefix = ""): void => {
+          if (Array.isArray(obj)) {
+            obj.forEach((v) => walk(v, prefix));
+          } else if (obj && typeof obj === "object") {
+            for (const [k, v] of Object.entries(obj)) {
+              walk(v, prefix ? `${prefix}.${k}` : k);
+            }
+          } else {
+            parts.push(prefix ? `${prefix}: ${obj}` : String(obj));
+          }
+        };
+        walk(e.data);
+        setError(parts.join(" · ") || `API ${e.status}`);
+      } else {
+        setError(e instanceof Error ? e.message : "Save failed.");
+      }
     }
   }
 
@@ -468,49 +512,59 @@ export default function NewInvoiceRoute() {
               <Plus className="mr-1 h-4 w-4" /> Add payment
             </Button>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-3">
             {payments.map((p, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2">
-                <Select
-                  value={p.payment_method}
-                  onChange={(e) => setPaymentField(idx, {
-                    payment_method: e.target.value as ManualInvoicePayment["payment_method"],
-                  })}
-                  className="col-span-5"
-                >
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m} value={m}>{m.replace(/_/g, " ")}</option>
-                  ))}
-                </Select>
-                <Input
-                  value={p.amount}
-                  onChange={(e) => setPaymentField(idx, { amount: e.target.value })}
-                  className="col-span-5 text-right font-mono"
-                  inputMode="decimal"
-                  placeholder="0.00"
+              <div key={idx} className="space-y-2 rounded-md border p-2">
+                <div className="grid grid-cols-12 gap-2">
+                  <Select
+                    value={p.payment_method}
+                    onChange={(e) => setPaymentField(idx, {
+                      payment_method: e.target.value as ManualInvoicePayment["payment_method"],
+                    })}
+                    className="col-span-5"
+                  >
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>{m.replace(/_/g, " ")}</option>
+                    ))}
+                  </Select>
+                  <Input
+                    value={p.amount}
+                    onChange={(e) => {
+                      setPaymentAutoFilled(false);
+                      setPaymentField(idx, { amount: e.target.value });
+                    }}
+                    className="col-span-5 text-right font-mono"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
+                  <button
+                    onClick={() => removePayment(idx)}
+                    className="col-span-2 rounded-md text-muted-foreground hover:text-destructive"
+                    aria-label="Remove payment"
+                  >
+                    <Trash2 className="mx-auto h-4 w-4" />
+                  </button>
+                </div>
+                <PaymentExtraFields
+                  payment={p}
+                  onChange={(patch) => setPaymentField(idx, patch)}
                 />
-                <button
-                  onClick={() => removePayment(idx)}
-                  className="col-span-2 rounded-md text-muted-foreground hover:text-destructive"
-                  aria-label="Remove payment"
-                >
-                  <Trash2 className="mx-auto h-4 w-4" />
-                </button>
               </div>
             ))}
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                if (payments.length === 1) {
-                  setPaymentField(0, { amount: totals.grand.toFixed(2) });
-                }
-              }}
-              disabled={payments.length !== 1}
-            >
-              Match grand total to first payment
-            </Button>
+            {payments.length > 1 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  // User wants to reset to one auto-filled row.
+                  setPayments([{ payment_method: payments[0].payment_method, amount: totals.grand.toFixed(2) }]);
+                  setPaymentAutoFilled(true);
+                }}
+              >
+                Collapse to single payment
+              </Button>
+            )}
             <div className="flex justify-between border-t pt-2 text-sm">
               <span className="text-muted-foreground">Tendered</span>
               <span className={`font-mono ${
@@ -535,9 +589,10 @@ export default function NewInvoiceRoute() {
               placeholder="Any notes for this invoice (visible in admin only)…"
               className="w-full rounded-md border bg-background px-2 py-1 text-sm"
             />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Buyer: <Badge variant="outline">{customerName}</Badge>
-            </p>
+            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+              <span>Buyer:</span>
+              <Badge variant="outline">{customerName}</Badge>
+            </div>
             <p className="mt-1 text-xs text-muted-foreground">
               On submit, the invoice is created and queued for FBR
               submission. The FBR invoice number appears on the detail
@@ -562,4 +617,124 @@ export default function NewInvoiceRoute() {
       </div>
     </div>
   );
+}
+
+/**
+ * Per-method extra fields for payments. Mirrors what each adapter
+ * validates server-side (apps/payments/adapters/<method>.py):
+ *
+ *   card_credit / card_debit  → card_last4 (4 digits) + card_auth_code
+ *                               (6 digits); RRN optional
+ *   easypaisa / jazzcash       → wallet_transaction_id
+ *   raast                      → raast_transaction_id
+ *   cheque                     → cheque_number, bank_name, cheque_date
+ *   bank_transfer              → bank_name, bank_reference
+ *
+ * cash and store_credit need no extra fields.
+ */
+function PaymentExtraFields({
+  payment, onChange,
+}: {
+  payment: ManualInvoicePayment;
+  onChange: (patch: Partial<ManualInvoicePayment>) => void;
+}) {
+  const m = payment.payment_method;
+  if (m === "cash" || m === "store_credit") return null;
+
+  if (m === "card_credit" || m === "card_debit") {
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        <Input
+          value={payment.card_last4 ?? ""}
+          onChange={(e) => onChange({ card_last4: e.target.value })}
+          placeholder="Last 4 digits"
+          maxLength={4}
+          inputMode="numeric"
+          className="text-xs"
+        />
+        <Input
+          value={payment.card_auth_code ?? ""}
+          onChange={(e) => onChange({ card_auth_code: e.target.value })}
+          placeholder="Auth code (6 digits)"
+          maxLength={6}
+          inputMode="numeric"
+          className="text-xs"
+        />
+        <Input
+          value={payment.card_rrn ?? ""}
+          onChange={(e) => onChange({ card_rrn: e.target.value })}
+          placeholder="RRN (optional)"
+          className="text-xs"
+        />
+      </div>
+    );
+  }
+
+  if (m === "easypaisa" || m === "jazzcash") {
+    return (
+      <Input
+        value={payment.wallet_transaction_id ?? ""}
+        onChange={(e) => onChange({ wallet_transaction_id: e.target.value })}
+        placeholder="Wallet transaction ID — from the customer's app"
+        className="text-xs"
+      />
+    );
+  }
+
+  if (m === "raast") {
+    return (
+      <Input
+        value={payment.raast_transaction_id ?? ""}
+        onChange={(e) => onChange({ raast_transaction_id: e.target.value })}
+        placeholder="Raast transaction ID — from the customer's banking app"
+        className="text-xs"
+      />
+    );
+  }
+
+  if (m === "cheque") {
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        <Input
+          value={payment.cheque_number ?? ""}
+          onChange={(e) => onChange({ cheque_number: e.target.value })}
+          placeholder="Cheque number"
+          className="text-xs"
+        />
+        <Input
+          value={payment.bank_name ?? ""}
+          onChange={(e) => onChange({ bank_name: e.target.value })}
+          placeholder="Bank name"
+          className="text-xs"
+        />
+        <Input
+          type="date"
+          value={payment.cheque_date ?? ""}
+          onChange={(e) => onChange({ cheque_date: e.target.value })}
+          className="text-xs"
+        />
+      </div>
+    );
+  }
+
+  if (m === "bank_transfer") {
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          value={payment.bank_name ?? ""}
+          onChange={(e) => onChange({ bank_name: e.target.value })}
+          placeholder="Bank name"
+          className="text-xs"
+        />
+        <Input
+          value={payment.bank_reference ?? ""}
+          onChange={(e) => onChange({ bank_reference: e.target.value })}
+          placeholder="Bank reference"
+          className="text-xs"
+        />
+      </div>
+    );
+  }
+
+  return null;
 }

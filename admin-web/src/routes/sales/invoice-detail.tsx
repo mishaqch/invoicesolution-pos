@@ -1,4 +1,4 @@
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, Download, FileText, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -7,6 +7,31 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCancelInvoice, useCancelInvoiceItem, useInvoice } from "@/lib/queries";
+import { useAuthStore } from "@/stores/auth";
+
+async function openPdf(invoiceId: string, invoiceNumber: string, download: boolean) {
+  const access = useAuthStore.getState().access;
+  const url = `/api/sales/invoices/${invoiceId}/pdf/${download ? "?download=1" : ""}`;
+  const resp = await fetch(url, {
+    headers: { ...(access ? { Authorization: `Bearer ${access}` } : {}) },
+  });
+  if (!resp.ok) {
+    window.alert(`Failed to fetch PDF: ${resp.status}`);
+    return;
+  }
+  const blob = await resp.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  if (download) {
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = `invoice-${invoiceNumber}.pdf`;
+    a.click();
+  } else {
+    window.open(blobUrl, "_blank");
+  }
+  // Don't revoke immediately — Safari needs the URL alive for the new tab.
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+}
 
 function timeUntilDeadline(deadline: string | null): { remaining: string; expired: boolean } | null {
   if (!deadline) return null;
@@ -73,6 +98,20 @@ export default function InvoiceDetail() {
               {deadline.remaining} until edit window closes
             </Badge>
           )}
+          <Button
+            variant="outline"
+            onClick={() => openPdf(invoice.id, invoice.local_invoice_number, false)}
+            title="Open the invoice PDF in a new tab"
+          >
+            <FileText className="mr-1 h-4 w-4" /> View PDF
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => openPdf(invoice.id, invoice.local_invoice_number, true)}
+            title="Download the invoice PDF"
+          >
+            <Download className="mr-1 h-4 w-4" /> Download
+          </Button>
           {canCancel ? (
             <Button variant="destructive" onClick={() => setShowConfirm(true)}>
               Cancel sale

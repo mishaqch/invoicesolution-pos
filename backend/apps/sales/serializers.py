@@ -88,6 +88,11 @@ class CheckoutLineSerializer(serializers.Serializer):
         max_digits=5, decimal_places=2, required=False, default=0,
     )
     is_taxable = serializers.BooleanField(default=True)
+    # Manual / wholesaler flow lets the user override HS code + UoM per
+    # line without editing the catalog. Optional; backend ignores when
+    # absent and falls back to the product's catalog values.
+    hs_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    uom_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class CheckoutPaymentSerializer(serializers.Serializer):
