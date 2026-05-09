@@ -13,7 +13,8 @@
     "yes": "Yes",
     "no": "No",
     "amount": "Amount",
-    "rs": "Rs."
+    "rs": "Rs.",
+    "sign_out": "Sign out"
   },
   "login": {
     "title": "Sign in",
@@ -21,13 +22,20 @@
     "pin": "PIN",
     "password": "Password",
     "submit": "Sign in",
-    "invalid_credentials": "Email or password is incorrect."
+    "invalid_credentials": "Email or password is incorrect.",
+    "too_many_attempts": "Too many attempts. Try again in a few minutes.",
+    "network_error": "Could not sign in. Check the network."
   },
   "day_open": {
     "title": "Open the day",
     "opening_float": "Opening cash float",
     "open_button": "Open cash drawer",
-    "drawer_message": "Cash drawer will open. Count your float, then confirm."
+    "drawer_message": "Cash drawer will open. Count your float, then confirm.",
+    "greeting": "Good morning{{comma}}{{name}}.",
+    "opening_help": "Enter the cash float you are starting the day with.",
+    "opening": "Opening…",
+    "no_terminal": "No branch/terminal configured.",
+    "failed": "Failed to open session."
   },
   "day_close": {
     "title": "Close the day",
@@ -51,7 +59,11 @@
     "checkout": "Checkout",
     "return": "Return",
     "qty": "Qty",
-    "remove": "Remove"
+    "remove": "Remove",
+    "hold_prompt": "Hold sale — enter a label (e.g., customer name):",
+    "hold_confirm": "Sale held.",
+    "loading_catalog": "Loading catalog…",
+    "network_error": "Could not reach the server: {{error}}"
   },
   "payment": {
     "title": "Payment",
@@ -74,11 +86,13 @@
     "fbr_pending": "Submitting to FBR…",
     "print_receipt": "Print receipt",
     "email_receipt": "Email receipt",
-    "new_sale": "New sale"
+    "new_sale": "New sale",
+    "auto_return": "Returns to a new sale in {{seconds}}s."
   },
   "held_sales": {
     "title": "Held sales",
     "no_held": "No held sales",
+    "unlabelled": "(unlabelled)",
     "label": "Label",
     "items": "Items",
     "total": "Total",

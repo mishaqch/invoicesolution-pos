@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { CartPane } from "@/features/sale/CartPane";
@@ -12,6 +13,7 @@ import { useSessionStore } from "@/stores/session";
 
 export default function SaleRoute() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const ctx = usePosContext();
   const sync = useInitialCatalogSync();
   const user = useSessionStore((s) => s.user);
@@ -38,21 +40,19 @@ export default function SaleRoute() {
 
   function onHold() {
     if (lines.length === 0) return;
-    const label = window.prompt("Hold sale — enter a label (e.g., customer name):");
+    const label = window.prompt(t("sale.hold_prompt", "Hold sale — enter a label (e.g., customer name):"));
     if (!label) return;
-    // For Phase 2, holding the cart only affects the in-memory cart.
-    // Phase 3 will persist held drafts to SQLite through the sync engine.
     setHoldLabel(label);
     useSaleStore.getState().resetForNewSale();
-    window.alert(`Sale held as "${label}". (Recall list available from header.)`);
+    window.alert(t("sale.hold_confirm", "Sale held."));
     setStage("empty");
   }
 
   if (sync.status === "syncing" && sync.productsLocal === 0) {
-    return <Splash msg="Loading catalog…" />;
+    return <Splash msg={t("sale.loading_catalog", "Loading catalog…")} />;
   }
   if (sync.status === "error") {
-    return <Splash msg={`Couldn't reach the server: ${sync.error}`} variant="error" />;
+    return <Splash msg={t("sale.network_error", "Could not reach the server: {{error}}", { error: sync.error })} variant="error" />;
   }
 
   return (
@@ -72,21 +72,21 @@ export default function SaleRoute() {
             onClick={() => navigate("/held-sales")}
             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
           >
-            Held sales
+            {t("held_sales.title")}
           </button>
           <button
             type="button"
             onClick={() => navigate("/return")}
             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
           >
-            Return
+            {t("sale.return")}
           </button>
           <button
             type="button"
             onClick={() => navigate("/day-close")}
             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
           >
-            Day close
+            {t("day_close.title")}
           </button>
           <div className="text-right text-xs leading-tight">
             <div className="font-medium">{user?.full_name}</div>
@@ -96,7 +96,7 @@ export default function SaleRoute() {
             onClick={onLogout}
             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
           >
-            Sign out
+            {t("common.sign_out", "Sign out")}
           </button>
         </div>
       </header>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { usePosContext } from "@/features/sale/usePosContext";
 
 export default function DayOpenRoute() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const ctx = usePosContext();
   const user = useSessionStore((s) => s.user);
 
@@ -17,13 +19,13 @@ export default function DayOpenRoute() {
   const [error, setError] = useState<string | null>(null);
 
   if (ctx.loading) {
-    return <FullScreen msg="Loading…" />;
+    return <FullScreen msg={t("common.loading")} />;
   }
   if (ctx.error) {
     return <FullScreen msg={ctx.error} variant="error" />;
   }
   if (!ctx.branch || !ctx.terminal) {
-    return <FullScreen msg="No branch/terminal configured." variant="error" />;
+    return <FullScreen msg={t("day_open.no_terminal", "No branch/terminal configured.")} variant="error" />;
   }
   if (ctx.session) {
     // Already open — straight to sale.
@@ -75,7 +77,7 @@ export default function DayOpenRoute() {
       });
       navigate("/sale", { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? `API ${err.status}` : "Failed to open session.");
+      setError(err instanceof ApiError ? `API ${err.status}` : t("day_open.failed", "Failed to open session."));
     } finally {
       setBusy(false);
     }
@@ -88,23 +90,27 @@ export default function DayOpenRoute() {
           {ctx.branch.name} · {ctx.terminal.name}
         </div>
         <div className="mb-6 text-center text-lg font-semibold">
-          Good morning{user ? `, ${user.full_name.split(" ")[0]}` : ""}.
+          {t("day_open.greeting", "Good morning{{comma}}{{name}}.", {
+            comma: user ? ", " : "",
+            name: user?.full_name.split(" ")[0] ?? "",
+          })}
         </div>
 
-        <label className="text-sm font-medium">Opening cash</label>
+        <label className="text-sm font-medium">{t("day_open.opening_float")}</label>
         <input
           type="text"
           inputMode="decimal"
           value={opening}
           onChange={(e) => setOpening(e.target.value)}
+          aria-label={t("day_open.opening_float")}
           className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
         <p className="mt-2 text-xs text-muted-foreground">
-          Enter the cash float you're starting the day with.
+          {t("day_open.opening_help", "Enter the cash float you are starting the day with.")}
         </p>
 
         <Button className="mt-6 w-full" onClick={open} disabled={busy}>
-          {busy ? "Opening…" : "Open day"}
+          {busy ? t("day_open.opening", "Opening…") : t("day_open.title")}
         </Button>
         {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
       </div>

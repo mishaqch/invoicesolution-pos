@@ -1,5 +1,6 @@
 import { Check, Printer, ShoppingCart } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ interface State {
 
 export default function SuccessRoute() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { state } = useLocation();
   const s = (state as State) ?? {};
 
@@ -62,15 +64,15 @@ export default function SuccessRoute() {
         <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
           <Check className="h-10 w-10 text-green-700" strokeWidth={3} />
         </div>
-        <h1 className="mt-6 text-2xl font-semibold tracking-tight">Sale complete</h1>
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight">{t("success.title")}</h1>
         <div className="mt-2 font-mono text-sm text-muted-foreground">{s.local}</div>
 
         <dl className="mx-auto mt-6 grid max-w-xs grid-cols-2 gap-y-1 text-sm">
-          <dt className="text-muted-foreground">Total</dt>
+          <dt className="text-muted-foreground">{t("sale.total")}</dt>
           <dd className="text-right font-mono">Rs {s.grand}</dd>
-          <dt className="text-muted-foreground">Tendered</dt>
+          <dt className="text-muted-foreground">{t("payment.amount_tendered")}</dt>
           <dd className="text-right font-mono">Rs {s.tendered}</dd>
-          <dt className="text-muted-foreground">Change</dt>
+          <dt className="text-muted-foreground">{t("payment.change")}</dt>
           <dd className="text-right font-mono">Rs {s.change}</dd>
         </dl>
 
@@ -79,7 +81,7 @@ export default function SuccessRoute() {
             fbrNo ? "bg-green-100 text-green-900" : "bg-amber-100 text-amber-900"
           }`}
         >
-          {fbrNo ? `FBR #${fbrNo.slice(0, 16)}…` : "FBR pending — submitting…"}
+          {fbrNo ? `FBR #${fbrNo.slice(0, 16)}…` : t("success.fbr_pending")}
         </div>
 
         <div className="mt-6 grid grid-cols-2 gap-2">
@@ -99,14 +101,14 @@ export default function SuccessRoute() {
               }
             }}
           >
-            <Printer className="mr-1 h-4 w-4" /> Reprint
+            <Printer className="mr-1 h-4 w-4" /> {t("success.print_receipt")}
           </Button>
           <Button onClick={() => navigate("/sale", { replace: true })}>
-            <ShoppingCart className="mr-1 h-4 w-4" /> New sale
+            <ShoppingCart className="mr-1 h-4 w-4" /> {t("success.new_sale")}
           </Button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          Returns to a new sale automatically in {fbrNo ? "5" : "12"} seconds.
+          {t("success.auto_return", "Returns to a new sale in {{seconds}}s.", { seconds: fbrNo ? 5 : 12 })}
         </p>
       </div>
     </div>

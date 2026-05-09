@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { PinDots } from "@/components/pin/PinDots";
 import { PinKeypad } from "@/components/pin/PinKeypad";
 import { ApiError, api } from "@/lib/api";
@@ -16,6 +18,7 @@ const PIN_LEN_MAX = 6;
 
 export default function LoginRoute() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const signIn = useSessionStore((s) => s.signIn);
 
   // Phase 0 simplification: ask the cashier to identify themselves by email
@@ -47,11 +50,11 @@ export default function LoginRoute() {
         setShake(true);
         window.setTimeout(() => setShake(false), 400);
         if (err instanceof ApiError && err.status === 400) {
-          setError("Wrong PIN.");
+          setError(t("login.invalid_credentials"));
         } else if (err instanceof ApiError && err.status === 429) {
-          setError("Too many attempts. Try again in a few minutes.");
+          setError(t("login.too_many_attempts", "Too many attempts. Try again in a few minutes."));
         } else {
-          setError("Couldn't sign in. Check the network.");
+          setError(t("login.network_error", "Could not sign in. Check the network."));
         }
         setPin("");
       } finally {
@@ -80,7 +83,10 @@ export default function LoginRoute() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="relative flex min-h-screen items-center justify-center bg-muted/40 p-4">
+      <div className="absolute right-4 top-4">
+        <LanguageToggle />
+      </div>
       <div
         className={cn(
           "w-full max-w-sm rounded-2xl border bg-background p-6 shadow-sm",
@@ -90,14 +96,15 @@ export default function LoginRoute() {
         <div className="mb-1 text-center text-xs uppercase tracking-wide text-muted-foreground">
           {BRANCH_NAME} · {TERMINAL_NAME}
         </div>
-        <div className="mb-6 text-center text-lg font-semibold">Enter your PIN</div>
+        <div className="mb-6 text-center text-lg font-semibold">{t("login.title")}</div>
 
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="cashier@example.com"
+          placeholder={t("login.email")}
           autoComplete="email"
+          aria-label={t("login.email")}
           className="mb-6 h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
 
