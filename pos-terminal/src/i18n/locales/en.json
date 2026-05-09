@@ -1,0 +1,138 @@
+{
+  "common": {
+    "back": "Back",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "search": "Search",
+    "loading": "Loading…",
+    "error": "Error",
+    "retry": "Retry",
+    "yes": "Yes",
+    "no": "No",
+    "amount": "Amount",
+    "rs": "Rs."
+  },
+  "login": {
+    "title": "Sign in",
+    "email": "Email",
+    "pin": "PIN",
+    "password": "Password",
+    "submit": "Sign in",
+    "invalid_credentials": "Email or password is incorrect."
+  },
+  "day_open": {
+    "title": "Open the day",
+    "opening_float": "Opening cash float",
+    "open_button": "Open cash drawer",
+    "drawer_message": "Cash drawer will open. Count your float, then confirm."
+  },
+  "day_close": {
+    "title": "Close the day",
+    "expected": "Expected in drawer",
+    "counted": "Counted",
+    "variance": "Variance",
+    "submit": "Close day"
+  },
+  "sale": {
+    "title": "New sale",
+    "scan_or_search": "Scan barcode or search products",
+    "cart_empty": "Cart is empty",
+    "subtotal": "Subtotal",
+    "tax": "Tax",
+    "total": "Total",
+    "hold_sale": "Hold",
+    "recall_sale": "Recall",
+    "discount": "Discount",
+    "customer": "Customer",
+    "walk_in": "Walk-in",
+    "checkout": "Checkout",
+    "return": "Return",
+    "qty": "Qty",
+    "remove": "Remove"
+  },
+  "payment": {
+    "title": "Payment",
+    "method_cash": "Cash",
+    "method_card": "Card",
+    "method_wallet": "Wallet",
+    "method_cheque": "Cheque",
+    "method_credit": "Credit",
+    "method_store_credit": "Store credit",
+    "amount_due": "Amount due",
+    "amount_tendered": "Amount tendered",
+    "change": "Change",
+    "split": "Split payment",
+    "process": "Process payment"
+  },
+  "success": {
+    "title": "Sale complete",
+    "invoice_number": "Invoice number",
+    "fbr_number": "FBR invoice number",
+    "fbr_pending": "Submitting to FBR…",
+    "print_receipt": "Print receipt",
+    "email_receipt": "Email receipt",
+    "new_sale": "New sale"
+  },
+  "held_sales": {
+    "title": "Held sales",
+    "no_held": "No held sales",
+    "label": "Label",
+    "items": "Items",
+    "total": "Total",
+    "recall": "Recall",
+    "discard": "Discard"
+  },
+  "return": {
+    "title": "Return / refund",
+    "find_invoice": "Find original invoice",
+    "local_invoice": "Local invoice #",
+    "fbr_invoice": "FBR #",
+    "pick_lines": "Pick lines and quantities",
+    "reason": "Reason",
+    "refund_method": "Refund method",
+    "refund": "Refund",
+    "confirm_return": "Confirm return",
+    "no_matches": "No matches.",
+    "reasons": {
+      "damaged": "Damaged",
+      "wrong_item": "Wrong item",
+      "customer_changed_mind": "Customer changed mind",
+      "expired": "Expired",
+      "other": "Other"
+    }
+  },
+  "receipt": {
+    "header_thanks": "Thank you for your purchase",
+    "footer_visit_again": "Please visit again",
+    "ntn": "NTN",
+    "invoice_number": "Invoice #",
+    "date": "Date",
+    "cashier": "Cashier",
+    "qty": "Qty",
+    "price": "Price",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "tax": "Tax",
+    "grand_total": "Grand total",
+    "paid": "Paid",
+    "change": "Change",
+    "fbr_qr_label": "Scan to verify on FBR",
+    "fbr_invoice_number": "FBR Invoice #"
+  },
+  "customer_display": {
+    "welcome": "Welcome",
+    "scan_for_promo": "Scan items to begin",
+    "thank_you": "Thank you!",
+    "see_you": "See you again",
+    "scan_qr_to_pay": "Scan to pay",
+    "promo_default": "Quality products at fair prices"
+  },
+  "sms": {
+    "receipt": "Thank you for shopping at {{business}}. Invoice {{number}} for Rs. {{amount}}. View: {{url}}",
+    "low_stock": "Low stock alert: {{product}} at {{branch}} ({{quantity}} remaining)",
+    "day_close": "Day close at {{branch}}: Rs. {{gross}} gross, {{count}} invoices."
+  }
+}

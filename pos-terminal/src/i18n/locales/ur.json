@@ -1,0 +1,138 @@
+{
+  "common": {
+    "back": "واپس",
+    "cancel": "منسوخ",
+    "confirm": "تصدیق",
+    "save": "محفوظ کریں",
+    "delete": "حذف",
+    "edit": "ترمیم",
+    "search": "تلاش",
+    "loading": "لوڈ ہو رہا ہے…",
+    "error": "خرابی",
+    "retry": "دوبارہ کوشش",
+    "yes": "ہاں",
+    "no": "نہیں",
+    "amount": "رقم",
+    "rs": "روپے"
+  },
+  "login": {
+    "title": "سائن ان",
+    "email": "ای میل",
+    "pin": "پن",
+    "password": "پاس ورڈ",
+    "submit": "سائن ان",
+    "invalid_credentials": "ای میل یا پاس ورڈ غلط ہے۔"
+  },
+  "day_open": {
+    "title": "دن کا آغاز",
+    "opening_float": "ابتدائی نقد رقم",
+    "open_button": "کیش دراز کھولیں",
+    "drawer_message": "کیش دراز کھل جائے گا۔ نقد گنیں اور تصدیق کریں۔"
+  },
+  "day_close": {
+    "title": "دن کا اختتام",
+    "expected": "متوقع رقم",
+    "counted": "گنی گئی رقم",
+    "variance": "فرق",
+    "submit": "دن بند کریں"
+  },
+  "sale": {
+    "title": "نئی فروخت",
+    "scan_or_search": "بارکوڈ اسکین کریں یا تلاش کریں",
+    "cart_empty": "ٹوکری خالی ہے",
+    "subtotal": "ذیلی کل",
+    "tax": "ٹیکس",
+    "total": "کل",
+    "hold_sale": "ہولڈ",
+    "recall_sale": "واپس بلائیں",
+    "discount": "رعایت",
+    "customer": "گاہک",
+    "walk_in": "واک ان",
+    "checkout": "ادائیگی",
+    "return": "واپسی",
+    "qty": "مقدار",
+    "remove": "ہٹائیں"
+  },
+  "payment": {
+    "title": "ادائیگی",
+    "method_cash": "نقد",
+    "method_card": "کارڈ",
+    "method_wallet": "والٹ",
+    "method_cheque": "چیک",
+    "method_credit": "ادھار",
+    "method_store_credit": "اسٹور کریڈٹ",
+    "amount_due": "واجب الادا رقم",
+    "amount_tendered": "ادا کی گئی رقم",
+    "change": "بقایا",
+    "split": "تقسیم ادائیگی",
+    "process": "ادائیگی کریں"
+  },
+  "success": {
+    "title": "فروخت مکمل",
+    "invoice_number": "انوائس نمبر",
+    "fbr_number": "ایف بی آر انوائس نمبر",
+    "fbr_pending": "ایف بی آر کو بھیجا جا رہا ہے…",
+    "print_receipt": "رسید پرنٹ کریں",
+    "email_receipt": "رسید ای میل کریں",
+    "new_sale": "نئی فروخت"
+  },
+  "held_sales": {
+    "title": "ہولڈ کی گئی فروخت",
+    "no_held": "کوئی ہولڈ نہیں",
+    "label": "لیبل",
+    "items": "اشیاء",
+    "total": "کل",
+    "recall": "واپس بلائیں",
+    "discard": "رد کریں"
+  },
+  "return": {
+    "title": "واپسی / ریفنڈ",
+    "find_invoice": "اصل انوائس تلاش کریں",
+    "local_invoice": "لوکل انوائس #",
+    "fbr_invoice": "ایف بی آر #",
+    "pick_lines": "اشیاء اور مقدار منتخب کریں",
+    "reason": "وجہ",
+    "refund_method": "ریفنڈ کا طریقہ",
+    "refund": "ریفنڈ",
+    "confirm_return": "واپسی کی تصدیق",
+    "no_matches": "کوئی نتیجہ نہیں ملا۔",
+    "reasons": {
+      "damaged": "خراب",
+      "wrong_item": "غلط چیز",
+      "customer_changed_mind": "گاہک نے ارادہ بدلا",
+      "expired": "میعاد ختم",
+      "other": "دیگر"
+    }
+  },
+  "receipt": {
+    "header_thanks": "خریداری کا شکریہ",
+    "footer_visit_again": "دوبارہ تشریف لائیں",
+    "ntn": "این ٹی این",
+    "invoice_number": "انوائس #",
+    "date": "تاریخ",
+    "cashier": "کیشئر",
+    "qty": "مقدار",
+    "price": "قیمت",
+    "total": "کل",
+    "subtotal": "ذیلی کل",
+    "tax": "ٹیکس",
+    "grand_total": "حتمی کل",
+    "paid": "ادا شدہ",
+    "change": "بقایا",
+    "fbr_qr_label": "ایف بی آر پر تصدیق کے لیے اسکین کریں",
+    "fbr_invoice_number": "ایف بی آر انوائس #"
+  },
+  "customer_display": {
+    "welcome": "خوش آمدید",
+    "scan_for_promo": "اشیاء اسکین کریں",
+    "thank_you": "شکریہ!",
+    "see_you": "پھر ملیں گے",
+    "scan_qr_to_pay": "ادائیگی کے لیے اسکین کریں",
+    "promo_default": "معیاری مصنوعات مناسب قیمتوں پر"
+  },
+  "sms": {
+    "receipt": "{{business}} پر خریداری کا شکریہ۔ انوائس {{number}}، رقم {{amount}} روپے۔ دیکھیں: {{url}}",
+    "low_stock": "اسٹاک کم ہونے کی اطلاع: {{product}} ({{branch}}) — {{quantity}} باقی",
+    "day_close": "{{branch}} کا دن بند: {{gross}} روپے، {{count}} انوائسز۔"
+  }
+}
