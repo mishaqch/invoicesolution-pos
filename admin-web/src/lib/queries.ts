@@ -625,6 +625,96 @@ export function useReturn(id: string | undefined) {
   });
 }
 
+// ----- Customers -----
+
+export interface AdminCustomer {
+  id: string;
+  customer_code: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  cnic: string | null;
+  ntn: string | null;
+  registration_type: "registered" | "unregistered";
+  province: string | null;
+  address: string;
+  credit_limit: string;
+  current_balance: string;
+  store_credit: string;
+  loyalty_points: number;
+  is_active: boolean;
+  notes: string;
+  created_at: string;
+}
+
+export interface CustomerLedgerRow {
+  id: string;
+  customer: string;
+  transaction_type: string;
+  reference_type: string | null;
+  reference_id: string | null;
+  debit: string;
+  credit: string;
+  running_balance: string;
+  notes: string | null;
+  created_at: string;
+}
+
+export function useCustomers(filters: { search?: string; page?: number } = {}) {
+  const params = new URLSearchParams();
+  if (filters.search) params.set("search", filters.search);
+  if (filters.page) params.set("page", String(filters.page));
+  const query = params.toString();
+  return useQuery({
+    queryKey: ["customers", filters],
+    queryFn: () =>
+      api<{ count: number; results: AdminCustomer[] }>(
+        `/customers/${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export function useCustomer(id: string | undefined) {
+  return useQuery({
+    queryKey: ["customer", id],
+    queryFn: () => api<AdminCustomer>(`/customers/${id}/`),
+    enabled: !!id,
+  });
+}
+
+export function useCustomerLedger(customerId: string | undefined) {
+  return useQuery({
+    queryKey: ["customer-ledger", customerId],
+    queryFn: () =>
+      api<{ count: number; results: CustomerLedgerRow[] }>(
+        `/customers/ledger/?customer=${customerId}`,
+      ),
+    enabled: !!customerId,
+  });
+}
+
+export function useUpsertCustomer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: Partial<AdminCustomer> & { id?: string }) => {
+      const { id, ...body } = input;
+      return id
+        ? api<AdminCustomer>(`/customers/${id}/`, {
+            method: "PATCH",
+            body: JSON.stringify(body),
+          })
+        : api<AdminCustomer>("/customers/", {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      qc.invalidateQueries({ queryKey: ["customer", data.id] });
+    },
+  });
+}
+
 // ----- Reports (Phase 7) -----
 
 export interface ReportColumn {

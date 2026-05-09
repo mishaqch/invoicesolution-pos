@@ -28,8 +28,11 @@ import FbrSetupWizard from "@/routes/fbr/setup";
 import SubmissionsPage from "@/routes/fbr/submissions";
 import ChequesPage from "@/routes/payments/cheques";
 import PaymentSettingsPage from "@/routes/payments/settings";
+import CustomerDetail from "@/routes/customers/detail";
+import CustomersList from "@/routes/customers/list";
 import HelpCenter from "@/routes/help";
 import HardwareChecklist from "@/routes/settings/hardware";
+import SettingsIndex from "@/routes/settings";
 import ReportDetail from "@/routes/reports/detail";
 import ReportsIndex from "@/routes/reports";
 import ReturnDetail from "@/routes/returns/detail";
@@ -104,6 +107,12 @@ export default function App() {
               <Route path=":id" element={<ReturnDetail />} />
             </Route>
 
+            <Route path="customers">
+              <Route index element={<CustomersList />} />
+              <Route path="new" element={<CustomerDetail />} />
+              <Route path=":id" element={<CustomerDetail />} />
+            </Route>
+
             <Route path="reports">
               <Route index element={<ReportsIndex />} />
               <Route path=":name" element={<ReportDetail />} />
@@ -115,6 +124,7 @@ export default function App() {
             </Route>
 
             <Route path="settings">
+              <Route index element={<SettingsIndex />} />
               <Route path="hardware" element={<HardwareChecklist />} />
             </Route>
           </Route>
