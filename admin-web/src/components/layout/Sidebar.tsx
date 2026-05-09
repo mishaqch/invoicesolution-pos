@@ -49,7 +49,7 @@ const ADMIN: Item[] = [
   { to: "/payments/settings", label: "Payment methods", icon: FileText },
   { to: "/payments/cheques", label: "Cheques", icon: FileText },
   { to: "/customers", label: "Customers", icon: Users, disabled: true },
-  { to: "/reports", label: "Reports", icon: BarChart3, disabled: true },
+  { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/fbr", label: "FBR", icon: FileText, end: true },
   { to: "/settings", label: "Settings", icon: Settings, disabled: true },
 ];

@@ -624,3 +624,112 @@ export function useReturn(id: string | undefined) {
     enabled: !!id,
   });
 }
+
+// ----- Reports (Phase 7) -----
+
+export interface ReportColumn {
+  key: string; label: string; kind: string; align?: string;
+}
+
+export interface ReportListEntry {
+  name: string;
+  columns: ReportColumn[];
+  filter_fields: string[];
+  chart: { type: string } | null;
+}
+
+export interface ReportPreview {
+  columns: ReportColumn[];
+  rows: Record<string, unknown>[];
+  totals: Record<string, unknown>;
+  chart: { type: string; x_key: string | null; y_keys: string[] } | null;
+  row_count: number;
+  truncated: boolean;
+}
+
+export interface DashboardData {
+  kpis: {
+    today_gross: string;
+    today_count: number;
+    today_refunds: number;
+    avg_ticket: string;
+  };
+  sparkline: { date: string; gross: string }[];
+  recent_invoices: Array<{
+    id: string; local_invoice_number: string; branch: string;
+    cashier: string; grand_total: string; status: string; created_at: string;
+  }>;
+  low_stock: Array<{
+    sku: string; name: string; branch: string;
+    quantity: string; reorder_level: string;
+  }>;
+  failed_fbr: Array<{
+    id: string; invoice_number: string; status_code: string;
+    error: string; submitted_at: string;
+  }>;
+  payment_breakdown: Array<{ method: string; total: string; count: number }>;
+  freshness: { last_built_at: string | null };
+}
+
+export interface ReportFavorite {
+  id: string;
+  report_name: string;
+  label: string;
+  filters_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export function useReportRegistry() {
+  return useQuery({
+    queryKey: ["reports", "registry"],
+    queryFn: () => api<{ results: ReportListEntry[] }>("/reports/"),
+    staleTime: 1000 * 60 * 60,
+  });
+}
+
+export function useDashboard() {
+  return useQuery({
+    queryKey: ["reports", "dashboard"],
+    queryFn: () => api<DashboardData>("/reports/dashboard/"),
+    refetchInterval: 1000 * 60 * 5, // 5 min
+  });
+}
+
+export function useReportPreview() {
+  return useMutation({
+    mutationFn: ({ name, filters }: { name: string; filters: Record<string, unknown> }) =>
+      api<ReportPreview>(`/reports/${name}/preview/`, {
+        method: "POST",
+        body: JSON.stringify(filters),
+      }),
+  });
+}
+
+export function useReportFavorites() {
+  return useQuery({
+    queryKey: ["reports", "favorites"],
+    queryFn: () =>
+      api<{ count: number; results: ReportFavorite[] }>("/reports/favorites/"),
+  });
+}
+
+export function useSaveFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { report_name: string; label: string; filters_json: Record<string, unknown> }) =>
+      api<ReportFavorite>("/reports/favorites/", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports", "favorites"] }),
+  });
+}
+
+export function useDeleteFavorite() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api(`/reports/favorites/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports", "favorites"] }),
+  });
+}
