@@ -28,6 +28,8 @@ import FbrSetupWizard from "@/routes/fbr/setup";
 import SubmissionsPage from "@/routes/fbr/submissions";
 import ChequesPage from "@/routes/payments/cheques";
 import PaymentSettingsPage from "@/routes/payments/settings";
+import HelpCenter from "@/routes/help";
+import HardwareChecklist from "@/routes/settings/hardware";
 import ReportDetail from "@/routes/reports/detail";
 import ReportsIndex from "@/routes/reports";
 import ReturnDetail from "@/routes/returns/detail";
@@ -105,6 +107,15 @@ export default function App() {
             <Route path="reports">
               <Route index element={<ReportsIndex />} />
               <Route path=":name" element={<ReportDetail />} />
+            </Route>
+
+            <Route path="help">
+              <Route index element={<HelpCenter />} />
+              <Route path=":slug" element={<HelpCenter />} />
+            </Route>
+
+            <Route path="settings">
+              <Route path="hardware" element={<HardwareChecklist />} />
             </Route>
           </Route>
 

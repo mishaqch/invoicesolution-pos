@@ -5,11 +5,13 @@ import {
   Building2,
   ClipboardList,
   FileText,
+  HelpCircle,
   LayoutDashboard,
   Package,
   Settings,
   ShoppingCart,
   Users,
+  Wrench,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
@@ -51,6 +53,8 @@ const ADMIN: Item[] = [
   { to: "/customers", label: "Customers", icon: Users, disabled: true },
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/fbr", label: "FBR", icon: FileText, end: true },
+  { to: "/settings/hardware", label: "Hardware", icon: Wrench },
+  { to: "/help", label: "Help", icon: HelpCircle },
   { to: "/settings", label: "Settings", icon: Settings, disabled: true },
 ];
 
