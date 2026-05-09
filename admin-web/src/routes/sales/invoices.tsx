@@ -1,7 +1,9 @@
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,7 +24,14 @@ export default function InvoicesList() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Sales</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Sales</h1>
+        <Button asChild>
+          <Link to="/sales/new">
+            <Plus className="mr-1 h-4 w-4" /> New invoice
+          </Link>
+        </Button>
+      </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <div className="space-y-1">

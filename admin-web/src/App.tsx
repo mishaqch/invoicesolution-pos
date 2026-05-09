@@ -16,6 +16,7 @@ import Movements from "@/routes/inventory/movements";
 import StockByBranch from "@/routes/inventory/stock-by-branch";
 import LoginRoute from "@/routes/login";
 import HeldSalesAdminList from "@/routes/sales/held-sales";
+import NewInvoiceRoute from "@/routes/sales/new";
 import InvoiceDetail from "@/routes/sales/invoice-detail";
 import InvoicesList from "@/routes/sales/invoices";
 import SyncHealth from "@/routes/sync/sync-health";
@@ -79,6 +80,7 @@ export default function App() {
 
             <Route path="sales">
               <Route index element={<InvoicesList />} />
+              <Route path="new" element={<NewInvoiceRoute />} />
               <Route path="held" element={<HeldSalesAdminList />} />
               <Route path=":id" element={<InvoiceDetail />} />
             </Route>

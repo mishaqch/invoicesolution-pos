@@ -625,6 +625,68 @@ export function useReturn(id: string | undefined) {
   });
 }
 
+// ----- Manual / Wholesaler invoice creation -----
+
+export interface ManualInvoiceLine {
+  product: string;
+  quantity: string;
+  unit_price: string;
+  tax_rate: string;
+  is_taxable: boolean;
+  discount_amount?: string;
+  hs_code?: string;
+  uom_code?: string;
+}
+
+export interface ManualInvoicePayment {
+  payment_method:
+    | "cash" | "card" | "easypaisa" | "jazzcash" | "raast"
+    | "cheque" | "bank_transfer" | "store_credit" | "credit";
+  amount: string;
+  reference?: string;
+  cheque_number?: string | null;
+  cheque_bank?: string | null;
+  cheque_due_date?: string | null;
+  cheque_status?: string | null;
+}
+
+export interface ManualInvoiceInput {
+  branch: string;
+  terminal: string;
+  customer?: string | null;
+  cart_lines: ManualInvoiceLine[];
+  cart_discount_pct?: string;
+  payments: ManualInvoicePayment[];
+  client_uuid: string;
+  notes?: string;
+}
+
+export interface CreatedInvoice {
+  id: string;
+  local_invoice_number: string;
+  fbr_invoice_number: string | null;
+  status: string;
+  grand_total: string;
+  subtotal: string;
+  tax_total: string;
+  invoice_date: string;
+}
+
+export function useCreateManualInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ManualInvoiceInput) =>
+      api<CreatedInvoice>("/sales/invoices/manual/", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales"] });
+      qc.invalidateQueries({ queryKey: ["reports"] });
+    },
+  });
+}
+
 // ----- Customers -----
 
 export interface AdminCustomer {

@@ -121,6 +121,57 @@ class InvoiceViewSet(
             status=status.HTTP_201_CREATED,
         )
 
+    @action(detail=False, methods=["post"], url_path="manual",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def manual_create(self, request):
+        """Create an invoice without going through a POS terminal checkout.
+
+        For wholesalers, service providers, manual entry by office staff —
+        anyone who needs to issue a tax invoice but doesn't have a cash
+        register. Reuses the same checkout pipeline (atomic, idempotent,
+        same numbering, same FBR submission path) but lets the caller
+        omit cash_session and pick the recording terminal explicitly.
+
+        After creation, the invoice is queued for FBR submission via the
+        existing Celery task (matches the POS flow).
+        """
+        from apps.fbr.tasks import submit_invoice_to_fbr
+
+        serializer = CheckoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        v = serializer.validated_data
+
+        branch = self._fetch_tenant_object(Branch, v["branch"])
+        terminal = self._fetch_tenant_object(Terminal, v["terminal"])
+        customer = (
+            Customer.objects.for_tenant(request.tenant_id).filter(
+                pk=v.get("customer"),
+            ).first()
+            if v.get("customer") else None
+        )
+
+        invoice = checkout.create_invoice(
+            tenant_id=request.tenant_id,
+            branch=branch,
+            terminal=terminal,
+            cashier=request.user,
+            cash_session=None,
+            customer=customer,
+            cart_lines=[dict(line) for line in v["cart_lines"]],
+            cart_discount_pct=v.get("cart_discount_pct", 0),
+            payments=[dict(p) for p in v["payments"]],
+            client_uuid=v["client_uuid"],
+            notes=v.get("notes"),
+            request=request,
+        )
+        # Auto-submit to FBR — wholesaler flow expects the FBR number
+        # without a separate manual click. Same async pipeline POS uses.
+        submit_invoice_to_fbr.delay(str(invoice.id))
+        return Response(
+            InvoiceSerializer(invoice).data,
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=["post"],
             permission_classes=[HasRolePerm.with_perm("sales.create")])
     def hold(self, request, pk=None):
