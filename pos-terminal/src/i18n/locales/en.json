@@ -99,6 +99,12 @@
     "recall": "Recall",
     "discard": "Discard"
   },
+  "today_invoices": {
+    "title": "Today's invoices",
+    "search_placeholder": "Search by invoice #",
+    "empty": "No sales yet today.",
+    "pick_invoice": "Pick an invoice to view details."
+  },
   "return": {
     "title": "Return / refund",
     "find_invoice": "Find original invoice",

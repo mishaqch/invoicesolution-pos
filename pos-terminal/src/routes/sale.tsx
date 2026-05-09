@@ -69,6 +69,13 @@ export default function SaleRoute() {
           <SyncStatusDot />
           <button
             type="button"
+            onClick={() => navigate("/today-invoices")}
+            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+          >
+            {t("today_invoices.title", "Today's invoices")}
+          </button>
+          <button
+            type="button"
             onClick={() => navigate("/held-sales")}
             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
           >
