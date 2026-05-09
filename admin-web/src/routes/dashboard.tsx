@@ -2,6 +2,7 @@ import { AlertCircle, Package, Receipt } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OnboardingWizard } from "@/features/onboarding/Wizard";
 import { useDashboard } from "@/lib/queries";
 import { useAuthStore } from "@/stores/auth";
 
@@ -60,6 +61,8 @@ export default function DashboardRoute() {
           </p>
         )}
       </div>
+
+      <OnboardingWizard />
 
       {isLoading || !data ? (
         <p className="text-sm text-muted-foreground">Loading dashboard…</p>

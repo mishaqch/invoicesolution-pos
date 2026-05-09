@@ -96,6 +96,11 @@ class Tenant(models.Model):
     trial_ends_at = models.DateTimeField(blank=True, null=True)
     next_billing_at = models.DateTimeField(blank=True, null=True)
 
+    # Phase 8 — first-run onboarding wizard progress (free-form; the admin
+    # web reads keys like `profile_done`, `branch_done`, `terminal_done`,
+    # `product_done`, `first_sale_done`, `dismissed_at`).
+    onboarding_state = models.JSONField(default=dict, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
