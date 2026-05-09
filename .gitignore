@@ -32,6 +32,11 @@ dist/
 *.egg-info/
 *.egg
 
+# ----- Electron POS -----
+pos-terminal/out/
+pos-terminal/receipts-dev/
+pos-terminal/pos.sqlite*
+
 # Django
 db.sqlite3
 db.sqlite3-journal

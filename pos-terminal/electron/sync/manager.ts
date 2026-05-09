@@ -30,6 +30,8 @@ export function startSyncWorker(opts: { dbPath: string; apiBase: string }) {
   if (worker) return;
 
   const candidates = [
+    path.resolve(__dirname, "sync/worker.cjs"),
+    path.resolve(__dirname, "../sync/worker.cjs"),
     path.resolve(__dirname, "../sync/worker.js"),
     path.resolve(__dirname, "sync/worker.js"),
   ];

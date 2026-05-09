@@ -34,11 +34,14 @@ function createWindow() {
     autoHideMenuBar: true,
     title: "Pakistan POS — Terminal",
     webPreferences: {
-      preload: path.join(__dirname, "../preload/index.js"),
+      preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+  win.webContents.on("preload-error", (_e, p, err) => {
+    console.error("[main] preload-error path=", p, "err=", err);
   });
 
   if (isDev) {
