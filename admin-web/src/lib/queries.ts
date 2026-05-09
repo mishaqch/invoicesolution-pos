@@ -208,6 +208,7 @@ export interface AdminInvoice {
   paid_total: string;
   change_given: string;
   status: string;
+  edit_deadline_at: string | null;
   is_held: boolean;
   held_label: string | null;
   notes: string | null;
@@ -253,6 +254,23 @@ export function useCancelInvoice() {
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       api<AdminInvoice>(`/sales/invoices/${id}/cancel/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoice", data.id] });
+    },
+  });
+}
+
+export function useCancelInvoiceItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ invoice_id, item_id, reason }: {
+      invoice_id: string; item_id: string; reason: string;
+    }) =>
+      api<AdminInvoice>(`/sales/invoices/${invoice_id}/items/${item_id}/cancel/`, {
         method: "POST",
         body: JSON.stringify({ reason }),
       }),

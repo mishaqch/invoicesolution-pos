@@ -147,3 +147,104 @@ def test_manual_invoice_requires_sales_create_permission(
     # Cashier has sales.create per the role matrix — accept 201, but
     # an unauthenticated client gets 401.
     assert resp.status_code in (201, 403)
+
+
+@pytest.mark.django_db
+def test_per_item_cancel_flips_invoice_to_partially_cancelled(
+    tenant, branch, terminal, owner_user, stocked_product,
+):
+    """PRAL section 4.1.2: cancel ONE item on an invoice. Other items
+    remain valid; invoice status flips to partially_cancelled."""
+    from apps.catalog.models import Product, UnitOfMeasure
+    from datetime import timedelta
+    from django.utils import timezone
+
+    api = APIClient()
+    _login(api, owner_user.email)
+
+    # Two distinct products so we have two lines.
+    p2 = Product.objects.create(
+        tenant=tenant, name="Tee", sku="TEE-1",
+        uom=UnitOfMeasure.objects.get(code="PCS"),
+        sale_price=Decimal("500"), cost_price=Decimal("300"),
+    )
+    record_movement(
+        tenant_id=tenant.id, product=p2, branch=branch,
+        movement_type="opening_balance", quantity=Decimal("100"),
+    )
+
+    body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [
+            {
+                "product": str(stocked_product.id),
+                "quantity": "1", "unit_price": "1000",
+                "tax_rate": "18", "is_taxable": True,
+            },
+            {
+                "product": str(p2.id),
+                "quantity": "1", "unit_price": "500",
+                "tax_rate": "18", "is_taxable": True,
+            },
+        ],
+        "payments": [{"payment_method": "cash", "amount": "1770"}],
+        "client_uuid": str(uuid.uuid4()),
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        create_resp = api.post("/api/sales/invoices/manual/", body, format="json")
+    assert create_resp.status_code == 201, create_resp.content
+    invoice_id = create_resp.json()["id"]
+
+    # Set the edit_deadline so can_cancel_invoice passes.
+    inv = Invoice.objects.get(pk=invoice_id)
+    inv.edit_deadline_at = timezone.now() + timedelta(hours=24)
+    inv.save(update_fields=["edit_deadline_at"])
+    item_to_cancel = inv.items.first()
+
+    resp = api.post(
+        f"/api/sales/invoices/{invoice_id}/items/{item_to_cancel.id}/cancel/",
+        {"reason": "Wrong item rung up"},
+        format="json",
+    )
+    assert resp.status_code == 200, resp.content
+    inv.refresh_from_db()
+    assert inv.status == "partially_cancelled"
+    item_to_cancel.refresh_from_db()
+    assert item_to_cancel.is_cancelled is True
+
+
+@pytest.mark.django_db
+def test_per_item_cancel_outside_72h_rejected(
+    tenant, branch, terminal, owner_user, stocked_product,
+):
+    from datetime import timedelta
+    from django.utils import timezone
+
+    api = APIClient()
+    _login(api, owner_user.email)
+    body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "1", "unit_price": "1000",
+            "tax_rate": "18", "is_taxable": True,
+        }],
+        "payments": [{"payment_method": "cash", "amount": "1180"}],
+        "client_uuid": str(uuid.uuid4()),
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        create = api.post("/api/sales/invoices/manual/", body, format="json")
+    invoice_id = create.json()["id"]
+    inv = Invoice.objects.get(pk=invoice_id)
+    inv.edit_deadline_at = timezone.now() - timedelta(hours=1)  # expired
+    inv.save(update_fields=["edit_deadline_at"])
+
+    resp = api.post(
+        f"/api/sales/invoices/{invoice_id}/items/{inv.items.first().id}/cancel/",
+        {"reason": "Late cancel attempt"},
+        format="json",
+    )
+    assert resp.status_code == 400
+    assert "72-hour" in resp.json()["detail"]

@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -6,18 +6,44 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCancelInvoice, useInvoice } from "@/lib/queries";
+import { useCancelInvoice, useCancelInvoiceItem, useInvoice } from "@/lib/queries";
+
+function timeUntilDeadline(deadline: string | null): { remaining: string; expired: boolean } | null {
+  if (!deadline) return null;
+  const ms = new Date(deadline).getTime() - Date.now();
+  if (ms <= 0) return { remaining: "expired", expired: true };
+  const hours = Math.floor(ms / 3_600_000);
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  return { remaining: `${hours}h ${minutes}m`, expired: false };
+}
 
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
   const { data: invoice, isLoading } = useInvoice(id);
   const cancel = useCancelInvoice();
+  const cancelItem = useCancelInvoiceItem();
   const [showConfirm, setShowConfirm] = useState(false);
   const [reason, setReason] = useState("");
+  const [itemPrompt, setItemPrompt] = useState<{ id: string; reason: string } | null>(null);
 
   if (isLoading || !invoice) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   }
+
+  const deadline = timeUntilDeadline(invoice.edit_deadline_at);
+  const canCancel =
+    invoice.status !== "cancelled" &&
+    invoice.status !== "finalized" &&
+    !(deadline?.expired ?? false);
+  const lockedReason = !canCancel
+    ? invoice.status === "cancelled"
+      ? "Already cancelled"
+      : invoice.status === "finalized"
+        ? "Already finalized to a return"
+        : deadline?.expired
+          ? "72-hour cancel window has passed (use a credit note instead)"
+          : "Not eligible for cancellation"
+    : null;
 
   return (
     <div className="space-y-4">
@@ -41,11 +67,22 @@ export default function InvoiceDetail() {
             )}
           </div>
         </div>
-        {invoice.status !== "cancelled" && invoice.status !== "finalized" && (
-          <Button variant="destructive" onClick={() => setShowConfirm(true)}>
-            Cancel sale
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {deadline && !deadline.expired && (
+            <Badge variant="outline" className="text-amber-700">
+              {deadline.remaining} until edit window closes
+            </Badge>
+          )}
+          {canCancel ? (
+            <Button variant="destructive" onClick={() => setShowConfirm(true)}>
+              Cancel sale
+            </Button>
+          ) : (
+            <Badge variant="secondary" title={lockedReason ?? ""}>
+              {lockedReason}
+            </Badge>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -105,20 +142,43 @@ export default function InvoiceDetail() {
                 <TableHead className="text-right">Unit price</TableHead>
                 <TableHead className="text-right">Tax</TableHead>
                 <TableHead className="text-right">Line total</TableHead>
+                <TableHead></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {invoice.items.map((it) => (
-                <TableRow key={it.id}>
-                  <TableCell>{it.line_number}</TableCell>
-                  <TableCell>{it.product_name}</TableCell>
-                  <TableCell className="font-mono text-xs">{it.product_sku}</TableCell>
-                  <TableCell className="text-right font-mono">{it.quantity}</TableCell>
-                  <TableCell className="text-right font-mono">Rs {it.unit_price}</TableCell>
-                  <TableCell className="text-right font-mono">Rs {it.tax_amount}</TableCell>
-                  <TableCell className="text-right font-mono">Rs {it.line_total}</TableCell>
-                </TableRow>
-              ))}
+              {invoice.items.map((it) => {
+                const itemLocked = it.is_cancelled || it.is_edited || !canCancel;
+                return (
+                  <TableRow key={it.id} className={it.is_cancelled ? "opacity-50" : ""}>
+                    <TableCell>{it.line_number}</TableCell>
+                    <TableCell>
+                      {it.is_cancelled && <span className="mr-1 text-xs font-bold text-destructive">C</span>}
+                      {it.is_edited && <span className="mr-1 text-xs font-bold text-amber-600">E</span>}
+                      <span className={it.is_cancelled ? "line-through" : ""}>
+                        {it.product_name}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{it.product_sku}</TableCell>
+                    <TableCell className="text-right font-mono">{it.quantity}</TableCell>
+                    <TableCell className="text-right font-mono">Rs {it.unit_price}</TableCell>
+                    <TableCell className="text-right font-mono">Rs {it.tax_amount}</TableCell>
+                    <TableCell className="text-right font-mono">Rs {it.line_total}</TableCell>
+                    <TableCell className="text-right">
+                      {!itemLocked && (
+                        <button
+                          type="button"
+                          onClick={() => setItemPrompt({ id: it.id, reason: "" })}
+                          className="rounded-md p-1 text-muted-foreground hover:bg-destructive hover:text-destructive-foreground"
+                          aria-label="Cancel this line"
+                          title="Cancel this line"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -129,9 +189,9 @@ export default function InvoiceDetail() {
           <div className="w-full max-w-sm rounded-md border bg-background p-6 shadow-lg">
             <h2 className="text-base font-semibold">Cancel sale</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              This reverses the stock movements and marks the invoice cancelled.
-              In Phase 4 the FBR rules (72-hour edit window, 10% monthly cap)
-              will be enforced; for now we just keep the audit log.
+              This reverses the stock movements and marks the invoice
+              cancelled. The 72-hour edit window and 10% monthly cap are
+              enforced server-side; if they fail you'll see an error.
             </p>
             <textarea
               rows={3}
@@ -151,6 +211,45 @@ export default function InvoiceDetail() {
                 }}
               >
                 {cancel.isPending ? "Cancelling…" : "Cancel sale"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {itemPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-md border bg-background p-6 shadow-lg">
+            <h2 className="text-base font-semibold">Cancel this line</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              The line is removed from the invoice total and stock for it
+              is returned. Other lines stay valid; the invoice flips to
+              partially cancelled.
+            </p>
+            <textarea
+              rows={3}
+              value={itemPrompt.reason}
+              onChange={(e) =>
+                setItemPrompt({ ...itemPrompt, reason: e.target.value })
+              }
+              placeholder="Reason"
+              className="mt-3 w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setItemPrompt(null)}>Back</Button>
+              <Button
+                variant="destructive"
+                disabled={cancelItem.isPending || itemPrompt.reason.trim().length < 2}
+                onClick={async () => {
+                  await cancelItem.mutateAsync({
+                    invoice_id: invoice.id,
+                    item_id: itemPrompt.id,
+                    reason: itemPrompt.reason,
+                  });
+                  setItemPrompt(null);
+                }}
+              >
+                {cancelItem.isPending ? "Cancelling…" : "Cancel line"}
               </Button>
             </div>
           </div>

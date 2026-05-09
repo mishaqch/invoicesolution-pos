@@ -200,6 +200,32 @@ class InvoiceViewSet(
         )
         return Response(InvoiceSerializer(invoice).data)
 
+    @action(detail=True, methods=["post"],
+            url_path="items/(?P<item_id>[^/.]+)/cancel",
+            permission_classes=[HasRolePerm.with_perm("sales.cancel.threshold_high")])
+    def cancel_item(self, request, pk=None, item_id=None):
+        """Cancel one line on an invoice (PRAL per-item cancel pattern).
+
+        Per the FBR Digital Invoicing Manual section 4.1.2, individual
+        items can be cancelled within the 72-hour window. Same constraints
+        apply: cannot cancel an edited item, cannot cancel after the
+        deadline, cannot cancel an annexure-C-linked invoice.
+        """
+        from apps.fbr.rules import can_cancel_invoice
+        invoice = self.get_object()
+        allowed, why = can_cancel_invoice(invoice)
+        if not allowed:
+            return Response({"detail": why}, status=status.HTTP_400_BAD_REQUEST)
+        body = CancelSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        cancellation.cancel_sale_item(
+            invoice, item_id,
+            reason=body.validated_data["reason"],
+            user=request.user, request=request,
+        )
+        invoice.refresh_from_db()
+        return Response(InvoiceSerializer(invoice).data)
+
     def _fetch_tenant_object(self, model, pk):
         try:
             return model.objects.for_tenant(self.request.tenant_id).get(pk=pk)
