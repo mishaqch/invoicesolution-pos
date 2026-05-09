@@ -98,6 +98,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # Custom: must run AFTER auth middleware so request.user is populated.
     "apps.tenants.middleware.TenantContextMiddleware",
+    # Phase 8 — structured request log (last so it sees the resolved
+    # tenant_id and user). Skips /api/health and static.
+    "core.middleware.RequestLoggingMiddleware",
 ]
 
 ROOT_URLCONF = "core.urls"
