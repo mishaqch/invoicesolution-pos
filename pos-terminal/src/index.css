@@ -20,4 +20,27 @@
     @apply bg-background text-foreground;
     overscroll-behavior: none;
   }
+
+  /* Visible focus ring for keyboard users (cashiers using a barcode-scanner
+     gun also benefit — they often tab between fields rapidly). */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* RTL Urdu support — flips margins/paddings/text-align via Tailwind's
+     `rtl:` variant. The HTML `dir` attribute is set by the i18n layer. */
+  [dir="rtl"] {
+    direction: rtl;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
