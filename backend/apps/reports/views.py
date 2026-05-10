@@ -34,9 +34,16 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import HasModule
 from apps.fbr.models import FbrSubmission
 from apps.inventory.models import StockLevel
 from apps.sales.models import Invoice, Payment
+
+# All reports endpoints require at least the basic-reports module.
+# Advanced exports / scheduled reports gate further on `reports_advanced`
+# at the per-action level (see ReportExportView).
+_REPORTS_BASIC_GATE = HasModule.for_module("reports_basic")
+_REPORTS_ADVANCED_GATE = HasModule.for_module("reports_advanced")
 
 from .aggregates import COUNTED_STATUSES
 from .base import BaseFilters, ReportResult
@@ -108,7 +115,7 @@ def _should_run_async(filters: BaseFilters) -> bool:
 
 
 class ReportRegistryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [_REPORTS_BASIC_GATE, IsAuthenticated]
 
     def get(self, request):
         _require_tenant(request)
@@ -130,7 +137,7 @@ class ReportRegistryView(APIView):
 
 
 class ReportPreviewView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [_REPORTS_BASIC_GATE, IsAuthenticated]
 
     def post(self, request, name: str):
         tenant_id = _require_tenant(request)
@@ -144,7 +151,9 @@ class ReportPreviewView(APIView):
 
 
 class ReportExportView(APIView):
-    permission_classes = [IsAuthenticated]
+    # Exports are advanced: PDF/Excel/CSV downloads cost more compute
+    # and are typically tied to scheduled reports.
+    permission_classes = [_REPORTS_ADVANCED_GATE, IsAuthenticated]
 
     def post(self, request, name: str):
         tenant_id = _require_tenant(request)
@@ -212,7 +221,8 @@ def _serializable_filters(filters: BaseFilters) -> dict:
 
 class ReportRunViewSet(viewsets.ModelViewSet):
     serializer_class = ReportRunSerializer
-    permission_classes = [IsAuthenticated]
+    # Async report runs (background generation, schedules) are advanced.
+    permission_classes = [_REPORTS_ADVANCED_GATE, IsAuthenticated]
     http_method_names = ["get", "post", "head", "options"]
 
     def get_queryset(self):
@@ -254,8 +264,9 @@ class ReportRunViewSet(viewsets.ModelViewSet):
 
 
 class ReportFavoriteViewSet(viewsets.ModelViewSet):
+    # Favorites = saved configurations; basic access is enough.
     serializer_class = ReportFavoriteSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [_REPORTS_BASIC_GATE, IsAuthenticated]
     http_method_names = ["get", "post", "delete", "head", "options"]
 
     def get_queryset(self):
@@ -278,6 +289,10 @@ class ReportFavoriteViewSet(viewsets.ModelViewSet):
 
 
 @api_view(["GET"])
+# NOTE: dashboard is the admin web's landing page; gating it would brick
+# the home screen for tenants without reports_basic. The data the
+# dashboard returns (today's sales, sync health) is always-available
+# context, not a real "report".
 @permission_classes([IsAuthenticated])
 def dashboard_view(request):
     tenant_id = _require_tenant(request)

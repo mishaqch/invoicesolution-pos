@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from rest_framework import filters, mixins, viewsets
 
-from apps.accounts.permissions import HasRolePerm, IsTenantMember
+from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
+
+_CUSTOMERS_GATE = HasModule.for_module("customers")
 
 from .models import Customer, CustomerGroup, CustomerLedger
 from .serializers import (
@@ -26,7 +28,10 @@ class _TenantQuerySetMixin:
 class CustomerGroupViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
     queryset = CustomerGroup.objects.all().order_by("name")
     serializer_class = CustomerGroupSerializer
-    permission_classes = [HasRolePerm.with_perm("settings.business_profile")]
+    permission_classes = [
+        _CUSTOMERS_GATE,
+        HasRolePerm.with_perm("settings.business_profile"),
+    ]
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)
@@ -35,7 +40,7 @@ class CustomerGroupViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
 class CustomerViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
     queryset = Customer.objects.filter(deleted_at__isnull=True).order_by("name")
     serializer_class = CustomerSerializer
-    permission_classes = [IsTenantMember]   # cashier needs read
+    permission_classes = [_CUSTOMERS_GATE, IsTenantMember]   # cashier needs read
     filter_backends = [filters.SearchFilter]
     search_fields = ["name", "phone", "cnic", "ntn"]
 
@@ -54,7 +59,7 @@ class CustomerLedgerViewSet(
 ):
     queryset = CustomerLedger.objects.select_related("customer").order_by("-created_at")
     serializer_class = CustomerLedgerSerializer
-    permission_classes = [IsTenantMember]
+    permission_classes = [_CUSTOMERS_GATE, IsTenantMember]
 
     def get_queryset(self):
         qs = super().get_queryset()

@@ -8,9 +8,11 @@ from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import HasRolePerm, IsTenantMember
+from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
 from apps.sales.models import Invoice
 from apps.tenants.models import Branch, Terminal
+
+_RETURNS_GATE = HasModule.for_module("returns")
 
 from .models import Return
 from .serializers import ProcessReturnSerializer, ReturnSerializer
@@ -27,7 +29,7 @@ class ReturnViewSet(
         .order_by("-return_date", "-created_at")
     )
     serializer_class = ReturnSerializer
-    permission_classes = [IsTenantMember]
+    permission_classes = [_RETURNS_GATE, IsTenantMember]
     filter_backends = [filters.OrderingFilter]
 
     def get_queryset(self):
@@ -108,7 +110,7 @@ class FindOriginalInvoiceView(APIView):
     Used by the POS return-flow to locate the original invoice before
     listing its line items.
     """
-    permission_classes = [IsTenantMember]
+    permission_classes = [_RETURNS_GATE, IsTenantMember]
 
     def get(self, request):
         params = request.query_params

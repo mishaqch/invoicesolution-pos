@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import HasRolePerm
+from apps.accounts.permissions import HasModule, HasRolePerm
 from apps.sales.models import Invoice
 
 from .models import Branch, Tenant, Terminal
@@ -27,7 +27,10 @@ class _TenantQuerySetMixin:
 class BranchViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
     queryset = Branch.objects.filter(deleted_at__isnull=True).order_by("name")
     serializer_class = BranchSerializer
-    permission_classes = [HasRolePerm.with_perm("settings.business_profile")]
+    permission_classes = [
+        HasModule.for_module("branches"),
+        HasRolePerm.with_perm("settings.business_profile"),
+    ]
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)
@@ -36,7 +39,10 @@ class BranchViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
 class TerminalViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
     queryset = Terminal.objects.select_related("branch").order_by("branch__name", "name")
     serializer_class = TerminalSerializer
-    permission_classes = [HasRolePerm.with_perm("settings.business_profile")]
+    permission_classes = [
+        HasModule.for_module("terminals"),
+        HasRolePerm.with_perm("settings.business_profile"),
+    ]
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)

@@ -233,3 +233,64 @@ def test_modules_endpoint_requires_tenant_context(owner_user):
 
     resp = api.get("/api/me/modules/")
     assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# Integration — gates actually block real endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_branches_endpoint_returns_403_when_module_disabled(
+    tenant, owner_user,
+):
+    """When super-admin has disabled the 'branches' module for this
+    tenant, the Branches API should return 403 even for the owner role.
+    This is what enables the 'seller without branches' configuration."""
+    api = APIClient()
+    _login(api, owner_user.email)
+
+    # Disable branches.
+    tenant.modules_enabled = ["sales", "fbr", "customers"]
+    tenant.save()
+
+    resp = api.get("/api/branches/")
+    assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+def test_branches_endpoint_works_when_module_enabled(
+    tenant, owner_user,
+):
+    """Sanity: with the module on, the same call succeeds."""
+    api = APIClient()
+    _login(api, owner_user.email)
+    # Default: all modules enabled (set by callable default at create time).
+    resp = api.get("/api/branches/")
+    assert resp.status_code == 200
+
+
+@pytest.mark.django_db
+def test_inventory_endpoint_returns_403_when_module_disabled(
+    tenant, owner_user,
+):
+    api = APIClient()
+    _login(api, owner_user.email)
+    tenant.modules_enabled = ["sales", "fbr"]
+    tenant.save()
+    resp = api.get("/api/inventory/stock-levels/")
+    assert resp.status_code == 403
+
+
+@pytest.mark.django_db
+def test_sales_invoices_remain_accessible_even_with_minimal_modules(
+    tenant, owner_user,
+):
+    """Sales/FBR are forced — even if the operator turns off everything
+    else, invoices still work. This is the safety net for the platform."""
+    api = APIClient()
+    _login(api, owner_user.email)
+    tenant.modules_enabled = []  # nothing — but sales/fbr are forced
+    tenant.save()
+    resp = api.get("/api/sales/invoices/")
+    assert resp.status_code == 200

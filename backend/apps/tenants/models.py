@@ -10,6 +10,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from apps.tenants.managers import TenantScopedManager
+from apps.tenants.modules import default_modules_enabled as _default_modules_enabled
 from core.uuid7 import uuid7
 
 # ---------------------------------------------------------------------------
@@ -131,10 +132,12 @@ class Tenant(models.Model):
     # of module keys (e.g. ["sales", "fbr", "customers", "branches"]).
     # The catalog lives in apps.tenants.modules.MODULES; forced modules
     # like "sales" and "fbr" are always honored regardless of what's in
-    # this list. Default for new/migrated tenants is everything-enabled,
-    # which keeps existing data behaving exactly as before.
+    # this list. Default for new tenants (and the migration backfill) is
+    # everything-enabled, so super-admin opts OUT of modules rather than
+    # opting in — protects against new tenants accidentally landing with
+    # zero modules and being unable to do anything.
     modules_enabled = models.JSONField(
-        default=list, blank=True,
+        default=_default_modules_enabled, blank=True,
         help_text="Module keys this tenant is allowed to use. Forced "
                   "modules (sales, fbr) are always enabled. Edit via "
                   "the 'Modules enabled' widget on the change form.",

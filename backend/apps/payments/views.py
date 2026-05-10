@@ -9,9 +9,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import HasRolePerm, IsTenantMember
+from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
 from apps.sales.models import Payment
 from apps.tenants.models import TenantSettings
+
+# Cheque-tracking is the "advanced" payments feature; cash + card method
+# config stays always-on so even tenants without payments_advanced can
+# operate. The settings page that lists all available methods stays
+# always-on too — it's a config surface, not an operational endpoint.
+_ADVANCED_PAY_GATE = HasModule.for_module("payments_advanced")
 
 from .adapters import all_methods
 from .serializers import (
@@ -76,7 +82,7 @@ class ChequeViewSet(
 
     queryset = Payment.objects.filter(payment_method="cheque").order_by("-created_at")
     serializer_class = PaymentSerializer
-    permission_classes = [HasRolePerm.with_perm("inventory.adjust")]
+    permission_classes = [_ADVANCED_PAY_GATE, HasRolePerm.with_perm("inventory.adjust")]
     filter_backends = [filters.OrderingFilter]
 
     def get_queryset(self):

@@ -7,7 +7,10 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
-from apps.accounts.permissions import HasRolePerm, IsTenantMember
+from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
+
+# Every endpoint in this module gates on the "inventory" module.
+_INVENTORY_GATE = HasModule.for_module("inventory")
 from apps.catalog.models import Product, ProductVariant
 from apps.tenants.models import Branch
 
@@ -50,7 +53,7 @@ class _TenantQuerySetMixin:
 class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
     queryset = StockLevel.objects.select_related("product", "branch", "variant").all()
     serializer_class = StockLevelSerializer
-    permission_classes = [IsTenantMember]
+    permission_classes = [_INVENTORY_GATE, IsTenantMember]
     filter_backends = [filters.OrderingFilter]
     ordering = ["product__name"]
 
@@ -76,7 +79,7 @@ class StockMovementViewSet(
 ):
     queryset = StockMovement.objects.select_related("product", "branch").order_by("-created_at")
     serializer_class = StockMovementSerializer
-    permission_classes = [IsTenantMember]
+    permission_classes = [_INVENTORY_GATE, IsTenantMember]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -100,7 +103,7 @@ class StockMovementViewSet(
 
 
 class AdjustmentView(viewsets.ViewSet):
-    permission_classes = [HasRolePerm.with_perm("inventory.adjust")]
+    permission_classes = [_INVENTORY_GATE, HasRolePerm.with_perm("inventory.adjust")]
 
     def create(self, request):
         serializer = AdjustmentSerializer(data=request.data)
@@ -156,7 +159,7 @@ class StockTransferViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
         .prefetch_related("items").order_by("-created_at")
     )
     serializer_class = StockTransferSerializer
-    permission_classes = [HasRolePerm.with_perm("inventory.adjust")]
+    permission_classes = [_INVENTORY_GATE, HasRolePerm.with_perm("inventory.adjust")]
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)
@@ -215,7 +218,7 @@ class StockAuditViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
         .prefetch_related("items").order_by("-started_at")
     )
     serializer_class = StockAuditSerializer
-    permission_classes = [HasRolePerm.with_perm("inventory.adjust")]
+    permission_classes = [_INVENTORY_GATE, HasRolePerm.with_perm("inventory.adjust")]
 
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)
