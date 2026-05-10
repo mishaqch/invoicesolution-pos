@@ -38,6 +38,11 @@ class PosTokenObtainPairSerializer(TokenObtainPairSerializer):
         if membership:
             token["tenant_id"] = str(membership.tenant_id)
             token["role"] = membership.role
+        # Phase 0 platform stub: platform-staff claims travel on the JWT
+        # so middleware can gate tenant-side endpoints without an extra
+        # DB roundtrip per request.
+        token["is_platform_staff"] = bool(getattr(user, "is_platform_staff", False))
+        token["platform_role"] = getattr(user, "platform_role", "") or ""
         return token
 
     def validate(self, attrs):
@@ -97,6 +102,8 @@ class PinLoginSerializer(serializers.Serializer):
         refresh = RefreshToken.for_user(user)
         refresh["tenant_id"] = str(membership.tenant_id)
         refresh["role"] = membership.role
+        refresh["is_platform_staff"] = bool(user.is_platform_staff)
+        refresh["platform_role"] = user.platform_role or ""
 
         attrs["user"] = user
         attrs["tenant"] = membership.tenant

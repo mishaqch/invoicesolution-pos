@@ -79,6 +79,8 @@ INSTALLED_APPS = [
     "apps.returns",
     # Local — Phase 7
     "apps.reports",
+    # Phase 0 platform stub (control plane — separate from tenants)
+    "apps.platform_admin",
 ]
 
 AUTH_USER_MODEL = "accounts.User"

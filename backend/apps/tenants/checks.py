@@ -28,6 +28,10 @@ EXEMPT = {
     # we declared once for our own server (PRAL whitelists the same 1-3 IPs
     # for all tenants).
     ("fbr", "fbripwhitelist"),
+    # Subscription: platform-admin (control-plane) model. Has a tenant FK
+    # but is NEVER queried in tenant-scoped contexts — only ever from
+    # platform-admin views which see all tenants.
+    ("platform_admin", "subscription"),
 }
 
 

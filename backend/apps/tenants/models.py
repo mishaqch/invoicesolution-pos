@@ -96,6 +96,32 @@ class Tenant(models.Model):
     trial_ends_at = models.DateTimeField(blank=True, null=True)
     next_billing_at = models.DateTimeField(blank=True, null=True)
 
+    # Phase 0 platform stub — control-plane fields. Authoritative plan
+    # + billing state lives on platform_admin.Subscription (one-to-one
+    # via tenant.subscription); the legacy plan/status chars above remain
+    # for backwards compatibility, deprecated in Phase 9.
+    signup_source = models.CharField(
+        max_length=50, blank=True, default="",
+        help_text="How did this tenant arrive? e.g. self_serve, sales, "
+                  "reseller, partner_referral.",
+    )
+    account_manager = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        blank=True, null=True,
+        related_name="managed_tenants",
+        help_text="Platform staff member responsible for this tenant.",
+    )
+    suspended_at = models.DateTimeField(blank=True, null=True)
+    internal_notes = models.TextField(
+        blank=True, default="",
+        help_text="Platform-team-only notes about this tenant.",
+    )
+    tags = models.JSONField(
+        default=list, blank=True,
+        help_text="Free-form list of tags (e.g. ['vip', 'cash-only']).",
+    )
+
     # Phase 8 — first-run onboarding wizard progress (free-form; the admin
     # web reads keys like `profile_done`, `branch_done`, `terminal_done`,
     # `product_done`, `first_sale_done`, `dismissed_at`).

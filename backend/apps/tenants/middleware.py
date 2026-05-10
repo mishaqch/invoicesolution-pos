@@ -15,10 +15,18 @@ from __future__ import annotations
 
 from typing import Iterable
 
+import json
+
 from django.core.exceptions import PermissionDenied
+from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.tenants.models import TenantMembership
+
+
+def _forbid(detail: str) -> JsonResponse:
+    """Return a DRF-shaped 403 from middleware (matches `{detail: ...}`)."""
+    return JsonResponse({"detail": detail}, status=403)
 
 EXEMPT_PREFIXES: tuple[str, ...] = (
     "/admin/",
@@ -28,6 +36,14 @@ EXEMPT_PREFIXES: tuple[str, ...] = (
     "/api/auth/pin-login/",
     "/static/",
     "/media/",
+)
+
+# Phase 0 platform stub. Endpoints under these prefixes are reachable
+# ONLY by platform-staff users (is_platform_staff=true). Tenant API
+# endpoints are everything else under /api/, and are blocked for
+# platform staff unless mid-impersonation (Phase 9).
+PLATFORM_PREFIXES: tuple[str, ...] = (
+    "/api/platform/",
 )
 
 
@@ -62,6 +78,23 @@ class TenantContextMiddleware:
 
         if not getattr(request, "user", None) or not request.user.is_authenticated:
             return self.get_response(request)
+
+        # Phase 0 platform stub: platform-staff users are blocked from
+        # tenant-scoped endpoints (everything under /api/ except /api/platform/
+        # and the EXEMPT_PREFIXES). Conversely, non-platform users are blocked
+        # from /api/platform/ endpoints. Phase 9 adds an impersonation context
+        # that lets platform staff cross the boundary, audited.
+        is_platform_request = any(
+            request.path.startswith(p) for p in PLATFORM_PREFIXES
+        )
+        is_platform_user = bool(getattr(request.user, "is_platform_staff", False))
+        if is_platform_request and not is_platform_user:
+            return _forbid("Platform staff only.")
+        if (not is_platform_request) and is_platform_user and request.path.startswith("/api/"):
+            return _forbid(
+                "Platform staff cannot access tenant API endpoints directly. "
+                "Use /api/platform/* or impersonate (Phase 9).",
+            )
 
         tenant_id = self._resolve_tenant_id(request, token_payload)
         if tenant_id is None:

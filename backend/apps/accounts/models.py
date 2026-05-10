@@ -48,6 +48,31 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
+    # Phase 0 platform stub. Distinct from is_staff (Django admin access):
+    # is_platform_staff means "works for the SaaS operator, not a tenant".
+    # Platform staff can log into platform-web (when Phase 9 lands) and
+    # access /api/platform/*; they are explicitly BLOCKED from /api/v1/*
+    # tenant endpoints unless mid-impersonation (Phase 9 feature).
+    is_platform_staff = models.BooleanField(
+        default=False,
+        help_text="Works for the SaaS operator (us), not a tenant.",
+    )
+    platform_role = models.CharField(
+        max_length=30,
+        blank=True,
+        default="",
+        choices=(
+            ("super_admin", "Super admin"),
+            ("billing_admin", "Billing admin"),
+            ("support_lead", "Support lead"),
+            ("support_agent", "Support agent"),
+            ("sales_lead", "Sales lead"),
+            ("sales_rep", "Sales rep"),
+            ("read_only_observer", "Read-only observer"),
+        ),
+        help_text="Empty for tenant users; set when is_platform_staff=true.",
+    )
+
     last_login = models.DateTimeField(blank=True, null=True, db_column="last_login_at")
     password_changed_at = models.DateTimeField(auto_now_add=True)
     failed_login_count = models.PositiveIntegerField(default=0)
