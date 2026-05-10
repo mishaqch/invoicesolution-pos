@@ -1,0 +1,57 @@
+name: pos-release
+
+# Builds + publishes a signed Pakistan POS Electron installer when a
+# version tag is pushed. The cashier machines pick up the new build
+# via electron-updater (see pos-terminal/electron/auto-update.ts).
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#
+#   CSC_LINK              base64 of the .p12 cert OR a https://… URL
+#   CSC_KEY_PASSWORD      cert password
+#   GH_TOKEN              token with repo scope on the releases repo
+#
+# Optional (only when shipping the macOS dmg):
+#   APPLE_ID
+#   APPLE_APP_SPECIFIC_PASSWORD
+#   APPLE_TEAM_ID
+#
+# To trigger a release:
+#   git tag v0.1.0
+#   git push origin v0.1.0
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: pos-terminal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install
+        run: npm ci
+
+      - name: Build + publish
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          npm run build
+          npx electron-builder --publish always

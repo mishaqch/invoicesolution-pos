@@ -8,6 +8,7 @@
 import { BrowserWindow, app } from "electron";
 import path from "node:path";
 
+import { initAutoUpdate } from "./auto-update";
 import { closeCustomerDisplay, watchDisplayChanges } from "./customer-display";
 import { openDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc";
@@ -61,6 +62,9 @@ void app.whenReady().then(() => {
   // Open customer-facing display on a secondary monitor when present;
   // re-attempts on display hot-plug. No-op for single-display setups.
   watchDisplayChanges();
+  // Production-only: check GitHub Releases for a newer build, download
+  // in background, install on next quit. Dev mode is a no-op.
+  initAutoUpdate();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

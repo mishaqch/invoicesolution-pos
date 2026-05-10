@@ -1,13 +1,26 @@
 # electron-builder config — Phase 8.
 #
-# Phase 0 shipped a minimal stub; Phase 8 fills in code-signing hooks,
-# NSIS installer options, auto-update channel.
+# Code-signing + auto-update channel for production releases.
+# Cashier machines run electron-updater on startup; it pulls metadata
+# (latest.yml) and the .exe from the GitHub Releases channel below.
 #
-# Usage in CI:
-#   CSC_LINK=<path-to-cert.p12 or https url>  \
-#   CSC_KEY_PASSWORD=<cert password>          \
-#   GH_TOKEN=<github token for auto-update>   \
-#   npm run package
+# Required environment for a release build (CI only):
+#
+#   # Code signing — Windows EV / OV cert in PKCS#12 form
+#   CSC_LINK=<https://… or local path to .p12>
+#   CSC_KEY_PASSWORD=<cert password>
+#
+#   # GitHub Releases publishing (where electron-updater pulls from)
+#   GH_TOKEN=<token with repo scope on the releases repo>
+#
+#   # macOS notarization (optional; only if shipping the dmg)
+#   APPLE_ID=<apple id>
+#   APPLE_APP_SPECIFIC_PASSWORD=<app-specific password>
+#   APPLE_TEAM_ID=<10-char team id>
+#
+# All variables are read by electron-builder automatically — do NOT
+# echo them in CI logs and do NOT commit them. Drop them in your CI
+# secret store (GitHub Actions → Settings → Secrets and variables).
 #
 # Without CSC_LINK + CSC_KEY_PASSWORD the build still emits a working
 # .exe — but unsigned. Windows Smartscreen will warn users on first
@@ -44,6 +57,18 @@ win:
       arch: [x64]
   signingHashAlgorithms: [sha256]
   publisherName: Pakistan POS
+  # Cert resolved from CSC_LINK + CSC_KEY_PASSWORD env. Override here
+  # if you have an installed cert by subject name instead.
+  # certificateSubjectName: "Your Company Name"
+  verifyUpdateCodeSignature: true   # auto-update refuses unsigned diffs
+
+mac:
+  target:
+    - dmg
+  # Hardened runtime + notarization required for distribution.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  notarize: true   # uses APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID
 
 nsis:
   oneClick: false
@@ -59,12 +84,14 @@ linux:
   category: Office
   maintainer: support@pakistanpos.example.com
 
-mac:
-  target:
-    - dmg
-
-# Auto-update from a GitHub Releases channel. The deployer creates a
-# private repo for releases and sets GH_TOKEN in CI.
+# Auto-update channel — electron-updater on the cashier machine pulls
+# new versions from this GitHub Releases repo. Configure `repo` to the
+# private releases repository the deployer maintains; defaults to the
+# repository this build runs from when omitted.
 publish:
   provider: github
   releaseType: release
+  # Uncomment + fill when you split the public source repo from the
+  # private release-artifact repo:
+  # owner: pakistanpos
+  # repo: pos-releases

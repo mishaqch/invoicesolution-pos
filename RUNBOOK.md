@@ -158,6 +158,41 @@ The owner gets a one-time link to set their password; once they sign
 in, the onboarding wizard walks them through branch + terminal +
 products + first sale.
 
+## Releasing a new POS terminal version
+
+The Electron app auto-updates from GitHub Releases. To cut a new
+build:
+
+1. Bump `pos-terminal/package.json` version (`npm version patch` etc).
+2. Push the tag: `git push origin v<x.y.z>`.
+3. The `pos-release` GitHub Action builds Windows + Linux installers
+   (and macOS dmg if Apple secrets are configured), signs them, and
+   publishes to the releases channel.
+4. Each cashier machine picks up the update on next app start. Sales
+   in progress are not interrupted; install happens on next quit.
+
+### Required CI secrets
+
+| Secret | Purpose |
+|---|---|
+| `CSC_LINK` | Base64 of your `.p12` Windows cert OR `https://…` URL |
+| `CSC_KEY_PASSWORD` | Cert password |
+| `GH_TOKEN` | Token with `repo` scope on the releases repo |
+| `APPLE_ID` | (mac only) Apple ID for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | (mac only) app-specific password |
+| `APPLE_TEAM_ID` | (mac only) 10-char team ID |
+
+If `CSC_LINK` is unset, the build still produces working installers
+but they are unsigned. Don't ship unsigned to customers — Windows
+SmartScreen will warn on first run.
+
+### Rolling back a bad release
+
+GitHub Releases supports marking a release as draft/pre-release.
+Setting the latest release to "draft" pulls it from the auto-update
+channel; existing installs won't downgrade automatically. Push a
+new patch version with the fix to roll forward.
+
 ## Pre-launch checklist
 
 Per `CLAUDE_CODE_PROMPTS.md` Phase 8 §10:
