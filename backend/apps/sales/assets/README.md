@@ -1,25 +1,29 @@
 # Invoice PDF assets
 
-Drop binary assets here that the PDF renderer (`invoice_pdf.py`) loads.
+Binary assets the PDF renderer (`invoice_pdf.py`) loads. Square images
+work best — the renderer fits the FBR logo into a 30×30mm slot next to
+the QR code.
 
-## `fbr_di_logo.png`
+## FBR Digital Invoicing logo
 
-The official FBR Digital Invoicing wordmark/logo. Place a PNG here at any
-size — the renderer rescales it to ~22×18mm in the top-right of the
-invoice header.
+The renderer accepts either filename, in this order:
 
-PRAL distributes the logo with their integrator onboarding; until you
-have it on disk the PDF simply omits the FBR logo (the QR code still
-renders when the invoice has an `fbr_qr_payload`).
+1. `fbrLogo.png` (preferred — what you save the PRAL-issued file as)
+2. `fbr_di_logo.png` (legacy name, kept for backward compatibility)
 
-If you have the PRAL-issued asset, copy it to this folder:
+A square PNG at 512×512 or 1024×1024 with transparent or white
+background works well. Drop the file into this folder and re-render —
+no code change needed:
 
 ```sh
-cp /path/to/fbr-di-logo.png backend/apps/sales/assets/fbr_di_logo.png
+cp /path/to/fbr-logo.png backend/apps/sales/assets/fbrLogo.png
 ```
+
+If neither file is present, the renderer falls back to a vector-drawn
+placeholder (green leaf "D" + "DIGITAL INVOICING" wordmark).
 
 ## Per-tenant logo
 
-Tenants upload their business logo separately. The renderer looks for it
-at `MEDIA_ROOT/tenants/<tenant-id>-logo.png`. If absent, the PDF
-header just shows the tenant business name in text.
+Each tenant uploads their business logo separately. The renderer
+looks for it at `MEDIA_ROOT/tenants/<tenant-id>-logo.png`. When
+absent, the PDF header just shows the tenant business name in text.
