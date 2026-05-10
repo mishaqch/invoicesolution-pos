@@ -69,7 +69,7 @@ export function Sidebar() {
         <div className="border-b px-4 py-4 text-sm font-semibold tracking-tight">
           Pakistan POS
         </div>
-        <nav className="flex-1 space-y-3 px-2 py-3">
+        <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
           <Group items={TOP} />
           <Section title="Catalog" items={CATALOG} />
           <Section title="Inventory" items={INVENTORY} />

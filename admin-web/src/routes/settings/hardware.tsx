@@ -80,10 +80,6 @@ export default function HardwareChecklist() {
                 <CardContent className="space-y-2 text-sm">
                   <p>{d.test}</p>
                   <p className="text-xs text-muted-foreground">{d.doc}</p>
-                  <label className="flex items-center gap-2 text-xs">
-                    <input type="checkbox" className="h-3.5 w-3.5" />
-                    <span className="text-muted-foreground">Verified working</span>
-                  </label>
                 </CardContent>
               </Card>
             </li>

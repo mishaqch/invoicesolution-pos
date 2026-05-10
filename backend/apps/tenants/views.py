@@ -53,9 +53,25 @@ class OnboardingStateView(APIView):
       - has_product    — at least one Product (Phase 1) — checked lazily
                          to avoid a circular import at module load time
       - has_first_sale — at least one Invoice (any status)
+
+    On every GET, derived flags are mirrored into `onboarding_state` JSON
+    (`branch_done`, `terminal_done`, `product_done`, `first_sale_done`).
+    This is what the super-admin sees in the Django Tenant admin under
+    "Onboarding" — without the mirror, the JSON stayed empty `{}` even
+    though the tenant had completed real steps. The mirror is one-way
+    and idempotent: derived true → JSON true. PATCH still wins for
+    operator overrides (e.g. dismissed_at).
     """
 
     permission_classes = [IsAuthenticated]
+
+    # Mapping derived-flag → onboarding_state JSON key.
+    _DERIVED_TO_STATE_KEY = {
+        "has_branch": "branch_done",
+        "has_terminal": "terminal_done",
+        "has_product": "product_done",
+        "has_first_sale": "first_sale_done",
+    }
 
     def _tenant(self, request) -> Tenant:
         tenant_id = getattr(request, "tenant_id", None)
@@ -66,19 +82,31 @@ class OnboardingStateView(APIView):
     def get(self, request):
         from apps.catalog.models import Product
         tenant = self._tenant(request)
-        return Response({
-            "state": tenant.onboarding_state or {},
-            "derived": {
-                "has_branch": Branch.objects.filter(
-                    tenant=tenant, deleted_at__isnull=True,
-                ).exists(),
-                "has_terminal": Terminal.objects.filter(tenant=tenant).exists(),
-                "has_product": Product.objects.filter(
-                    tenant=tenant, deleted_at__isnull=True,
-                ).exists(),
-                "has_first_sale": Invoice.objects.for_tenant(tenant.id).exists(),
-            },
-        })
+        derived = {
+            "has_branch": Branch.objects.filter(
+                tenant=tenant, deleted_at__isnull=True,
+            ).exists(),
+            "has_terminal": Terminal.objects.filter(tenant=tenant).exists(),
+            "has_product": Product.objects.filter(
+                tenant=tenant, deleted_at__isnull=True,
+            ).exists(),
+            "has_first_sale": Invoice.objects.for_tenant(tenant.id).exists(),
+        }
+
+        # Mirror derived flags into the JSON so super-admin sees real progress.
+        # We only write keys whose state would CHANGE; an explicit operator
+        # override (e.g. dismissed_at, or a manually-toggled key) is preserved.
+        current = dict(tenant.onboarding_state or {})
+        changed = False
+        for derived_key, state_key in self._DERIVED_TO_STATE_KEY.items():
+            if derived[derived_key] and not current.get(state_key):
+                current[state_key] = True
+                changed = True
+        if changed:
+            tenant.onboarding_state = current
+            tenant.save(update_fields=["onboarding_state", "updated_at"])
+
+        return Response({"state": current, "derived": derived})
 
     def patch(self, request):
         tenant = self._tenant(request)
