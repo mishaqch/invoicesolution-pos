@@ -24,6 +24,14 @@ app.conf.beat_schedule = {
         "task": "inventory.low_stock_digest",
         "schedule": crontab(hour=7, minute=0),
     },
+    # Weekly stock-valuation report — Mondays 06:00 PKT (Asia/Karachi).
+    # Sums quantity × cost_price per branch, caches in Redis 7d, emails
+    # owners + accountants. On-demand triggers go via the same task with
+    # a `tenant_id` argument.
+    "stock-valuation-weekly": {
+        "task": "inventory.stock_valuation_report",
+        "schedule": crontab(day_of_week="mon", hour=6, minute=0),
+    },
     # Phase 4 — FBR
     "fbr-finalize-aged-invoices-hourly": {
         "task": "fbr.finalize_aged_invoices",
