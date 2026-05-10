@@ -55,6 +55,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "fbr_invoice_number", "fbr_qr_payload",
             "fbr_submitted_at", "fbr_validated_at",
             "invoice_type", "invoice_date",
+            "reference_invoice",
             "buyer_name", "buyer_ntn_cnic", "buyer_phone",
             "buyer_address", "buyer_province", "buyer_registration_type",
             "subtotal", "discount_total", "tax_total", "grand_total",
@@ -106,7 +107,15 @@ class CheckoutPaymentSerializer(serializers.Serializer):
 
 
 class CheckoutSerializer(serializers.Serializer):
-    """Body of POST /api/sales/invoices/checkout/."""
+    """Body of POST /api/sales/invoices/checkout/ and /manual/.
+
+    invoice_type + reference_invoice are honored by /manual/ only —
+    the POS terminal's `checkout` flow always creates a sale. They
+    enable the debit-note workflow: pass invoice_type='debit_note'
+    plus the original invoice id and the API will create a linked
+    invoice with the same buyer block, sent to PRAL as a separate
+    document referencing the original.
+    """
     branch = serializers.UUIDField()
     terminal = serializers.UUIDField()
     cash_session = serializers.UUIDField(required=False, allow_null=True)
@@ -118,6 +127,25 @@ class CheckoutSerializer(serializers.Serializer):
     payments = CheckoutPaymentSerializer(many=True)
     client_uuid = serializers.UUIDField()
     notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Debit / credit note linkage. Both default to None (sale flow).
+    invoice_type = serializers.ChoiceField(
+        choices=["sale", "debit_note", "credit_note"],
+        required=False, default="sale",
+    )
+    reference_invoice = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        itype = attrs.get("invoice_type", "sale")
+        ref = attrs.get("reference_invoice")
+        if itype in ("debit_note", "credit_note") and not ref:
+            raise serializers.ValidationError(
+                {"reference_invoice": f"{itype} requires a reference_invoice."},
+            )
+        if itype == "sale" and ref:
+            raise serializers.ValidationError(
+                {"invoice_type": "Sale invoices cannot reference another invoice."},
+            )
+        return attrs
 
 
 class HoldSerializer(serializers.Serializer):

@@ -199,8 +199,10 @@ export interface AdminInvoice {
   fbr_invoice_number: string | null;
   invoice_type: string;
   invoice_date: string;
+  reference_invoice: string | null;
   buyer_name: string | null;
   buyer_phone: string | null;
+  buyer_ntn_cnic: string | null;
   subtotal: string;
   discount_total: string;
   tax_total: string;
@@ -753,6 +755,10 @@ export interface ManualInvoiceInput {
   payments: ManualInvoicePayment[];
   client_uuid: string;
   notes?: string;
+  /** Debit / credit note linkage. Defaults to "sale". Server requires
+   *  `reference_invoice` when invoice_type is debit_note or credit_note. */
+  invoice_type?: "sale" | "debit_note" | "credit_note";
+  reference_invoice?: string | null;
 }
 
 export interface CreatedInvoice {

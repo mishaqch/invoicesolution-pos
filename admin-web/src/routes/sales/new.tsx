@@ -1,6 +1,6 @@
-import { Plus, Search, Trash2 } from "lucide-react";
+import { FileText, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,12 +64,28 @@ function uuidv4(): string {
  * seller branch), per-line item editor with HS code / UoM / rate / qty,
  * tax rollup, payment method.
  */
+interface DebitNoteContext {
+  invoiceType: "debit_note" | "credit_note";
+  referenceInvoiceId: string;
+  referenceInvoiceNumber: string;
+  buyerName: string | null;
+  buyerNtnCnic: string | null;
+}
+
 export default function NewInvoiceRoute() {
   const navigate = useNavigate();
+  const location = useLocation();
   const branches = useBranches();
   const terminals = useTerminals();
   const customers = useCustomers();
   const create = useCreateManualInvoice();
+
+  // Debit-note flow: invoice-detail page passes these via Link state when
+  // the user clicks "Add debit note". The reference_invoice + invoice_type
+  // fields end up on the POST body; the customer picker is disabled (buyer
+  // copies from the original at the server).
+  const debitContext = (location.state as { debitNote?: DebitNoteContext } | null)
+    ?.debitNote ?? null;
 
   const [branchId, setBranchId] = useState("");
   const [terminalId, setTerminalId] = useState("");
@@ -222,13 +238,21 @@ export default function NewInvoiceRoute() {
       const result = await create.mutateAsync({
         branch: branchId,
         terminal: terminalId,
-        customer: customerId || null,
+        // Buyer is locked to the original on debit/credit notes; pass null
+        // so the server copies the buyer block from reference_invoice.
+        customer: debitContext ? null : (customerId || null),
         cart_lines: apiLines,
         payments: payments.map((p) => ({
           ...p, amount: String(p.amount),
         })),
         client_uuid: clientUuidRef.current,
         notes: notes || undefined,
+        ...(debitContext
+          ? {
+              invoice_type: debitContext.invoiceType,
+              reference_invoice: debitContext.referenceInvoiceId,
+            }
+          : {}),
       });
       // Take the user to the new invoice's detail page.
       navigate(`/sales/${result.id}`);
@@ -267,13 +291,46 @@ export default function NewInvoiceRoute() {
           <Link to="/sales" className="text-sm text-muted-foreground hover:underline">
             ← Sales
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">New invoice</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {debitContext
+              ? debitContext.invoiceType === "debit_note"
+                ? "New debit note"
+                : "New credit note"
+              : "New invoice"}
+          </h1>
           <p className="text-xs text-muted-foreground">
-            Manual entry — for wholesalers, service providers, or office staff
-            issuing tax invoices outside the POS.
+            {debitContext
+              ? "Adds a separate FBR-validated invoice that references the original. Use this when items were missed or extra charges need to be billed."
+              : "Manual entry — for wholesalers, service providers, or office staff issuing tax invoices outside the POS."}
           </p>
         </div>
       </div>
+
+      {debitContext && (
+        <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/30">
+          <CardContent className="flex items-center gap-3 py-3 text-sm">
+            <FileText className="h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
+            <div className="flex-1">
+              <span className="font-medium">Reference: </span>
+              <Link
+                to={`/sales/${debitContext.referenceInvoiceId}`}
+                className="font-mono hover:underline"
+              >
+                {debitContext.referenceInvoiceNumber}
+              </Link>
+              {debitContext.buyerName && (
+                <span className="ml-3 text-muted-foreground">
+                  Buyer: {debitContext.buyerName}
+                  {debitContext.buyerNtnCnic && ` (${debitContext.buyerNtnCnic})`}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              Buyer block is locked — copied from the original at submit time.
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -303,8 +360,17 @@ export default function NewInvoiceRoute() {
             </div>
             <div>
               <Label>Buyer</Label>
-              <Select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-                <option value="">Walk-in (unregistered)</option>
+              <Select
+                value={customerId}
+                onChange={(e) => setCustomerId(e.target.value)}
+                disabled={!!debitContext}
+                title={debitContext ? "Locked — buyer is inherited from the original invoice" : undefined}
+              >
+                <option value="">
+                  {debitContext
+                    ? `From original: ${debitContext.buyerName ?? "Walk-in"}`
+                    : "Walk-in (unregistered)"}
+                </option>
                 {customers.data?.results?.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} {c.ntn ? `· NTN ${c.ntn}` : c.cnic ? `· CNIC ${c.cnic}` : ""}

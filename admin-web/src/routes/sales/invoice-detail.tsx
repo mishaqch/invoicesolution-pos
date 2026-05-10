@@ -1,6 +1,6 @@
-import { ArrowLeft, Download, FileText, Pencil, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, Download, FilePlus2, FileText, Pencil, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,8 +50,16 @@ function timeUntilDeadline(deadline: string | null): { remaining: string; expire
   return { remaining: `${hours}h ${minutes}m`, expired: false };
 }
 
+// Invoice statuses the server accepts as a reference for a debit note.
+// Mirror of the gate in apps/sales/views.py manual_create.
+const DEBIT_NOTE_REFERENCEABLE_STATUSES = new Set([
+  "valid", "finalized", "edited", "partially_edited",
+  "partially_cancelled", "partially_edited_and_cancelled",
+]);
+
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data: invoice, isLoading } = useInvoice(id);
   const cancel = useCancelInvoice();
   const cancelItem = useCancelInvoiceItem();
@@ -131,6 +139,25 @@ export default function InvoiceDetail() {
           >
             <Download className="mr-1 h-4 w-4" /> Download
           </Button>
+          {DEBIT_NOTE_REFERENCEABLE_STATUSES.has(invoice.status) && (
+            <Button
+              variant="outline"
+              onClick={() => navigate("/sales/new", {
+                state: {
+                  debitNote: {
+                    invoiceType: "debit_note",
+                    referenceInvoiceId: invoice.id,
+                    referenceInvoiceNumber: invoice.local_invoice_number,
+                    buyerName: invoice.buyer_name,
+                    buyerNtnCnic: invoice.buyer_ntn_cnic,
+                  },
+                },
+              })}
+              title="Add charges to this invoice via a separate FBR-validated debit note"
+            >
+              <FilePlus2 className="mr-1 h-4 w-4" /> Add debit note
+            </Button>
+          )}
           {(invoice.status === "failed" || invoice.status === "pending_sync")
             && !invoice.fbr_invoice_number && (
             <Button

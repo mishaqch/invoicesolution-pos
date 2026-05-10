@@ -327,3 +327,134 @@ def test_invoice_pdf_includes_fbr_qr_when_validated(
     assert pdf_with_fbr[:4] == b"%PDF"
     # The QR image embed adds significant bytes — sanity check it grew.
     assert len(pdf_with_fbr) > size_without_qr
+
+
+# ---------------------------------------------------------------------------
+# Debit note (issued against an existing validated invoice)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_debit_note_links_to_original_and_copies_buyer(
+    tenant, branch, terminal, owner_user, stocked_product,
+):
+    """Original validated invoice + a debit note that references it.
+    Buyer block on the note copies from the original (auditors expect
+    the same buyer on both documents)."""
+    api = APIClient()
+    _login(api, owner_user.email)
+
+    original_body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "5", "unit_price": "1000", "tax_rate": "18",
+            "is_taxable": True,
+        }],
+        "payments": [{"payment_method": "cash", "amount": "5900"}],
+        "client_uuid": str(uuid.uuid4()),
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        r1 = api.post("/api/sales/invoices/manual/", original_body, format="json")
+    assert r1.status_code == 201
+    original_id = r1.json()["id"]
+    Invoice.objects.filter(pk=original_id).update(
+        status="valid", buyer_name="Khan Trading Co",
+        buyer_phone="+92 300 1234567", buyer_ntn_cnic="1234567890123",
+    )
+
+    debit_body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "2", "unit_price": "1000", "tax_rate": "18",
+            "is_taxable": True,
+        }],
+        "payments": [{"payment_method": "cash", "amount": "2360"}],
+        "client_uuid": str(uuid.uuid4()),
+        "invoice_type": "debit_note",
+        "reference_invoice": original_id,
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay") as mock_submit:
+        r2 = api.post("/api/sales/invoices/manual/", debit_body, format="json")
+    assert r2.status_code == 201, r2.content
+
+    note = Invoice.objects.get(pk=r2.json()["id"])
+    assert note.invoice_type == "debit_note"
+    assert str(note.reference_invoice_id) == original_id
+    # Buyer copied from original (no `customer` arg supplied in debit_body).
+    assert note.buyer_name == "Khan Trading Co"
+    assert note.buyer_phone == "+92 300 1234567"
+    assert note.buyer_ntn_cnic == "1234567890123"
+    # Money matches the new lines, NOT the original.
+    assert note.grand_total == Decimal("2360.0000")
+    # FBR queued for the note (just like a normal sale).
+    mock_submit.assert_called_once_with(str(note.id))
+
+
+@pytest.mark.django_db
+def test_debit_note_refuses_cancelled_original(
+    tenant, branch, terminal, owner_user, stocked_product,
+):
+    api = APIClient()
+    _login(api, owner_user.email)
+
+    original_body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "1", "unit_price": "1000", "tax_rate": "18",
+            "is_taxable": True,
+        }],
+        "payments": [{"payment_method": "cash", "amount": "1180"}],
+        "client_uuid": str(uuid.uuid4()),
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        r1 = api.post("/api/sales/invoices/manual/", original_body, format="json")
+    Invoice.objects.filter(pk=r1.json()["id"]).update(status="cancelled")
+
+    debit_body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "1", "unit_price": "1000", "tax_rate": "18",
+            "is_taxable": True,
+        }],
+        "payments": [{"payment_method": "cash", "amount": "1180"}],
+        "client_uuid": str(uuid.uuid4()),
+        "invoice_type": "debit_note",
+        "reference_invoice": r1.json()["id"],
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        r2 = api.post("/api/sales/invoices/manual/", debit_body, format="json")
+    assert r2.status_code == 400
+
+
+@pytest.mark.django_db
+def test_debit_note_requires_reference_invoice(
+    tenant, branch, terminal, owner_user, stocked_product,
+):
+    """Serializer-level: debit_note without reference_invoice is rejected."""
+    api = APIClient()
+    _login(api, owner_user.email)
+    body = {
+        "branch": str(branch.id),
+        "terminal": str(terminal.id),
+        "cart_lines": [{
+            "product": str(stocked_product.id),
+            "quantity": "1", "unit_price": "1000", "tax_rate": "18",
+            "is_taxable": True,
+        }],
+        "payments": [{"payment_method": "cash", "amount": "1180"}],
+        "client_uuid": str(uuid.uuid4()),
+        "invoice_type": "debit_note",
+    }
+    with patch("apps.fbr.tasks.submit_invoice_to_fbr.delay"):
+        resp = api.post("/api/sales/invoices/manual/", body, format="json")
+    assert resp.status_code == 400
+    assert "reference_invoice" in resp.json()
+

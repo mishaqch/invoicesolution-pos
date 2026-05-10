@@ -174,6 +174,12 @@ class InvoiceViewSet(
         same numbering, same FBR submission path) but lets the caller
         omit cash_session and pick the recording terminal explicitly.
 
+        Also handles debit / credit notes when invoice_type and
+        reference_invoice are supplied: same pipeline, different
+        invoice_type stored, reference_invoice FK set so the original
+        and the note are linked. The buyer block is copied from the
+        reference if no explicit customer override is sent.
+
         After creation, the invoice is queued for FBR submission via the
         existing Celery task (matches the POS flow).
         """
@@ -192,6 +198,34 @@ class InvoiceViewSet(
             if v.get("customer") else None
         )
 
+        # Resolve + validate the reference invoice (debit/credit note flow).
+        # Tenant scoping is enforced through Invoice.objects.for_tenant; we
+        # also gate on a state that makes a debit note meaningful: validated
+        # or finalized invoices, never cancelled / failed / pending.
+        reference = None
+        invoice_type = v.get("invoice_type", "sale")
+        if v.get("reference_invoice"):
+            reference = (
+                Invoice.objects.for_tenant(request.tenant_id)
+                .filter(pk=v["reference_invoice"])
+                .first()
+            )
+            if reference is None:
+                return Response(
+                    {"reference_invoice": "Original invoice not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if reference.status not in ("valid", "finalized", "edited",
+                                        "partially_edited",
+                                        "partially_cancelled",
+                                        "partially_edited_and_cancelled"):
+                return Response(
+                    {"reference_invoice":
+                        f"Cannot issue {invoice_type} against a "
+                        f"{reference.get_status_display()} invoice."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         invoice = checkout.create_invoice(
             tenant_id=request.tenant_id,
             branch=branch,
@@ -204,6 +238,8 @@ class InvoiceViewSet(
             payments=[dict(p) for p in v["payments"]],
             client_uuid=v["client_uuid"],
             notes=v.get("notes"),
+            invoice_type=invoice_type,
+            reference_invoice=reference,
             request=request,
         )
         # Auto-submit to FBR — wholesaler flow expects the FBR number

@@ -42,8 +42,19 @@ def create_invoice(
     client_uuid: UUID | str,
     notes: str | None = None,
     local_invoice_number: str | None = None,
+    invoice_type: str = "sale",
+    reference_invoice: Invoice | None = None,
     request=None,
 ) -> Invoice:
+    """Create an invoice (sale, debit-note, or credit-note).
+
+    invoice_type / reference_invoice were added in the V1 mid-cycle
+    debit-note work — defaults preserve the original sale flow.
+    Debit notes carry a reference to the original invoice so PRAL
+    (and human auditors) can link them. The buyer block is copied
+    from the reference when one is supplied and no `customer` arg
+    overrides it.
+    """
     # Idempotency: if we've already seen this client_uuid, return the prior row.
     existing = Invoice.objects.filter(client_uuid=client_uuid).first()
     if existing is not None:
@@ -52,25 +63,49 @@ def create_invoice(
     quote = quote_cart(cart_lines, cart_discount_pct=cart_discount_pct)
     paid_total = sum(Decimal(str(p["amount"])) for p in payments)
 
+    # Buyer snapshot precedence:
+    #   1. The customer arg (current sale flow).
+    #   2. The reference invoice's buyer (debit/credit note flow — auditors
+    #      need the buyer to match the original document exactly).
+    if customer is not None:
+        buyer_name = customer.name
+        buyer_phone = customer.phone
+        buyer_ntn_cnic = customer.ntn or customer.cnic
+        buyer_province = customer.province
+        buyer_reg = (
+            "Registered" if customer.registration_type == "registered"
+            else "Unregistered"
+        )
+    elif reference_invoice is not None:
+        buyer_name = reference_invoice.buyer_name
+        buyer_phone = reference_invoice.buyer_phone
+        buyer_ntn_cnic = reference_invoice.buyer_ntn_cnic
+        buyer_province = reference_invoice.buyer_province
+        buyer_reg = reference_invoice.buyer_registration_type
+    else:
+        buyer_name = None
+        buyer_phone = None
+        buyer_ntn_cnic = None
+        buyer_province = None
+        buyer_reg = "Unregistered"
+
     invoice = Invoice.objects.create(
         tenant_id=tenant_id,
         branch=branch,
         terminal=terminal,
         cashier=cashier,
         cash_session=cash_session,
-        customer=customer,
+        customer=customer or (reference_invoice.customer if reference_invoice else None),
         local_invoice_number=local_invoice_number or next_invoice_number(terminal=terminal),
-        invoice_type="sale",
+        invoice_type=invoice_type,
+        reference_invoice=reference_invoice,
         invoice_date=dt.date.today(),
-        # Buyer snapshot
-        buyer_name=customer.name if customer else None,
-        buyer_phone=customer.phone if customer else None,
-        buyer_ntn_cnic=(customer.ntn or customer.cnic) if customer else None,
-        buyer_province=customer.province if customer else None,
-        buyer_registration_type=(
-            "Registered" if customer and customer.registration_type == "registered"
-            else "Unregistered"
-        ),
+        # Buyer snapshot — resolved above (customer arg, then reference, then None)
+        buyer_name=buyer_name,
+        buyer_phone=buyer_phone,
+        buyer_ntn_cnic=buyer_ntn_cnic,
+        buyer_province=buyer_province,
+        buyer_registration_type=buyer_reg,
         # Money
         subtotal=quote.subtotal.amount,
         discount_total=quote.discount_total.amount,
