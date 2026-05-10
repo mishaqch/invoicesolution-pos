@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom
 
 import { AdminShell } from "@/components/layout/AdminShell";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
+import { RequireModule } from "@/features/modules/RequireModule";
 import BranchesList from "@/routes/branches/branches";
 import CategoriesList from "@/routes/catalog/categories";
 import CsvImport from "@/routes/catalog/csv-import";
@@ -62,7 +63,10 @@ export default function App() {
           >
             <Route index element={<DashboardRoute />} />
 
-            <Route path="branches" element={<BranchesList />} />
+            <Route
+              path="branches"
+              element={<RequireModule module="branches"><BranchesList /></RequireModule>}
+            />
 
             <Route path="catalog">
               <Route path="products" element={<ProductsList />} />
@@ -74,7 +78,10 @@ export default function App() {
               <Route path="hs-codes" element={<HsCodesBrowser />} />
             </Route>
 
-            <Route path="inventory">
+            <Route
+              path="inventory"
+              element={<RequireModule module="inventory"><Outlet /></RequireModule>}
+            >
               <Route path="stock" element={<StockByBranch />} />
               <Route path="movements" element={<Movements />} />
               <Route path="adjustments" element={<Adjustments />} />
@@ -105,21 +112,33 @@ export default function App() {
 
             <Route path="payments">
               <Route path="settings" element={<PaymentSettingsPage />} />
-              <Route path="cheques" element={<ChequesPage />} />
+              <Route
+                path="cheques"
+                element={<RequireModule module="payments_advanced"><ChequesPage /></RequireModule>}
+              />
             </Route>
 
-            <Route path="returns">
+            <Route
+              path="returns"
+              element={<RequireModule module="returns"><Outlet /></RequireModule>}
+            >
               <Route index element={<ReturnsList />} />
               <Route path=":id" element={<ReturnDetail />} />
             </Route>
 
-            <Route path="customers">
+            <Route
+              path="customers"
+              element={<RequireModule module="customers"><Outlet /></RequireModule>}
+            >
               <Route index element={<CustomersList />} />
               <Route path="new" element={<CustomerDetail />} />
               <Route path=":id" element={<CustomerDetail />} />
             </Route>
 
-            <Route path="reports">
+            <Route
+              path="reports"
+              element={<RequireModule module="reports_basic"><Outlet /></RequireModule>}
+            >
               <Route index element={<ReportsIndex />} />
               <Route path=":name" element={<ReportDetail />} />
             </Route>
@@ -131,7 +150,10 @@ export default function App() {
 
             <Route path="settings">
               <Route index element={<SettingsIndex />} />
-              <Route path="hardware" element={<HardwareChecklist />} />
+              <Route
+                path="hardware"
+                element={<RequireModule module="hardware"><HardwareChecklist /></RequireModule>}
+              />
             </Route>
           </Route>
 

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
+import { useModules, type ModuleKey } from "@/features/modules/hooks";
 import { cn } from "@/lib/utils";
 
 interface Item {
@@ -24,16 +25,23 @@ interface Item {
   icon: React.ComponentType<{ className?: string }>;
   disabled?: boolean;
   end?: boolean;
+  /** When set, the item is hidden if this module is not enabled for
+   *  the tenant. Items without `module` are always visible
+   *  (Dashboard, Help, Settings). */
+  module?: ModuleKey;
 }
 
 const TOP: Item[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/sales", label: "Invoices", icon: Receipt, end: true },
-  { to: "/sales/new", label: "New sale", icon: ShoppingCart },
-  { to: "/sales/held", label: "Held sales", icon: ShoppingCart },
-  { to: "/returns", label: "Returns", icon: ShoppingCart, end: true },
+  { to: "/sales", label: "Invoices", icon: Receipt, end: true, module: "sales" },
+  { to: "/sales/new", label: "New sale", icon: ShoppingCart, module: "sales" },
+  { to: "/sales/held", label: "Held sales", icon: ShoppingCart, module: "sales" },
+  { to: "/returns", label: "Returns", icon: ShoppingCart, end: true, module: "returns" },
 ];
 
+// Products / categories / tax rates / HS codes are catalog primitives —
+// they don't have a dedicated module in V1. They stay always-visible so
+// even sales-only tenants can manage their SKUs.
 const CATALOG: Item[] = [
   { to: "/catalog/products", label: "Products", icon: Package },
   { to: "/catalog/categories", label: "Categories", icon: Boxes },
@@ -42,27 +50,43 @@ const CATALOG: Item[] = [
 ];
 
 const INVENTORY: Item[] = [
-  { to: "/inventory/stock", label: "Stock by branch", icon: Boxes },
-  { to: "/inventory/movements", label: "Movements", icon: ClipboardList },
-  { to: "/inventory/adjustments", label: "Adjustments", icon: ClipboardList },
-  { to: "/inventory/transfers", label: "Transfers", icon: ClipboardList },
-  { to: "/inventory/audits", label: "Audits", icon: ClipboardList },
+  { to: "/inventory/stock", label: "Stock by branch", icon: Boxes, module: "inventory" },
+  { to: "/inventory/movements", label: "Movements", icon: ClipboardList, module: "inventory" },
+  { to: "/inventory/adjustments", label: "Adjustments", icon: ClipboardList, module: "inventory" },
+  { to: "/inventory/transfers", label: "Transfers", icon: ClipboardList, module: "inventory" },
+  { to: "/inventory/audits", label: "Audits", icon: ClipboardList, module: "inventory" },
 ];
 
 const ADMIN: Item[] = [
-  { to: "/branches", label: "Branches", icon: Building2 },
+  { to: "/branches", label: "Branches", icon: Building2, module: "branches" },
   { to: "/sync", label: "Sync health", icon: Activity, end: true },
   { to: "/payments/settings", label: "Payment methods", icon: FileText },
-  { to: "/payments/cheques", label: "Cheques", icon: FileText },
-  { to: "/customers", label: "Customers", icon: Users, end: true },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
-  { to: "/fbr", label: "FBR", icon: FileText, end: true },
-  { to: "/settings/hardware", label: "Hardware", icon: Wrench },
+  { to: "/payments/cheques", label: "Cheques", icon: FileText, module: "payments_advanced" },
+  { to: "/customers", label: "Customers", icon: Users, end: true, module: "customers" },
+  { to: "/reports", label: "Reports", icon: BarChart3, module: "reports_basic" },
+  { to: "/fbr", label: "FBR", icon: FileText, end: true, module: "fbr" },
+  { to: "/settings/hardware", label: "Hardware", icon: Wrench, module: "hardware" },
   { to: "/help", label: "Help", icon: HelpCircle },
   { to: "/settings", label: "Settings", icon: Settings, end: true },
 ];
 
 export function Sidebar() {
+  // useModules() drives which items render. While the request is in
+  // flight we show everything (the hook returns true on isLoading) so
+  // operators don't see the menu pop in.
+  const { data: modules } = useModules();
+  const enabled = modules?.enabled;
+
+  function visible(items: Item[]): Item[] {
+    if (!enabled) return items;
+    return items.filter((it) => !it.module || enabled.includes(it.module));
+  }
+
+  const top = visible(TOP);
+  const catalog = visible(CATALOG);
+  const inventory = visible(INVENTORY);
+  const adminItems = visible(ADMIN);
+
   return (
     <aside className="hidden border-r bg-muted/40 md:block md:w-60">
       <div className="flex h-full flex-col">
@@ -70,10 +94,10 @@ export function Sidebar() {
           Pakistan POS
         </div>
         <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
-          <Group items={TOP} />
-          <Section title="Catalog" items={CATALOG} />
-          <Section title="Inventory" items={INVENTORY} />
-          <Section title="Admin" items={ADMIN} />
+          {top.length > 0 && <Group items={top} />}
+          {catalog.length > 0 && <Section title="Catalog" items={catalog} />}
+          {inventory.length > 0 && <Section title="Inventory" items={inventory} />}
+          {adminItems.length > 0 && <Section title="Admin" items={adminItems} />}
         </nav>
         <div className="border-t px-4 py-3 text-xs text-muted-foreground">
           Phase 1 build
