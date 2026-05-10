@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import DayCloseRoute from "@/routes/day-close";
 import DayOpenRoute from "@/routes/day-open";
+import HardwareRoute from "@/routes/hardware";
 import HeldSalesRoute from "@/routes/held-sales";
 import TodayInvoicesRoute from "@/routes/today-invoices";
 import LoginRoute from "@/routes/login";
@@ -30,6 +31,7 @@ export default function App() {
         <Route path="/today-invoices" element={protectedRoute(<TodayInvoicesRoute />)} />
         <Route path="/return" element={protectedRoute(<ReturnRoute />)} />
         <Route path="/day-close" element={protectedRoute(<DayCloseRoute />)} />
+        <Route path="/hardware" element={protectedRoute(<HardwareRoute />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
