@@ -8,6 +8,7 @@
 import { BrowserWindow, app } from "electron";
 import path from "node:path";
 
+import { closeCustomerDisplay, watchDisplayChanges } from "./customer-display";
 import { openDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc";
 import { startSyncWorker, stopSyncWorker } from "./sync/manager";
@@ -57,6 +58,9 @@ void app.whenReady().then(() => {
   registerIpcHandlers();
   startSyncWorker({ dbPath, apiBase: resolveApiBase() });
   createWindow();
+  // Open customer-facing display on a secondary monitor when present;
+  // re-attempts on display hot-plug. No-op for single-display setups.
+  watchDisplayChanges();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -65,6 +69,7 @@ void app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   stopSyncWorker();
+  closeCustomerDisplay();
 });
 
 app.on("window-all-closed", () => {

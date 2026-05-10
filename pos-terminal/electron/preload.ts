@@ -167,6 +167,20 @@ const api = {
     open: (): Promise<{ success: boolean; reason?: string }> =>
       ipcRenderer.invoke("drawer:open"),
   },
+  customerDisplay: {
+    /**
+     * Send a message to the customer-facing display (second monitor).
+     * Returns { success: false } when no secondary display is attached
+     * — the cashier flow continues regardless. Payload shapes match
+     * what customer-display/src/App.tsx expects:
+     *   { type: "idle" }
+     *   { type: "sale", lines, total, business }
+     *   { type: "qr", url, amount }
+     *   { type: "thanks" }
+     */
+    post: (payload: unknown): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke("customerDisplay:post", payload),
+  },
   sync: {
     setTokens: (access: string | null, refresh: string | null): Promise<{ ok: true }> =>
       ipcRenderer.invoke("sync:set-tokens", access, refresh),

@@ -35,6 +35,7 @@ import {
 } from "./db/sales";
 import { listProducts, productsCount, searchProducts, syncCatalog } from "./db/sync";
 import { openCashDrawer, printReceipt } from "./printer";
+import { postToCustomerDisplay } from "./customer-display";
 
 export function registerIpcHandlers() {
   // Meta
@@ -143,6 +144,14 @@ export function registerIpcHandlers() {
   // Printer + drawer
   ipcMain.handle("printer:print-receipt", async (_e, payload) => printReceipt(payload));
   ipcMain.handle("drawer:open", async () => openCashDrawer());
+
+  // Customer-facing display (second monitor). Returns success=false when
+  // no secondary display is attached so the renderer can fall back
+  // gracefully.
+  ipcMain.handle("customerDisplay:post", (_e, payload) => {
+    const ok = postToCustomerDisplay(payload);
+    return { success: ok };
+  });
 
   // Phase 3 — sync worker bridge
   ipcMain.handle(

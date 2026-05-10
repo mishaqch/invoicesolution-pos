@@ -7,7 +7,14 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: { index: path.resolve(__dirname, "electron/main.ts") },
+        input: {
+          index: path.resolve(__dirname, "electron/main.ts"),
+          // Bundled alongside main.cjs so the customer-display window
+          // can reference it via `path.join(__dirname, "customer-display-preload.cjs")`.
+          "customer-display-preload": path.resolve(
+            __dirname, "electron/customer-display-preload.ts",
+          ),
+        },
         output: { format: "cjs", entryFileNames: "[name].cjs" },
       },
     },
