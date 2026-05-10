@@ -1,31 +1,225 @@
-import { Plus } from "lucide-react";
-import { useState } from "react";
+/**
+ * Tenant > Invoices.
+ *
+ * FBR-compliance is the hot path of the product, so this screen leads
+ * with the lifecycle KPIs (validated / submitted / failed / etc.) and
+ * the search box gets equal weight with status filtering.
+ *
+ * KPI tiles are clickable status-filters: clicking "Failed" sets the
+ * status query param to "failed" and flashes the table to that subset.
+ * Tile counts come from /sales/invoices/summary/, which honours the
+ * branch + date filter so the numbers match the table.
+ */
+
+import {
+  AlertOctagon,
+  Ban,
+  CheckCircle2,
+  CircleDashed,
+  Clock,
+  FilePenLine,
+  Plus,
+  Receipt,
+  Search,
+  X,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useBranches, useInvoices } from "@/lib/queries";
+import { useBranches, useInvoices, useInvoiceSummary } from "@/lib/queries";
+import { cn } from "@/lib/utils";
 
-const STATUSES = [
-  "", "pending_sync", "submitted", "valid", "failed",
-  "cancelled", "partially_cancelled", "finalized",
+// ---------------------------------------------------------------------------
+// Status taxonomy
+//
+// Backend status values (from apps/sales/models.py INVOICE_STATUSES):
+//   pending_sync, submitted, valid, failed, edited, partially_edited,
+//   cancelled, partially_cancelled, partially_edited_and_cancelled, finalized.
+//
+// We bucket them into 6 KPI tiles a tenant cares about. The bucket is
+// also what the dropdown filter sends to the API as a single status
+// value (the API accepts only exact matches today).
+// ---------------------------------------------------------------------------
+
+const STATUS_FILTER_OPTIONS = [
+  { value: "", label: "All statuses" },
+  { value: "valid", label: "Validated" },
+  { value: "finalized", label: "Finalized (>72h)" },
+  { value: "submitted", label: "Submitted" },
+  { value: "failed", label: "Failed" },
+  { value: "pending_sync", label: "Pending sync" },
+  { value: "edited", label: "Edited" },
+  { value: "partially_edited", label: "Partially edited" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "partially_cancelled", label: "Partially cancelled" },
+] as const;
+
+interface KpiTile {
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  /** Status values that count toward this tile. */
+  statuses: string[];
+  /** When the user clicks this tile, this is the value sent to the
+   *  status filter. Most tiles map 1-1 to a real status; "Validated"
+   *  sums valid+finalized (only "valid" is sent). */
+  filterValue: string;
+  tone: "neutral" | "success" | "info" | "warning" | "danger" | "muted";
+}
+
+const TILES: KpiTile[] = [
+  {
+    key: "total",
+    label: "All invoices",
+    icon: Receipt,
+    statuses: [],          // sentinel: total count
+    filterValue: "",
+    tone: "neutral",
+  },
+  {
+    key: "validated",
+    label: "Validated by FBR",
+    icon: CheckCircle2,
+    statuses: ["valid", "finalized"],
+    filterValue: "valid",
+    tone: "success",
+  },
+  {
+    key: "submitted",
+    label: "Submitted",
+    icon: Clock,
+    statuses: ["submitted"],
+    filterValue: "submitted",
+    tone: "info",
+  },
+  {
+    key: "failed",
+    label: "Failed",
+    icon: AlertOctagon,
+    statuses: ["failed"],
+    filterValue: "failed",
+    tone: "danger",
+  },
+  {
+    key: "pending",
+    label: "Pending sync",
+    icon: CircleDashed,
+    statuses: ["pending_sync"],
+    filterValue: "pending_sync",
+    tone: "warning",
+  },
+  {
+    key: "edited_cancelled",
+    label: "Edited / cancelled",
+    icon: FilePenLine,
+    statuses: [
+      "edited",
+      "partially_edited",
+      "cancelled",
+      "partially_cancelled",
+      "partially_edited_and_cancelled",
+    ],
+    filterValue: "cancelled",
+    tone: "muted",
+  },
 ];
+
+const TONE_STYLES: Record<KpiTile["tone"], string> = {
+  neutral: "border-border bg-card",
+  success: "border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/60 dark:bg-emerald-950/30",
+  info: "border-sky-200 bg-sky-50/60 dark:border-sky-900/60 dark:bg-sky-950/30",
+  warning: "border-amber-200 bg-amber-50/60 dark:border-amber-900/60 dark:bg-amber-950/30",
+  danger: "border-rose-200 bg-rose-50/60 dark:border-rose-900/60 dark:bg-rose-950/30",
+  muted: "border-border bg-muted/40",
+};
+
+const TONE_ICON: Record<KpiTile["tone"], string> = {
+  neutral: "text-muted-foreground",
+  success: "text-emerald-600 dark:text-emerald-400",
+  info: "text-sky-600 dark:text-sky-400",
+  warning: "text-amber-600 dark:text-amber-400",
+  danger: "text-rose-600 dark:text-rose-400",
+  muted: "text-muted-foreground",
+};
+
+function statusBadgeVariant(
+  status: string,
+): "default" | "secondary" | "outline" | "destructive" {
+  if (status === "valid" || status === "finalized") return "default";
+  if (status === "failed") return "destructive";
+  if (status === "cancelled" || status === "partially_cancelled"
+      || status === "partially_edited_and_cancelled") return "secondary";
+  return "outline";
+}
+
+function prettyStatus(status: string): string {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+// ---------------------------------------------------------------------------
 
 export default function InvoicesList() {
   const [status, setStatus] = useState("");
   const [branch, setBranch] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [q, setQ] = useState("");
+  const [activeTile, setActiveTile] = useState<string>("total");
+
   const branches = useBranches();
-  const { data, isLoading } = useInvoices({ status, branch, from, to });
+  const filters = { status, branch, from, to, q };
+  const { data, isLoading } = useInvoices(filters);
+  const summary = useInvoiceSummary({ branch, from, to });
+
+  const tileCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    if (!summary.data) return out;
+    for (const tile of TILES) {
+      if (tile.key === "total") {
+        out[tile.key] = summary.data.total_count;
+        continue;
+      }
+      out[tile.key] = tile.statuses.reduce(
+        (acc, s) => acc + (summary.data!.by_status[s]?.count ?? 0),
+        0,
+      );
+    }
+    return out;
+  }, [summary.data]);
+
+  function applyTile(tile: KpiTile) {
+    setActiveTile(tile.key);
+    setStatus(tile.filterValue);
+  }
+
+  function clearFilters() {
+    setStatus("");
+    setBranch("");
+    setFrom("");
+    setTo("");
+    setQ("");
+    setActiveTile("total");
+  }
+
+  const activeFilterCount =
+    (status ? 1 : 0) + (branch ? 1 : 0) + (from ? 1 : 0) + (to ? 1 : 0) + (q ? 1 : 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Sales</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Invoices</h1>
+          <p className="text-sm text-muted-foreground">
+            FBR Digital Invoicing — track every invoice across its lifecycle.
+          </p>
+        </div>
         <Button asChild>
           <Link to="/sales/new">
             <Plus className="mr-1 h-4 w-4" /> New invoice
@@ -33,69 +227,197 @@ export default function InvoicesList() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <div className="space-y-1">
-          <label className="text-xs">Status</label>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-            {STATUSES.map((s) => <option key={s} value={s}>{s || "All"}</option>)}
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs">Branch</label>
-          <Select value={branch} onChange={(e) => setBranch(e.target.value)}>
-            <option value="">All</option>
-            {branches.data?.results.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs">From</label>
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs">To</label>
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </div>
+      {/* KPI tiles ------------------------------------------------------- */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        {TILES.map((tile) => {
+          const Icon = tile.icon;
+          const count = tileCounts[tile.key] ?? 0;
+          const isActive = activeTile === tile.key;
+          return (
+            <button
+              key={tile.key}
+              type="button"
+              onClick={() => applyTile(tile)}
+              aria-pressed={isActive}
+              className={cn(
+                "rounded-lg border p-4 text-left shadow-sm transition-all",
+                "hover:shadow-md hover:-translate-y-0.5",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                TONE_STYLES[tile.tone],
+                isActive && "ring-2 ring-primary ring-offset-1",
+              )}
+            >
+              <div className="flex items-start justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {tile.label}
+                </span>
+                <Icon className={cn("h-4 w-4 shrink-0", TONE_ICON[tile.tone])} />
+              </div>
+              <div className="mt-2 text-2xl font-semibold tabular-nums">
+                {summary.isLoading ? "…" : count.toLocaleString()}
+              </div>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="rounded-md border">
+      {/* Filter row ----------------------------------------------------- */}
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div className="space-y-1.5 md:col-span-4">
+              <Label htmlFor="invoice-search">Search</Label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="invoice-search"
+                  className="pl-8 pr-8"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Invoice #, FBR #, or buyer name"
+                />
+                {q && (
+                  <button
+                    type="button"
+                    onClick={() => setQ("")}
+                    aria-label="Clear search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
+              <Label htmlFor="invoice-status">Status</Label>
+              <Select
+                id="invoice-status"
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
+                  // Sync the tile selection when the dropdown drives status.
+                  const matching = TILES.find((t) => t.filterValue === e.target.value);
+                  setActiveTile(matching ? matching.key : "total");
+                }}
+              >
+                {STATUS_FILTER_OPTIONS.map((s) => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
+              <Label htmlFor="invoice-branch">Branch</Label>
+              <Select
+                id="invoice-branch"
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+              >
+                <option value="">All branches</option>
+                {branches.data?.results.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
+              <Label htmlFor="invoice-from">From</Label>
+              <Input
+                id="invoice-from"
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5 md:col-span-2">
+              <Label htmlFor="invoice-to">To</Label>
+              <Input
+                id="invoice-to"
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {activeFilterCount > 0 && (
+            <div className="flex items-center justify-between border-t pt-3">
+              <p className="text-xs text-muted-foreground">
+                {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"} active
+                {data && ` · ${data.count.toLocaleString()} invoice${data.count === 1 ? "" : "s"}`}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="h-7 px-2 text-xs"
+              >
+                <X className="mr-1 h-3.5 w-3.5" /> Clear all
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Table ---------------------------------------------------------- */}
+      <div className="rounded-md border bg-card">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Invoice #</TableHead>
               <TableHead>FBR #</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead>Items</TableHead>
+              <TableHead>Buyer</TableHead>
+              <TableHead className="text-right">Items</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                  Loading invoices…
+                </TableCell>
+              </TableRow>
             ) : data?.results.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">
-                No invoices match the filters.
-              </TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                  {activeFilterCount > 0
+                    ? "No invoices match the current filters."
+                    : "No invoices yet. Create your first one with the New invoice button."}
+                </TableCell>
+              </TableRow>
             ) : (
               data?.results.map((i) => (
-                <TableRow key={i.id}>
+                <TableRow key={i.id} className="hover:bg-muted/30">
                   <TableCell className="font-mono text-xs">
-                    <Link to={`/sales/${i.id}`} className="hover:underline">
+                    <Link to={`/sales/${i.id}`} className="font-medium text-primary hover:underline">
                       {i.local_invoice_number}
                     </Link>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {i.fbr_invoice_number ?? "—"}
+                  <TableCell className="font-mono text-xs">
+                    {i.fbr_invoice_number ?? <span className="text-muted-foreground">—</span>}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
+                  <TableCell className="text-xs text-muted-foreground tabular-nums">
                     {i.invoice_date}
                   </TableCell>
-                  <TableCell>{i.items.length}</TableCell>
-                  <TableCell className="text-right font-mono">{i.grand_total}</TableCell>
+                  <TableCell className="max-w-[180px] truncate text-sm">
+                    {i.buyer_name ?? <span className="text-muted-foreground">Walk-in</span>}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-sm">
+                    {i.items.length}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm tabular-nums">
+                    Rs {Number(i.grand_total).toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(i.status)}>{i.status}</Badge>
+                    <Badge variant={statusBadgeVariant(i.status)} className="capitalize">
+                      {prettyStatus(i.status)}
+                    </Badge>
                   </TableCell>
                 </TableRow>
               ))
@@ -105,15 +427,10 @@ export default function InvoicesList() {
       </div>
 
       {data && data.count > 0 && (
-        <p className="text-xs text-muted-foreground">{data.count} invoices.</p>
+        <p className="text-xs text-muted-foreground">
+          Showing {data.results.length} of {data.count.toLocaleString()} invoices.
+        </p>
       )}
     </div>
   );
-}
-
-function statusVariant(status: string): "default" | "secondary" | "outline" | "destructive" {
-  if (status === "valid") return "default";
-  if (status === "cancelled" || status === "failed") return "destructive";
-  if (status === "finalized") return "secondary";
-  return "outline";
 }

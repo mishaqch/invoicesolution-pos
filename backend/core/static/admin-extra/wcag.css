@@ -39,3 +39,78 @@
         border-color: CanvasText !important;
     }
 }
+
+/* ----- Action icons (add, change, delete, view) -------------------------
+ *
+ * Stock Unfold renders changelist action links as bare grey icons. We turn
+ * them into 32×32 circular buttons with the brand-green fill (matches the
+ * sidebar SITE_SYMBOL color) and a white icon. Hover deepens the green;
+ * focus-visible inherits the global ring.
+ *
+ * Selectors target the Django-admin class names (.addlink, .changelink,
+ * .deletelink, .viewlink) wherever they appear — sidebar app list,
+ * changelist toolbar, and inline tabular rows.
+ */
+:where(a.addlink, a.changelink, a.deletelink, a.viewlink, a.historylink) {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 9999px;
+    color: #ffffff !important;
+    transition:
+        background-color 150ms ease,
+        transform 150ms ease;
+    line-height: 1;
+}
+
+:where(a.addlink, a.changelink, a.deletelink, a.viewlink, a.historylink)
+    .material-symbols-outlined,
+:where(a.addlink, a.changelink, a.deletelink, a.viewlink, a.historylink)
+    .material-symbols-rounded {
+    color: #ffffff !important;
+    font-size: 18px;
+    line-height: 1;
+}
+
+a.addlink {
+    background-color: rgb(22 163 74); /* green-600 */
+}
+a.addlink:hover {
+    background-color: rgb(21 128 61); /* green-700 */
+    transform: scale(1.05);
+}
+
+a.changelink {
+    background-color: rgb(37 99 235); /* blue-600 */
+}
+a.changelink:hover {
+    background-color: rgb(29 78 216); /* blue-700 */
+    transform: scale(1.05);
+}
+
+a.viewlink,
+a.historylink {
+    background-color: rgb(75 85 99); /* gray-600 */
+}
+a.viewlink:hover,
+a.historylink:hover {
+    background-color: rgb(55 65 81); /* gray-700 */
+    transform: scale(1.05);
+}
+
+a.deletelink {
+    background-color: rgb(220 38 38); /* red-600 */
+}
+a.deletelink:hover {
+    background-color: rgb(185 28 28); /* red-700 */
+    transform: scale(1.05);
+}
+
+/* Reduced-motion users: keep the color hover, drop the scale animation. */
+@media (prefers-reduced-motion: reduce) {
+    :where(a.addlink, a.changelink, a.deletelink, a.viewlink, a.historylink):hover {
+        transform: none !important;
+    }
+}

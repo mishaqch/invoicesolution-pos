@@ -8,6 +8,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   Package,
+  Receipt,
   Settings,
   ShoppingCart,
   Users,
@@ -27,7 +28,8 @@ interface Item {
 
 const TOP: Item[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/sales", label: "Sales", icon: ShoppingCart, end: true },
+  { to: "/sales", label: "Invoices", icon: Receipt, end: true },
+  { to: "/sales/new", label: "New sale", icon: ShoppingCart },
   { to: "/sales/held", label: "Held sales", icon: ShoppingCart },
   { to: "/returns", label: "Returns", icon: ShoppingCart, end: true },
 ];

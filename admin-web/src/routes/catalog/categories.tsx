@@ -10,7 +10,7 @@ import {
 } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, GripVertical, Plus } from "lucide-react";
+import { Check, ChevronRight, GripVertical, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -129,6 +129,39 @@ export default function CategoriesList() {
     }
   }
 
+  async function rename(id: string, newName: string) {
+    setError(null);
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setError("Category name is required.");
+      return;
+    }
+    try {
+      await api(`/catalog/categories/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: trimmed }),
+      });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rename failed");
+    }
+  }
+
+  async function remove(node: TreeNode) {
+    setError(null);
+    const childCount = node.children.length;
+    const msg = childCount > 0
+      ? `Delete "${node.name}" and re-parent its ${childCount} child categor${childCount === 1 ? "y" : "ies"} to top level?`
+      : `Delete "${node.name}"?`;
+    if (!window.confirm(msg)) return;
+    try {
+      await api(`/catalog/categories/${node.id}/`, { method: "DELETE" });
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over) return;
@@ -219,6 +252,8 @@ export default function CategoriesList() {
                       node={node}
                       collapsed={collapsed.has(node.id)}
                       onToggle={() => toggle(node.id)}
+                      onRename={(name) => rename(node.id, name)}
+                      onDelete={() => remove(node)}
                     />
                   ))}
                 </ul>
@@ -237,14 +272,18 @@ export default function CategoriesList() {
 // ---------------------------------------------------------------------------
 
 function CategoryRow({
-  node, collapsed, onToggle,
+  node, collapsed, onToggle, onRename, onDelete,
 }: {
   node: TreeNode;
   collapsed: boolean;
   onToggle: () => void;
+  onRename: (newName: string) => void | Promise<void>;
+  onDelete: () => void | Promise<void>;
 }) {
   const draggable = useDraggable({ id: node.id });
   const droppable = useDroppable({ id: node.id });
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(node.name);
 
   const style = draggable.transform
     ? {
@@ -253,6 +292,25 @@ function CategoryRow({
       }
     : undefined;
 
+  function startEdit() {
+    setDraftName(node.name);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setDraftName(node.name);
+    setEditing(false);
+  }
+
+  async function commitEdit() {
+    if (draftName.trim() === node.name) {
+      setEditing(false);
+      return;
+    }
+    await onRename(draftName);
+    setEditing(false);
+  }
+
   return (
     <li
       ref={(el) => {
@@ -260,7 +318,7 @@ function CategoryRow({
         droppable.setNodeRef(el);
       }}
       style={style}
-      className={`flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/30 ${
+      className={`group flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted/30 ${
         droppable.isOver ? "bg-primary/10" : ""
       }`}
     >
@@ -291,15 +349,82 @@ function CategoryRow({
         <GripVertical className="h-4 w-4" />
       </button>
 
-      <span className="flex-1">
-        <span className="font-medium">{node.name}</span>
-        {node.children.length > 0 && (
-          <span className="ml-2 text-xs text-muted-foreground">
-            ({node.children.length})
+      {editing ? (
+        <form
+          className="flex flex-1 items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void commitEdit();
+          }}
+        >
+          <Input
+            autoFocus
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                cancelEdit();
+              }
+            }}
+            className="h-7 flex-1"
+            aria-label="Category name"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            aria-label="Save"
+          >
+            <Check className="h-4 w-4 text-emerald-600" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            aria-label="Cancel"
+            onClick={cancelEdit}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </form>
+      ) : (
+        <>
+          <span className="flex-1">
+            <span className="font-medium">{node.name}</span>
+            {node.children.length > 0 && (
+              <span className="ml-2 text-xs text-muted-foreground">
+                ({node.children.length})
+              </span>
+            )}
           </span>
-        )}
-      </span>
-      <span className="font-mono text-xs text-muted-foreground">{node.slug}</span>
+          <span className="font-mono text-xs text-muted-foreground">{node.slug}</span>
+          <div className="ml-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={startEdit}
+              aria-label={`Rename ${node.name}`}
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={onDelete}
+              aria-label={`Delete ${node.name}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </>
+      )}
     </li>
   );
 }

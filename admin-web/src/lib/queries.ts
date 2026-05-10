@@ -226,6 +226,7 @@ interface InvoiceFilters {
   from?: string;
   to?: string;
   held?: string;
+  q?: string;
 }
 
 export function useInvoices(filters: InvoiceFilters = {}) {
@@ -237,6 +238,29 @@ export function useInvoices(filters: InvoiceFilters = {}) {
     queryFn: () =>
       api<{ count: number; results: AdminInvoice[] }>(
         `/sales/invoices/${query ? `?${query}` : ""}`,
+      ),
+  });
+}
+
+export interface InvoiceSummary {
+  by_status: Record<string, { count: number; revenue: string }>;
+  total_count: number;
+  total_revenue: string;
+}
+
+export function useInvoiceSummary(filters: InvoiceFilters = {}) {
+  const cleaned: Record<string, string> = {};
+  // Summary respects branch + date filters but ignores status/q (the KPI
+  // tiles are themselves the status filter, and search is for the table).
+  for (const k of ["branch", "from", "to"] as const) {
+    if (filters[k]) cleaned[k] = filters[k]!;
+  }
+  const query = new URLSearchParams(cleaned).toString();
+  return useQuery({
+    queryKey: ["invoices-summary", cleaned],
+    queryFn: () =>
+      api<InvoiceSummary>(
+        `/sales/invoices/summary/${query ? `?${query}` : ""}`,
       ),
   });
 }

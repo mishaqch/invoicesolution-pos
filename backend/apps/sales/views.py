@@ -78,7 +78,48 @@ class InvoiceViewSet(
             qs = qs.filter(invoice_date__lte=end)
         if (held := params.get("held")):
             qs = qs.filter(is_held=held.lower() in ("1", "true"))
+        if (q := params.get("q")):
+            # Free-text search the three fields a tenant typically pastes in:
+            # the local invoice number from a printed receipt, the FBR
+            # invoice number returned by PRAL, or a buyer name.
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(local_invoice_number__icontains=q)
+                | Q(fbr_invoice_number__icontains=q)
+                | Q(buyer_name__icontains=q),
+            )
         return qs
+
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        """Aggregate counts for the invoices KPI strip.
+
+        Honours the same `branch`, `from`, `to` filters as list — so
+        the KPI tiles match what the table is showing. Returns one
+        row per status plus a grand total + total revenue (Decimal).
+        """
+        from decimal import Decimal
+
+        from django.db.models import Count, Sum
+
+        qs = self.get_queryset()
+        rows = (
+            qs.values("status")
+            .annotate(count=Count("id"), revenue=Sum("grand_total"))
+        )
+        by_status = {
+            r["status"]: {
+                "count": r["count"],
+                "revenue": str(r["revenue"] or Decimal("0")),
+            }
+            for r in rows
+        }
+        totals = qs.aggregate(count=Count("id"), revenue=Sum("grand_total"))
+        return Response({
+            "by_status": by_status,
+            "total_count": totals["count"] or 0,
+            "total_revenue": str(totals["revenue"] or Decimal("0")),
+        })
 
     @action(detail=False, methods=["post"], url_path="checkout",
             permission_classes=[HasRolePerm.with_perm("sales.create")])
