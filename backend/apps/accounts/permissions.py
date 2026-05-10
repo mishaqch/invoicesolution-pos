@@ -79,3 +79,55 @@ class HasRolePerm(BasePermission):
         if not perm:
             return is_read  # read with no perm == any tenant member; write must declare a perm
         return role_has_perm(membership.role, perm)
+
+
+class HasModule(BasePermission):
+    """Gate access to a module the super-admin has not enabled for this tenant.
+
+    Modules are coarser than role permissions — they answer "should this
+    tenant see Inventory at all?" while HasRolePerm answers "can this
+    user adjust stock?". Both classes are typically composed:
+
+        permission_classes = [
+            HasRolePerm.with_perm("inventory.adjust"),
+            HasModule.for_module("inventory"),
+        ]
+
+    Forced modules (sales, fbr) always pass — see apps.tenants.modules.
+    """
+
+    module_key: str | None = None
+
+    @classmethod
+    def for_module(cls, module_key: str) -> type["HasModule"]:
+        return type(
+            "HasModuleBound",
+            (cls,),
+            {"module_key": module_key},
+        )
+
+    def has_permission(self, request, view) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            return False
+        if self.module_key is None:
+            # Misconfigured view — treat as deny so the bug is loud.
+            return False
+
+        # Lazy import to avoid pulling tenants.models during accounts import.
+        from apps.tenants.models import Tenant
+        from apps.tenants.modules import is_module_enabled
+
+        try:
+            tenant = Tenant.objects.only("modules_enabled").get(pk=tenant_id)
+        except Tenant.DoesNotExist:
+            return False
+        return is_module_enabled(tenant, self.module_key)
+
+    def message(self):
+        return (
+            f"This tenant does not have the '{self.module_key}' module "
+            f"enabled. Contact your platform administrator."
+        )

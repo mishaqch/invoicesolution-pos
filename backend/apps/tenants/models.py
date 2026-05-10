@@ -127,6 +127,19 @@ class Tenant(models.Model):
     # `product_done`, `first_sale_done`, `dismissed_at`).
     onboarding_state = models.JSONField(default=dict, blank=True)
 
+    # Per-tenant module gates set by super-admin. Stored as a JSON array
+    # of module keys (e.g. ["sales", "fbr", "customers", "branches"]).
+    # The catalog lives in apps.tenants.modules.MODULES; forced modules
+    # like "sales" and "fbr" are always honored regardless of what's in
+    # this list. Default for new/migrated tenants is everything-enabled,
+    # which keeps existing data behaving exactly as before.
+    modules_enabled = models.JSONField(
+        default=list, blank=True,
+        help_text="Module keys this tenant is allowed to use. Forced "
+                  "modules (sales, fbr) are always enabled. Edit via "
+                  "the 'Modules enabled' widget on the change form.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

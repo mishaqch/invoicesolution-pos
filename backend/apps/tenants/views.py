@@ -117,3 +117,40 @@ class OnboardingStateView(APIView):
         tenant.onboarding_state = merged
         tenant.save(update_fields=["onboarding_state", "updated_at"])
         return Response({"state": merged})
+
+
+class TenantModulesView(APIView):
+    """Return which modules are enabled for the current tenant.
+
+    Frontend uses this on app boot to drive sidebar nav visibility and
+    route guards. Returns the full catalog (so the UI can render a
+    consistent menu structure) plus the enabled-key set so it knows
+    which to hide.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from .modules import MODULES, is_module_enabled
+
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            raise PermissionDenied("Tenant context required.")
+        tenant = Tenant.objects.only("modules_enabled").get(pk=tenant_id)
+
+        return Response({
+            "catalog": [
+                {
+                    "key": m["key"],
+                    "label": m["label"],
+                    "group": m["group"],
+                    "description": m["description"],
+                    "forced": m["forced"],
+                }
+                for m in MODULES
+            ],
+            "enabled": [
+                m["key"] for m in MODULES
+                if is_module_enabled(tenant, m["key"])
+            ],
+        })
