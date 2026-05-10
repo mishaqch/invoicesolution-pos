@@ -238,3 +238,117 @@ def build_sn015(tenant: Tenant) -> dict:
         "sroItemSerialNo": "",
     }]
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Additional scenarios (SN009 - SN014) added to round out the sector coverage
+# called out in the PRAL Digital Invoicing manual. Each follows the SN001
+# baseline and overrides only the fields relevant to the case.
+# ---------------------------------------------------------------------------
+
+
+@register("SN009",
+          description="Services at standard rate (16%)",
+          sectors=("Services", "All Other Sectors"))
+def build_sn009(tenant: Tenant) -> dict:
+    payload = build_sn001(tenant)
+    payload["invoiceRefNo"] = f"SCEN-SN009-{tenant.id.hex[:8]}"
+    payload["scenarioId"] = "SN009"
+    payload["items"][0].update({
+        "hsCode": "9805.0000",
+        "productDescription": "Consulting service",
+        "rate": "16%",
+        "salesTaxApplicable": 160.00,
+        "totalValues": 1160.00,
+        "saleType": "Services at standard rate",
+        "uoM": "Service",
+    })
+    return payload
+
+
+@register("SN010",
+          description="Services at reduced rate (5%)",
+          sectors=("Services", "All Other Sectors"))
+def build_sn010(tenant: Tenant) -> dict:
+    payload = build_sn001(tenant)
+    payload["invoiceRefNo"] = f"SCEN-SN010-{tenant.id.hex[:8]}"
+    payload["scenarioId"] = "SN010"
+    payload["items"][0].update({
+        "hsCode": "9805.0000",
+        "productDescription": "Reduced-rate service",
+        "rate": "5%",
+        "salesTaxApplicable": 50.00,
+        "totalValues": 1050.00,
+        "saleType": "Services at reduced rate",
+        "uoM": "Service",
+    })
+    return payload
+
+
+@register("SN011",
+          description="Goods with FED in sales-tax mode (16%)",
+          sectors=("Telecom", "All Other Sectors"))
+def build_sn011(tenant: Tenant) -> dict:
+    payload = build_sn001(tenant)
+    payload["invoiceRefNo"] = f"SCEN-SN011-{tenant.id.hex[:8]}"
+    payload["scenarioId"] = "SN011"
+    payload["items"][0].update({
+        "rate": "16%",
+        "salesTaxApplicable": 160.00,
+        "fedPayable": 50.00,
+        "totalValues": 1210.00,
+        "saleType": "Goods with FED in ST mode",
+    })
+    return payload
+
+
+@register("SN012",
+          description="Goods with sales tax withheld at source",
+          sectors=("All Other Sectors",))
+def build_sn012(tenant: Tenant) -> dict:
+    payload = build_sn001(tenant)
+    payload["invoiceRefNo"] = f"SCEN-SN012-{tenant.id.hex[:8]}"
+    payload["scenarioId"] = "SN012"
+    payload["items"][0].update({
+        "rate": "18%",
+        "salesTaxApplicable": 180.00,
+        "salesTaxWithheldAtSource": 36.00,   # 1/5 of ST
+        "totalValues": 1180.00,
+        "saleType": "ST withheld at source",
+    })
+    return payload
+
+
+@register("SN013",
+          description="Goods at standard rate with extra tax (3%)",
+          sectors=("All Other Sectors", "FMCG"))
+def build_sn013(tenant: Tenant) -> dict:
+    payload = build_sn001(tenant)
+    payload["invoiceRefNo"] = f"SCEN-SN013-{tenant.id.hex[:8]}"
+    payload["scenarioId"] = "SN013"
+    payload["items"][0].update({
+        "rate": "18%",
+        "salesTaxApplicable": 180.00,
+        "extraTax": 30.00,
+        "totalValues": 1210.00,
+        "saleType": "Goods with extra tax",
+    })
+    return payload
+
+
+@register("SN014",
+          description="Debit / credit note reference (amendment)",
+          sectors=("All Other Sectors",))
+def build_sn014(tenant: Tenant) -> dict:
+    payload = build_sn001(tenant)
+    payload["invoiceRefNo"] = f"SCEN-SN014-{tenant.id.hex[:8]}"
+    payload["scenarioId"] = "SN014"
+    payload["invoiceType"] = "Debit Note"
+    payload["referenceInvoiceNo"] = "SCEN-REF-PLACEHOLDER"
+    payload["items"][0].update({
+        "rate": "18%",
+        "salesTaxApplicable": 18.00,
+        "totalValues": 118.00,
+        "saleType": "Debit note item",
+    })
+    return payload

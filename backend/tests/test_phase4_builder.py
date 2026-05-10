@@ -304,3 +304,29 @@ def test_payload_invoice_type_mapped(
         invoice, environment="sandbox", scenario_id="SN001",
     )
     assert payload["invoiceType"] == "Credit Note"
+
+
+@pytest.mark.django_db
+def test_all_registered_scenarios_produce_valid_payloads(tenant):
+    """Every scenario in the registry must build a payload with the
+    fields PRAL requires: invoiceType, sellerNTNCNIC, items, scenarioId.
+    """
+    from apps.fbr.scenarios import SCENARIOS
+
+    # 15 scenarios documented in the PRAL Digital Invoicing manual v1.6.
+    assert len(SCENARIOS) >= 15, (
+        f"Expected >=15 scenarios, found {len(SCENARIOS)}: "
+        f"{sorted(SCENARIOS.keys())}"
+    )
+
+    for code, meta in SCENARIOS.items():
+        payload = meta.builder(tenant)
+        assert payload["scenarioId"] == code, f"{code} payload mislabelled"
+        assert "sellerNTNCNIC" in payload, f"{code} missing sellerNTNCNIC"
+        assert "invoiceType" in payload, f"{code} missing invoiceType"
+        assert payload.get("items"), f"{code} has no items"
+        for idx, item in enumerate(payload["items"]):
+            assert "rate" in item, f"{code} item {idx} missing rate"
+            assert isinstance(item["rate"], str), (
+                f"{code} item {idx} rate must be a string per PRAL spec"
+            )
