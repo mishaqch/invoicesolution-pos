@@ -12,8 +12,10 @@ import ProductsList from "@/routes/catalog/products";
 import TaxRatesList from "@/routes/catalog/tax-rates";
 import DashboardRoute from "@/routes/dashboard";
 import Adjustments from "@/routes/inventory/adjustments";
+import StockAuditsList from "@/routes/inventory/audits";
 import Movements from "@/routes/inventory/movements";
 import StockByBranch from "@/routes/inventory/stock-by-branch";
+import StockTransfersList from "@/routes/inventory/transfers";
 import LoginRoute from "@/routes/login";
 import HeldSalesAdminList from "@/routes/sales/held-sales";
 import NewInvoiceRoute from "@/routes/sales/new";
@@ -76,6 +78,8 @@ export default function App() {
               <Route path="stock" element={<StockByBranch />} />
               <Route path="movements" element={<Movements />} />
               <Route path="adjustments" element={<Adjustments />} />
+              <Route path="transfers" element={<StockTransfersList />} />
+              <Route path="audits" element={<StockAuditsList />} />
             </Route>
 
             <Route path="sales">

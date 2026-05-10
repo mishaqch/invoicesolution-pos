@@ -43,6 +43,8 @@ const INVENTORY: Item[] = [
   { to: "/inventory/stock", label: "Stock by branch", icon: Boxes },
   { to: "/inventory/movements", label: "Movements", icon: ClipboardList },
   { to: "/inventory/adjustments", label: "Adjustments", icon: ClipboardList },
+  { to: "/inventory/transfers", label: "Transfers", icon: ClipboardList },
+  { to: "/inventory/audits", label: "Audits", icon: ClipboardList },
 ];
 
 const ADMIN: Item[] = [
