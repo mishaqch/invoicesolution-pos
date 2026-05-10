@@ -1,9 +1,61 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from unfold.admin import ModelAdmin
 
 from .models import Branch, Tenant, TenantMembership, Terminal
+from .modules import FORCED_MODULE_KEYS, MODULES, normalise as normalise_modules
+
+
+class ModulesCheckboxWidget(forms.CheckboxSelectMultiple):
+    """Renders the modules-enabled choices grouped by module group with
+    forced modules pre-checked and disabled. Falls back to the stock
+    CheckboxSelectMultiple template when the grouped one is unavailable.
+    """
+
+    template_name = "tenants/admin/modules_checkbox.html"
+
+
+class ModulesField(forms.MultipleChoiceField):
+    """A MultipleChoiceField backed by the module catalog. We override
+    `clean` so forced modules (sales, fbr) are always included even if
+    the operator unticks them — defense in depth for the UI being out
+    of sync with the underlying lock.
+    """
+
+    def __init__(self, *args, **kwargs):
+        choices = [(m["key"], m["label"]) for m in MODULES]
+        super().__init__(*args, choices=choices, required=False, **kwargs)
+
+    def clean(self, value):
+        cleaned = super().clean(value)
+        # Forced modules ride along automatically.
+        return normalise_modules(cleaned)
+
+
+class TenantAdminForm(forms.ModelForm):
+    modules_enabled = ModulesField(
+        widget=ModulesCheckboxWidget,
+        help_text=(
+            "Tick the modules this tenant is allowed to use. "
+            "Sales and FBR are forced on (the platform's core) and "
+            "stay enabled regardless of selection."
+        ),
+    )
+
+    class Meta:
+        model = Tenant
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Pre-tick whatever the tenant currently has enabled. New tenants
+        # get the field's initial via the model's callable default.
+        if self.instance and self.instance.pk:
+            self.fields["modules_enabled"].initial = list(
+                self.instance.modules_enabled or [],
+            )
 
 
 @admin.register(Tenant)
@@ -12,6 +64,7 @@ class TenantAdmin(ModelAdmin):
     # compact list rendering toggle, and inline column highlights.
     warn_unsaved_form = True
     list_fullwidth = True
+    form = TenantAdminForm
     list_display = ("business_name", "ntn", "business_type", "province",
                     "subscription_status", "suspended_at", "signup_source",
                     "account_manager", "created_at")
@@ -33,6 +86,15 @@ class TenantAdmin(ModelAdmin):
         ("Platform / control plane", {
             "fields": ("signup_source", "account_manager", "suspended_at",
                         "internal_notes", "tags"),
+        }),
+        ("Modules enabled", {
+            "fields": ("modules_enabled",),
+            "description": (
+                "Per-tenant feature catalog. The API returns 403 on "
+                "endpoints whose module is unticked here. Sales and "
+                "FBR are forced on and cannot be disabled — they are "
+                "the platform's core."
+            ),
         }),
         ("Onboarding", {
             "fields": ("onboarding_progress_live", "onboarding_state"),
