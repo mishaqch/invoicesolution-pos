@@ -37,9 +37,9 @@ const DEVICES: DeviceCheck[] = [
   },
   {
     icon: Scale,
-    device: "Weighing scale",
-    test: "Tap Read scale. The current weight should appear within 500ms. Place a known reference weight and verify the reading.",
-    doc: "Serial integration is V1.5 — flag as deferred if your shop does not weigh items at checkout.",
+    device: "Weighing scale (V1.5)",
+    test: "Not in V1. Cashiers enter weighed-item quantities manually for now. The is_weighable product flag is honored in pricing already.",
+    doc: "Deferred to V1.5: serialport integration with the common Pakistan-market scales (CAS, Avery Berkel). See DEFERRED.md for the planned interface and why V1 ships without it.",
   },
   {
     icon: CircuitBoard,
