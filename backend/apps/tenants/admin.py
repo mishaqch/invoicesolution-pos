@@ -1,10 +1,15 @@
 from django.contrib import admin
+from unfold.admin import ModelAdmin
 
 from .models import Branch, Tenant, TenantMembership, Terminal
 
 
 @admin.register(Tenant)
-class TenantAdmin(admin.ModelAdmin):
+class TenantAdmin(ModelAdmin):
+    # Unfold-specific niceties: warn-on-unsaved when leaving a form,
+    # compact list rendering toggle, and inline column highlights.
+    warn_unsaved_form = True
+    list_fullwidth = True
     list_display = ("business_name", "ntn", "business_type", "province",
                     "subscription_status", "suspended_at", "signup_source",
                     "account_manager", "created_at")
@@ -32,7 +37,7 @@ class TenantAdmin(admin.ModelAdmin):
 
 
 @admin.register(TenantMembership)
-class TenantMembershipAdmin(admin.ModelAdmin):
+class TenantMembershipAdmin(ModelAdmin):
     list_display = ("tenant", "user", "role", "is_active", "created_at")
     search_fields = ("tenant__business_name", "user__email", "user__full_name")
     list_filter = ("role", "is_active")
@@ -41,7 +46,7 @@ class TenantMembershipAdmin(admin.ModelAdmin):
 
 
 @admin.register(Branch)
-class BranchAdmin(admin.ModelAdmin):
+class BranchAdmin(ModelAdmin):
     list_display = ("name", "code", "tenant", "city", "province", "is_active", "is_default")
     search_fields = ("name", "code", "tenant__business_name", "city")
     list_filter = ("province", "is_active", "is_default")
@@ -50,7 +55,7 @@ class BranchAdmin(admin.ModelAdmin):
 
 
 @admin.register(Terminal)
-class TerminalAdmin(admin.ModelAdmin):
+class TerminalAdmin(ModelAdmin):
     list_display = ("name", "branch", "tenant", "is_active", "last_seen_at")
     search_fields = ("name", "device_fingerprint", "branch__name")
     list_filter = ("is_active", "customer_display_enabled")

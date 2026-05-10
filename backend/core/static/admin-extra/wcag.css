@@ -1,0 +1,41 @@
+/* WCAG 2.2 AA polish on top of django-unfold.
+ *
+ * Loaded via UNFOLD["STYLES"]. Three things only:
+ *
+ *   1. prefers-reduced-motion — strip all transitions/animations for
+ *      users who request reduced motion (vestibular disorders, focus).
+ *   2. focus-visible — render a 3px brand-green ring with a 2px
+ *      offset, beating the WCAG 2.2 success criterion 2.4.13
+ *      "Focus Appearance" minimum (2px outline, 3:1 contrast).
+ *   3. forced-colors — make sure the sidebar separators don't disappear
+ *      in Windows high-contrast mode.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid rgb(22 163 74) !important;
+    outline-offset: 2px !important;
+    border-radius: 4px;
+}
+
+@media (forced-colors: active) {
+    :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+        outline: 3px solid CanvasText !important;
+    }
+    .border-base-200,
+    .border-t,
+    .border-b,
+    [class*="border-base-"] {
+        border-color: CanvasText !important;
+    }
+}

@@ -1,12 +1,21 @@
 from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.utils.translation import gettext_lazy as _
+from unfold.admin import ModelAdmin
+from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 
 from .models import User
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin):
+class UserAdmin(DjangoUserAdmin, ModelAdmin):
+    # Unfold-styled forms — replaces the stock auth form templates.
+    form = UserChangeForm
+    add_form = UserCreationForm
+    change_password_form = AdminPasswordChangeForm
+
+    warn_unsaved_form = True
+    list_fullwidth = True
     ordering = ("email",)
     list_display = ("email", "full_name", "is_active",
                      "is_platform_staff", "platform_role", "is_staff", "last_login")

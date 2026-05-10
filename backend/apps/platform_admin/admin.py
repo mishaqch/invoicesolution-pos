@@ -9,13 +9,14 @@ prominent fields, no fluff.
 from __future__ import annotations
 
 from django.contrib import admin
-from django.utils.html import format_html
+from unfold.admin import ModelAdmin
+from unfold.decorators import display
 
 from .models import PlatformSettings, Subscription, SubscriptionPlan
 
 
 @admin.register(PlatformSettings)
-class PlatformSettingsAdmin(admin.ModelAdmin):
+class PlatformSettingsAdmin(ModelAdmin):
     """Singleton — refuse a second row."""
 
     fieldsets = (
@@ -41,7 +42,8 @@ class PlatformSettingsAdmin(admin.ModelAdmin):
 
 
 @admin.register(SubscriptionPlan)
-class SubscriptionPlanAdmin(admin.ModelAdmin):
+class SubscriptionPlanAdmin(ModelAdmin):
+    list_fullwidth = True
     list_display = (
         "code", "name", "monthly_price_display", "yearly_price_display",
         "max_branches", "max_terminals", "max_products", "max_users",
@@ -75,7 +77,8 @@ class SubscriptionPlanAdmin(admin.ModelAdmin):
 
 
 @admin.register(Subscription)
-class SubscriptionAdmin(admin.ModelAdmin):
+class SubscriptionAdmin(ModelAdmin):
+    list_fullwidth = True
     list_display = (
         "tenant", "plan", "status_badge", "billing_cycle",
         "trial_ends_at", "next_invoice_at", "created_at",
@@ -95,17 +98,19 @@ class SubscriptionAdmin(admin.ModelAdmin):
         ("Audit", {"fields": ("created_at", "updated_at")}),
     )
 
-    @admin.display(description="Status")
+    # Unfold's @display(label=...) renders WCAG-AA-compliant pill badges
+    # using the same color tokens as the rest of the theme. The dict maps
+    # status value → Unfold's semantic color slot.
+    @display(
+        description="Status",
+        ordering="status",
+        label={
+            "trial": "info",
+            "active": "success",
+            "past_due": "warning",
+            "suspended": "danger",
+            "cancelled": "",  # neutral grey
+        },
+    )
     def status_badge(self, obj):
-        color = {
-            "trial": "#0ea5e9",
-            "active": "#10b981",
-            "past_due": "#f59e0b",
-            "suspended": "#ef4444",
-            "cancelled": "#6b7280",
-        }.get(obj.status, "#6b7280")
-        return format_html(
-            '<span style="background:{};color:white;padding:2px 8px;border-radius:9999px;'
-            'font-size:11px;font-weight:600;">{}</span>',
-            color, obj.get_status_display(),
-        )
+        return obj.status, obj.get_status_display()
