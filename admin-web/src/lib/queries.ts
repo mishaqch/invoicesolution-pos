@@ -283,6 +283,47 @@ export function useCancelInvoice() {
       }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-summary"] });
+      qc.invalidateQueries({ queryKey: ["invoice", data.id] });
+    },
+  });
+}
+
+export interface EditItemInput {
+  invoice_id: string;
+  item_id: string;
+  reason: string;
+  quantity?: string;
+  unit_price?: string;
+  tax_rate?: string;
+}
+
+export function useEditInvoiceItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EditItemInput) => {
+      const { invoice_id, item_id, ...body } = input;
+      return api<AdminInvoice>(
+        `/sales/invoices/${invoice_id}/items/${item_id}/edit/`,
+        { method: "POST", body: JSON.stringify(body) },
+      );
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-summary"] });
+      qc.invalidateQueries({ queryKey: ["invoice", data.id] });
+    },
+  });
+}
+
+export function useResubmitInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<AdminInvoice>(`/sales/invoices/${id}/resubmit/`, { method: "POST" }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-summary"] });
       qc.invalidateQueries({ queryKey: ["invoice", data.id] });
     },
   });

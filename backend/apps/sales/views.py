@@ -27,6 +27,7 @@ from .models import Invoice
 from .serializers import (
     CancelSerializer,
     CheckoutSerializer,
+    EditItemSerializer,
     HoldSerializer,
     InvoiceSerializer,
     SessionCloseSerializer,
@@ -239,6 +240,74 @@ class InvoiceViewSet(
             invoice, reason=body.validated_data["reason"],
             user=request.user, request=request,
         )
+        return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["post"], url_path="resubmit",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def resubmit(self, request, pk=None):
+        """Re-queue a failed invoice for FBR submission.
+
+        Only invoices in `failed` or `pending_sync` status without an
+        FBR invoice number are eligible. The Celery task already
+        idempotently handles the retry.
+        """
+        from apps.fbr.services import resubmit_failed_invoice
+        invoice = self.get_object()
+        try:
+            resubmit_failed_invoice(invoice, user=request.user, request=request)
+        except Exception as exc:
+            from rest_framework.exceptions import ValidationError as DrfValidationError
+            if hasattr(exc, "message_dict"):
+                return Response(exc.message_dict, status=status.HTTP_400_BAD_REQUEST)
+            if isinstance(exc, DrfValidationError):
+                return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
+            raise
+        invoice.refresh_from_db()
+        return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["post"],
+            url_path="items/(?P<item_id>[^/.]+)/edit",
+            permission_classes=[HasRolePerm.with_perm("sales.cancel.threshold_high")])
+    def edit_item(self, request, pk=None, item_id=None):
+        """Edit one line on an FBR-validated invoice (within 72h).
+
+        Per FBR Digital Invoicing Manual §4.1.2 an item can be edited
+        once within 72 hours of submission. Honors the same 10% monthly
+        budget as cancellations. The service layer enforces all rules;
+        we just validate the body shape and translate exceptions.
+        """
+        from apps.fbr.services import edit_invoice_item_with_fbr
+        invoice = self.get_object()
+        try:
+            item = invoice.items.get(pk=item_id)
+        except invoice.items.model.DoesNotExist:
+            raise NotFound("Item not found on this invoice.")
+
+        body = EditItemSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        v = body.validated_data
+        new_values = {
+            k: v[k] for k in ("quantity", "unit_price", "tax_rate") if k in v
+        }
+        try:
+            edit_invoice_item_with_fbr(
+                invoice, item,
+                new_values=new_values,
+                reason=v["reason"],
+                user=request.user,
+                request=request,
+            )
+        except Exception as exc:
+            if hasattr(exc, "message_dict"):
+                return Response(exc.message_dict, status=status.HTTP_400_BAD_REQUEST)
+            from django.core.exceptions import ValidationError as DjValidationError
+            if isinstance(exc, DjValidationError):
+                return Response(
+                    {"detail": exc.messages[0] if exc.messages else str(exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            raise
+        invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
 
     @action(detail=True, methods=["post"],

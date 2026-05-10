@@ -1,12 +1,20 @@
-import { ArrowLeft, Download, FileText, X } from "lucide-react";
+import { ArrowLeft, Download, FileText, Pencil, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCancelInvoice, useCancelInvoiceItem, useInvoice } from "@/lib/queries";
+import {
+  useCancelInvoice,
+  useCancelInvoiceItem,
+  useEditInvoiceItem,
+  useInvoice,
+  useResubmitInvoice,
+} from "@/lib/queries";
 import { useAuthStore } from "@/stores/auth";
 
 async function openPdf(invoiceId: string, invoiceNumber: string, download: boolean) {
@@ -47,9 +55,19 @@ export default function InvoiceDetail() {
   const { data: invoice, isLoading } = useInvoice(id);
   const cancel = useCancelInvoice();
   const cancelItem = useCancelInvoiceItem();
+  const editItem = useEditInvoiceItem();
+  const resubmit = useResubmitInvoice();
   const [showConfirm, setShowConfirm] = useState(false);
   const [reason, setReason] = useState("");
   const [itemPrompt, setItemPrompt] = useState<{ id: string; reason: string } | null>(null);
+  const [editPrompt, setEditPrompt] = useState<{
+    id: string;
+    quantity: string;
+    unit_price: string;
+    tax_rate: string;
+    reason: string;
+    error?: string;
+  } | null>(null);
 
   if (isLoading || !invoice) {
     return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
@@ -94,8 +112,9 @@ export default function InvoiceDetail() {
         </div>
         <div className="flex items-center gap-2">
           {deadline && !deadline.expired && (
-            <Badge variant="outline" className="text-amber-700">
-              {deadline.remaining} until edit window closes
+            <Badge variant="outline" className="text-amber-700"
+                   title="Within this window you can edit individual line items or cancel the invoice. After it closes, you must use a credit note instead.">
+              {deadline.remaining} left to amend
             </Badge>
           )}
           <Button
@@ -112,6 +131,24 @@ export default function InvoiceDetail() {
           >
             <Download className="mr-1 h-4 w-4" /> Download
           </Button>
+          {(invoice.status === "failed" || invoice.status === "pending_sync")
+            && !invoice.fbr_invoice_number && (
+            <Button
+              variant="default"
+              onClick={() => void resubmit.mutateAsync(invoice.id)}
+              disabled={resubmit.isPending}
+              title={
+                invoice.status === "failed"
+                  ? "Re-queue this invoice for FBR submission"
+                  : "Re-trigger sync now"
+              }
+            >
+              <RefreshCw
+                className={`mr-1 h-4 w-4 ${resubmit.isPending ? "animate-spin" : ""}`}
+              />
+              {resubmit.isPending ? "Resubmitting…" : "Resubmit to FBR"}
+            </Button>
+          )}
           {canCancel ? (
             <Button variant="destructive" onClick={() => setShowConfirm(true)}>
               Cancel sale
@@ -122,6 +159,11 @@ export default function InvoiceDetail() {
             </Badge>
           )}
         </div>
+        {resubmit.isError && (
+          <p className="ml-auto text-xs text-destructive">
+            Resubmit failed: {String((resubmit.error as Error)?.message ?? "Unknown error")}
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -186,7 +228,11 @@ export default function InvoiceDetail() {
             </TableHeader>
             <TableBody>
               {invoice.items.map((it) => {
-                const itemLocked = it.is_cancelled || it.is_edited || !canCancel;
+                // Edit and cancel share the same upstream "within window"
+                // gate (canCancel). Edit is also blocked when the line has
+                // already been edited or cancelled. Cancel is also blocked
+                // when the line is already edited.
+                const lineGated = it.is_cancelled || it.is_edited || !canCancel;
                 return (
                   <TableRow key={it.id} className={it.is_cancelled ? "opacity-50" : ""}>
                     <TableCell>{it.line_number}</TableCell>
@@ -203,16 +249,33 @@ export default function InvoiceDetail() {
                     <TableCell className="text-right font-mono">Rs {it.tax_amount}</TableCell>
                     <TableCell className="text-right font-mono">Rs {it.line_total}</TableCell>
                     <TableCell className="text-right">
-                      {!itemLocked && (
-                        <button
-                          type="button"
-                          onClick={() => setItemPrompt({ id: it.id, reason: "" })}
-                          className="rounded-md p-1 text-muted-foreground hover:bg-destructive hover:text-destructive-foreground"
-                          aria-label="Cancel this line"
-                          title="Cancel this line"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                      {!lineGated && (
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditPrompt({
+                              id: it.id,
+                              quantity: it.quantity,
+                              unit_price: it.unit_price,
+                              tax_rate: it.tax_rate,
+                              reason: "",
+                            })}
+                            className="rounded-md p-1 text-muted-foreground hover:bg-primary hover:text-primary-foreground"
+                            aria-label="Edit this line"
+                            title="Edit qty / price / tax (within 72h)"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setItemPrompt({ id: it.id, reason: "" })}
+                            className="rounded-md p-1 text-muted-foreground hover:bg-destructive hover:text-destructive-foreground"
+                            aria-label="Cancel this line"
+                            title="Cancel this line"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -250,6 +313,105 @@ export default function InvoiceDetail() {
                 }}
               >
                 {cancel.isPending ? "Cancelling…" : "Cancel sale"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-md border bg-background p-6 shadow-lg">
+            <h2 className="text-base font-semibold">Edit line item</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Patch the quantity, unit price, or tax rate. Totals
+              recompute automatically. The change is sent to PRAL via
+              <span className="mx-1 font-mono text-xs">editinvoice</span>
+              and counts against this month's 10% amendment cap.
+            </p>
+
+            <div className="mt-4 grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-qty">Quantity</Label>
+                <Input
+                  id="edit-qty"
+                  inputMode="decimal"
+                  value={editPrompt.quantity}
+                  onChange={(e) => setEditPrompt({ ...editPrompt, quantity: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-price">Unit price (Rs)</Label>
+                <Input
+                  id="edit-price"
+                  inputMode="decimal"
+                  value={editPrompt.unit_price}
+                  onChange={(e) => setEditPrompt({ ...editPrompt, unit_price: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-tax">Tax rate (%)</Label>
+                <Input
+                  id="edit-tax"
+                  inputMode="decimal"
+                  value={editPrompt.tax_rate}
+                  onChange={(e) => setEditPrompt({ ...editPrompt, tax_rate: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-1.5">
+              <Label htmlFor="edit-reason">Reason</Label>
+              <textarea
+                id="edit-reason"
+                rows={2}
+                value={editPrompt.reason}
+                onChange={(e) => setEditPrompt({ ...editPrompt, reason: e.target.value })}
+                placeholder="Why is this being amended? (audit log + sent to PRAL)"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              />
+            </div>
+
+            {editPrompt.error && (
+              <p className="mt-2 text-sm text-destructive">{editPrompt.error}</p>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditPrompt(null)}>
+                Cancel
+              </Button>
+              <Button
+                disabled={editItem.isPending || editPrompt.reason.trim().length < 2}
+                onClick={async () => {
+                  // Find the original line to figure out which fields changed.
+                  const original = invoice.items.find((x) => x.id === editPrompt.id);
+                  if (!original) return;
+                  const patch: { quantity?: string; unit_price?: string; tax_rate?: string } = {};
+                  if (editPrompt.quantity !== original.quantity) patch.quantity = editPrompt.quantity;
+                  if (editPrompt.unit_price !== original.unit_price) patch.unit_price = editPrompt.unit_price;
+                  if (editPrompt.tax_rate !== original.tax_rate) patch.tax_rate = editPrompt.tax_rate;
+                  if (Object.keys(patch).length === 0) {
+                    setEditPrompt({ ...editPrompt, error: "Nothing changed." });
+                    return;
+                  }
+                  try {
+                    await editItem.mutateAsync({
+                      invoice_id: invoice.id,
+                      item_id: editPrompt.id,
+                      reason: editPrompt.reason,
+                      ...patch,
+                    });
+                    setEditPrompt(null);
+                  } catch (err) {
+                    setEditPrompt({
+                      ...editPrompt,
+                      error: (err as Error).message ?? "Edit failed",
+                    });
+                  }
+                }}
+              >
+                <Pencil className="mr-1 h-4 w-4" />
+                {editItem.isPending ? "Saving…" : "Save edit"}
               </Button>
             </div>
           </div>

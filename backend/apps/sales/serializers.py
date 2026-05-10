@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import Invoice, Payment, SaleItem
@@ -124,6 +126,35 @@ class HoldSerializer(serializers.Serializer):
 
 class CancelSerializer(serializers.Serializer):
     reason = serializers.CharField(min_length=2, max_length=500)
+
+
+class EditItemSerializer(serializers.Serializer):
+    """Per-line edit within the 72h FBR window.
+
+    All numeric fields are optional so the client can patch one or more
+    of quantity / unit_price / tax_rate without touching the others.
+    The service layer validates further (whitelist, non-negative).
+    """
+    reason = serializers.CharField(min_length=2, max_length=500)
+    quantity = serializers.DecimalField(
+        max_digits=14, decimal_places=4, required=False,
+        min_value=Decimal("0"),
+    )
+    unit_price = serializers.DecimalField(
+        max_digits=14, decimal_places=4, required=False,
+        min_value=Decimal("0"),
+    )
+    tax_rate = serializers.DecimalField(
+        max_digits=5, decimal_places=2, required=False,
+        min_value=Decimal("0"),
+    )
+
+    def validate(self, attrs):
+        if not any(k in attrs for k in ("quantity", "unit_price", "tax_rate")):
+            raise serializers.ValidationError(
+                "At least one of quantity / unit_price / tax_rate is required.",
+            )
+        return attrs
 
 
 class SessionOpenSerializer(serializers.Serializer):
