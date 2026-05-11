@@ -2,11 +2,12 @@
 Custom widget template for PermissionBundleWidget — renders each
 bundle as a card with label + description + checkbox.
 
-The widget's `attrs.bundles` carries the catalog (list of bundle dicts
-with key/label/description/models) so we render the description below
-each checkbox.
+The widget provides `widget.bundles` as a list of dicts:
+  {key, label, description, checked}
+…where `checked` is True iff the option was selected (pre-computed
+in get_context so the template stays trivial).
 
-Uses pure CSS for the checked-state styling (matches the modules
+Pure-CSS state styling for checked / hover (matches the modules
 widget pattern in tenants/admin/modules_checkbox.html).
 {% endcomment %}
 
@@ -64,28 +65,18 @@ widget pattern in tenants/admin/modules_checkbox.html).
 </style>
 
 <div class="pbundles">
-  {% for option_group in widget.optgroups %}
-    {% for option in option_group.1 %}
-      {# `option.value` is the bundle key ("tenant_management" etc.).
-         Find the matching bundle dict from widget.attrs.bundles. #}
-      {% with bundle_key=option.value %}
-        {% for b in widget.attrs.bundles %}
-          {% if b.key == bundle_key %}
-            <label class="pbundle-card">
-              <input
-                type="checkbox"
-                name="{{ widget.name }}"
-                value="{{ bundle_key }}"
-                {% if option.selected %}checked{% endif %}
-              />
-              <span class="pbundle-text">
-                <strong>{{ b.label }}</strong>
-                <span class="pbundle-desc">{{ b.description }}</span>
-              </span>
-            </label>
-          {% endif %}
-        {% endfor %}
-      {% endwith %}
-    {% endfor %}
+  {% for b in widget.bundles %}
+    <label class="pbundle-card">
+      <input
+        type="checkbox"
+        name="{{ widget.name }}"
+        value="{{ b.key }}"
+        {% if b.checked %}checked{% endif %}
+      />
+      <span class="pbundle-text">
+        <strong>{{ b.label }}</strong>
+        <span class="pbundle-desc">{{ b.description }}</span>
+      </span>
+    </label>
   {% endfor %}
 </div>

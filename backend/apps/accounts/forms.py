@@ -28,11 +28,38 @@ from .platform_perms import (
 class PermissionBundleWidget(forms.CheckboxSelectMultiple):
     """Renders the bundle list with description + label per checkbox.
 
-    Falls back to the stock CheckboxSelectMultiple template when our
-    custom one isn't found.
+    Pre-resolves the catalog + checked state in get_context() so the
+    template stays trivial — Django's stock CheckboxSelectMultiple
+    optgroups context is awkward to consume when we want to display
+    extra metadata (descriptions) alongside the choices.
     """
 
     template_name = "accounts/admin/permission_bundles.html"
+
+    def get_context(self, name, value, attrs):
+        ctx = super().get_context(name, value, attrs)
+
+        # Normalize the field value to a set of strings. The widget
+        # receives either:
+        #   - the raw cleaned_data list (on POST re-render)
+        #   - the field's initial list (on GET)
+        #   - None (rare; treat as empty)
+        if value is None:
+            selected_set: set[str] = set()
+        else:
+            selected_set = {str(v) for v in value}
+
+        catalog = self.attrs.get("bundles") or []
+        ctx["widget"]["bundles"] = [
+            {
+                "key": b["key"],
+                "label": b["label"],
+                "description": b["description"],
+                "checked": b["key"] in selected_set,
+            }
+            for b in catalog
+        ]
+        return ctx
 
 
 class PlatformUserChangeForm(UnfoldUserChangeForm):
