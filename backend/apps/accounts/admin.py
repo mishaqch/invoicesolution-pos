@@ -282,9 +282,22 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
         """Swap the form when editing a platform-staff user so we get
         the curated permission_bundles field. Tenant users (and the
         add form) keep the stock UserChangeForm — they don't have
-        permission_bundles."""
+        permission_bundles.
+
+        Pass `request.user` into the form so it can enforce the
+        delegation rule (operator can only grant bundles they hold).
+        """
         if change and obj is not None and (obj.is_platform_staff or obj.is_superuser):
             kwargs["form"] = PlatformUserChangeForm
+            FormCls = super().get_form(request, obj, change=change, **kwargs)
+
+            # Wrap the form class so its __init__ receives request_user.
+            class _BoundForm(FormCls):
+                def __init__(self, *args, **inner_kwargs):
+                    inner_kwargs["request_user"] = request.user
+                    super().__init__(*args, **inner_kwargs)
+
+            return _BoundForm
         return super().get_form(request, obj, change=change, **kwargs)
 
     # App labels we ALWAYS hide from both the bundles' allow-list and
