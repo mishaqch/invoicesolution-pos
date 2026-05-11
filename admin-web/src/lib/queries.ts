@@ -777,8 +777,10 @@ export interface ManualInvoicePayment {
 }
 
 export interface ManualInvoiceInput {
-  branch: string;
-  terminal: string;
+  // Optional: when omitted, the server provisions an implicit default
+  // branch + terminal (office-invoice tenants without those modules).
+  branch?: string;
+  terminal?: string;
   customer?: string | null;
   cart_lines: ManualInvoiceLine[];
   cart_discount_pct?: string;

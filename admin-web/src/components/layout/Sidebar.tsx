@@ -33,9 +33,13 @@ interface Item {
 
 const TOP: Item[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/sales", label: "Sales", icon: Receipt, end: true, module: "sales" },
+  // Invoices are the central artifact of the product. "Sales" was
+  // ambiguous (could mean transactions, the act of selling, or a
+  // metric); the FBR Digital Invoicing product specifically tracks
+  // invoices, so we name the nav item after the artifact.
+  { to: "/sales", label: "Invoices", icon: Receipt, end: true, module: "sales" },
   { to: "/sales/new", label: "New invoice", icon: ShoppingCart, module: "sales" },
-  { to: "/sales/held", label: "Held sales", icon: ShoppingCart, module: "sales" },
+  { to: "/sales/held", label: "Held invoices", icon: ShoppingCart, module: "sales" },
   { to: "/returns", label: "Returns", icon: ShoppingCart, end: true, module: "returns" },
 ];
 

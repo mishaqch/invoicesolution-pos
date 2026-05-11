@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useModules, type ModuleKey } from "@/features/modules/hooks";
 
 import {
   shouldShowOnboarding,
@@ -17,6 +18,11 @@ interface Step {
   description: string;
   cta: string;
   href: string;
+  /** When set, this step is skipped if the tenant's module is disabled.
+   *  E.g., a wholesaler without branches/terminals modules shouldn't be
+   *  nagged to "add a branch" — the server creates an implicit default
+   *  for them on first invoice. */
+  requiresModule?: ModuleKey;
 }
 
 const STEPS: Step[] = [
@@ -26,6 +32,7 @@ const STEPS: Step[] = [
     description: "Branches are physical store locations. Most owners start with one.",
     cta: "Open branches",
     href: "/branches",
+    requiresModule: "branches",
   },
   {
     key: "has_terminal",
@@ -33,6 +40,7 @@ const STEPS: Step[] = [
     description: "A terminal is one cash counter. You can add more later.",
     cta: "Open branches",
     href: "/branches",
+    requiresModule: "terminals",
   },
   {
     key: "has_product",
@@ -43,10 +51,10 @@ const STEPS: Step[] = [
   },
   {
     key: "has_first_sale",
-    title: "Make your first sale",
-    description: "Open the POS terminal app on a real cashier station and ring up a sale.",
-    cta: "POS user guide",
-    href: "/help/first-sale",
+    title: "Issue your first invoice",
+    description: "Create your first FBR digital invoice from the New invoice screen.",
+    cta: "New invoice",
+    href: "/sales/new",
   },
 ];
 
@@ -58,11 +66,18 @@ const STEPS: Step[] = [
  */
 export function OnboardingWizard() {
   const { data } = useOnboarding();
+  const { data: modules } = useModules();
   const update = useUpdateOnboarding();
 
   if (!shouldShowOnboarding(data)) return null;
   const derived = data!.derived;
-  const completed = STEPS.filter((s) => derived[s.key]).length;
+  // Filter out steps whose required module isn't enabled for this
+  // tenant. Office-invoice tenants see only "Add product" and "Issue
+  // first invoice"; cashier-counter tenants see all four.
+  const visibleSteps = STEPS.filter(
+    (s) => !s.requiresModule || (modules?.enabled.includes(s.requiresModule) ?? true),
+  );
+  const completed = visibleSteps.filter((s) => derived[s.key]).length;
 
   return (
     <Card className="border-primary/30 bg-primary/5">
@@ -70,7 +85,7 @@ export function OnboardingWizard() {
         <div>
           <CardTitle className="text-base">Welcome to your new POS</CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {completed} of {STEPS.length} done · target: a sale within 30 minutes
+            {completed} of {visibleSteps.length} done · target: your first FBR invoice today
           </p>
         </div>
         <button
@@ -84,7 +99,7 @@ export function OnboardingWizard() {
       </CardHeader>
       <CardContent className="space-y-2">
         <ol className="space-y-2">
-          {STEPS.map((step) => {
+          {visibleSteps.map((step) => {
             const done = derived[step.key];
             return (
               <li

@@ -125,9 +125,19 @@ class InvoiceViewSet(
     @action(detail=False, methods=["post"], url_path="checkout",
             permission_classes=[HasRolePerm.with_perm("sales.create")])
     def checkout(self, request):
+        """POS terminal checkout — always requires an explicit branch +
+        terminal because the cashier is physically ringing up a sale
+        on a specific counter. The implicit-default fallback is only
+        for the /manual/ office-invoice flow.
+        """
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         v = serializer.validated_data
+        if not v.get("branch") or not v.get("terminal"):
+            return Response(
+                {"detail": "branch and terminal are required for POS checkout."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         branch = self._fetch_tenant_object(Branch, v["branch"])
         terminal = self._fetch_tenant_object(Terminal, v["terminal"])
@@ -168,11 +178,17 @@ class InvoiceViewSet(
     def manual_create(self, request):
         """Create an invoice without going through a POS terminal checkout.
 
-        For wholesalers, service providers, manual entry by office staff —
-        anyone who needs to issue a tax invoice but doesn't have a cash
-        register. Reuses the same checkout pipeline (atomic, idempotent,
-        same numbering, same FBR submission path) but lets the caller
-        omit cash_session and pick the recording terminal explicitly.
+        Two distinct tenant shapes converge on this endpoint:
+
+          A) Cashier-counter tenants WITH the branches/terminals modules
+             enabled. They send explicit branch + terminal UUIDs picked
+             from dropdowns in the admin web. Same flow as before.
+
+          B) Office-invoice tenants WITHOUT those modules. They omit
+             branch/terminal entirely. The server provisions an implicit
+             default branch + terminal once per tenant and reuses them
+             for every subsequent manual invoice. The tenant never sees
+             a "branch" or "terminal" concept anywhere in their UI.
 
         Also handles debit / credit notes when invoice_type and
         reference_invoice are supplied: same pipeline, different
@@ -184,13 +200,22 @@ class InvoiceViewSet(
         existing Celery task (matches the POS flow).
         """
         from apps.fbr.tasks import submit_invoice_to_fbr
+        from apps.tenants.implicit import ensure_implicit_branch_and_terminal
+        from apps.tenants.models import Tenant
 
         serializer = CheckoutSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         v = serializer.validated_data
 
-        branch = self._fetch_tenant_object(Branch, v["branch"])
-        terminal = self._fetch_tenant_object(Terminal, v["terminal"])
+        # Branch + terminal resolution. If the body supplies them, look
+        # them up; if it doesn't (Shape B office-invoice flow), fall
+        # back to the implicit default pair which is created on demand.
+        if v.get("branch") and v.get("terminal"):
+            branch = self._fetch_tenant_object(Branch, v["branch"])
+            terminal = self._fetch_tenant_object(Terminal, v["terminal"])
+        else:
+            tenant = Tenant.objects.get(pk=request.tenant_id)
+            branch, terminal = ensure_implicit_branch_and_terminal(tenant)
         customer = (
             Customer.objects.for_tenant(request.tenant_id).filter(
                 pk=v.get("customer"),

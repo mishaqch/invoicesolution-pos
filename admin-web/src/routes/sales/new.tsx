@@ -1,4 +1,4 @@
-import { AlertTriangle, FileText, Plus, Search, Trash2 } from "lucide-react";
+import { FileText, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -81,21 +81,23 @@ export default function NewInvoiceRoute() {
   const customers = useCustomers();
   const create = useCreateManualInvoice();
 
-  // The form requires both a branch UUID and a terminal UUID server-side
-  // (checkout pipeline). If the tenant doesn't have the branches/terminals
-  // modules enabled, manual sale creation is impossible — we render an
-  // inline notice instead of letting the user fill out a form that will
-  // 400 on submit. The fix path is for the super-admin to enable the
-  // modules OR (future work) for the server to fall back to a default
-  // branch + terminal automatically.
+  // Two tenant shapes for invoice creation:
+  //   A) Multi-branch / multi-terminal tenants — pickers show, user
+  //      chooses where the invoice is recorded.
+  //   B) Office-invoice tenants without branches/terminals modules —
+  //      no pickers; server auto-uses an implicit default pair.
+  // The form sends branch/terminal UUIDs only when modules are enabled
+  // AND values have been selected. Server-side fallback handles Shape B.
   const { data: modules } = useModules();
-  const hasBranchesModule = modules
+  const showBranchPicker = modules
     ? modules.enabled.includes("branches")
     : true;
-  const hasTerminalsModule = modules
+  const showTerminalPicker = modules
     ? modules.enabled.includes("terminals")
     : true;
-  const formBlocked = !hasBranchesModule || !hasTerminalsModule;
+  const showCustomerPicker = modules
+    ? modules.enabled.includes("customers")
+    : true;
 
   // Debit-note flow: invoice-detail page passes these via Link state when
   // the user clicks "Add debit note". The reference_invoice + invoice_type
@@ -229,8 +231,15 @@ export default function NewInvoiceRoute() {
 
   async function submit() {
     setError(null);
-    if (!branchId || !terminalId) {
-      setError("Pick a branch and a terminal.");
+    // Only require explicit branch/terminal when the picker is visible.
+    // Shape B office-invoice tenants don't have branches/terminals
+    // modules; the server falls back to implicit defaults.
+    if (showBranchPicker && !branchId) {
+      setError("Pick a branch.");
+      return;
+    }
+    if (showTerminalPicker && !terminalId) {
+      setError("Pick a terminal.");
       return;
     }
     if (lines.length === 0) {
@@ -253,8 +262,10 @@ export default function NewInvoiceRoute() {
         uom_code: l.uom_code || undefined,
       }));
       const result = await create.mutateAsync({
-        branch: branchId,
-        terminal: terminalId,
+        // Send branch/terminal only when chosen. Empty → server picks
+        // implicit defaults for the office-invoice tenant.
+        ...(branchId ? { branch: branchId } : {}),
+        ...(terminalId ? { terminal: terminalId } : {}),
         // Buyer is locked to the original on debit/credit notes; pass null
         // so the server copies the buyer block from reference_invoice.
         customer: debitContext ? null : (customerId || null),
@@ -349,86 +360,67 @@ export default function NewInvoiceRoute() {
         </Card>
       )}
 
-      {formBlocked && (
-        <Card className="border-warning/40 bg-warning-soft">
-          <CardContent className="flex items-start gap-3 py-4 text-sm text-warning-soft-foreground">
-            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-            <div className="space-y-1">
-              <p className="font-semibold">
-                Cannot create invoices with the current tenant configuration
-              </p>
-              <p>
-                Manual invoice creation requires the{" "}
-                <strong>
-                  {!hasBranchesModule && "Branches"}
-                  {!hasBranchesModule && !hasTerminalsModule && " and "}
-                  {!hasTerminalsModule && "Terminals"}
-                </strong>{" "}
-                module
-                {!hasBranchesModule && !hasTerminalsModule ? "s" : ""}.
-                Ask your platform administrator to enable
-                {!hasBranchesModule && !hasTerminalsModule ? " them" : " it"}{" "}
-                in the super-admin panel, or use the POS terminal app
-                directly if cashiers are already onboarded.
-              </p>
-              <Link
-                to="/sales"
-                className="inline-block pt-1 font-medium underline-offset-4 hover:underline"
-              >
-                ← Back to invoices
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {!formBlocked && (<>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Header</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-3">
-            <div>
-              <Label>Branch</Label>
-              <Select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-                <option value="">—</option>
-                {branches.data?.results?.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Label>Terminal / counter</Label>
-              <Select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
-                <option value="">—</option>
-                {terminals.data?.results
-                  ?.filter((t) => !branchId || t.branch === branchId)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
+          <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {/* Branch picker — only when the tenant has the branches
+                module AND actually has >1 branch (single-branch tenants
+                shouldn't have to pick the only option). */}
+            {showBranchPicker && (branches.data?.results.length ?? 0) > 1 && (
+              <div>
+                <Label>Branch</Label>
+                <Select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+                  <option value="">—</option>
+                  {branches.data?.results?.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
-              </Select>
-            </div>
-            <div>
-              <Label>Buyer</Label>
-              <Select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                disabled={!!debitContext}
-                title={debitContext ? "Locked — buyer is inherited from the original invoice" : undefined}
-              >
-                <option value="">
-                  {debitContext
-                    ? `From original: ${debitContext.buyerName ?? "Walk-in"}`
-                    : "Walk-in (unregistered)"}
-                </option>
-                {customers.data?.results?.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.ntn ? `· NTN ${c.ntn}` : c.cnic ? `· CNIC ${c.cnic}` : ""}
+                </Select>
+              </div>
+            )}
+            {/* Terminal picker — only when the tenant has the terminals
+                module AND actually has >1 terminal under the chosen
+                branch (or any branch). Hidden for office-invoice flow. */}
+            {showTerminalPicker && (terminals.data?.results.length ?? 0) > 1 && (
+              <div>
+                <Label>Terminal / counter</Label>
+                <Select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
+                  <option value="">—</option>
+                  {terminals.data?.results
+                    ?.filter((t) => !branchId || t.branch === branchId)
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                </Select>
+              </div>
+            )}
+            {/* Buyer picker — only when the customers module is enabled
+                (it's forced on, so this is always true today; keeping
+                the conditional in case the forced flag ever changes). */}
+            {showCustomerPicker && (
+              <div>
+                <Label>Buyer</Label>
+                <Select
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                  disabled={!!debitContext}
+                  title={debitContext ? "Locked — buyer is inherited from the original invoice" : undefined}
+                >
+                  <option value="">
+                    {debitContext
+                      ? `From original: ${debitContext.buyerName ?? "Walk-in"}`
+                      : "Walk-in (unregistered)"}
                   </option>
-                ))}
-              </Select>
-            </div>
+                  {customers.data?.results?.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.ntn ? `· NTN ${c.ntn}` : c.cnic ? `· CNIC ${c.cnic}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -732,8 +724,6 @@ export default function NewInvoiceRoute() {
           {create.isPending ? "Submitting…" : "Create invoice & submit to FBR"}
         </Button>
       </div>
-      </>
-      )}
     </div>
   );
 }

@@ -54,10 +54,11 @@ MODULES: list[_Module] = [
         "key": "customers",
         "label": "Customers",
         "group": "Sales & FBR",
-        "description": "Customer database with NTN/CNIC. When disabled, "
-                       "all sales become walk-in (FBR registered-buyer "
-                       "scenarios will be unavailable).",
-        "forced": False,
+        "description": "Customer database with NTN/CNIC. Cannot be "
+                       "disabled — FBR registered-buyer scenarios "
+                       "require a customer record with NTN, so the "
+                       "platform always needs this surface.",
+        "forced": True,
     },
     # --- Multi-location ---
     {

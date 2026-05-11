@@ -8,10 +8,10 @@ export default function HeldSalesAdminList() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Held sales</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Held invoices</h1>
       <p className="text-sm text-muted-foreground">
-        Sales held across all terminals — manager view. Recall happens on the
-        cashier's terminal.
+        Draft invoices held across all terminals — manager view. Recall
+        happens on the cashier's terminal.
       </p>
       <div className="rounded-md border">
         <Table>

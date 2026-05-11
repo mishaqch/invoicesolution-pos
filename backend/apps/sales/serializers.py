@@ -115,9 +115,16 @@ class CheckoutSerializer(serializers.Serializer):
     plus the original invoice id and the API will create a linked
     invoice with the same buyer block, sent to PRAL as a separate
     document referencing the original.
+
+    branch + terminal are OPTIONAL here because office-invoice tenants
+    (no branches/terminals modules enabled) can't supply them. The
+    /manual/ view falls back to an implicit default branch + terminal
+    when missing. The POS /checkout/ flow is gated separately and
+    always supplies them (a terminal can't ring up a sale without
+    knowing which terminal it is).
     """
-    branch = serializers.UUIDField()
-    terminal = serializers.UUIDField()
+    branch = serializers.UUIDField(required=False, allow_null=True)
+    terminal = serializers.UUIDField(required=False, allow_null=True)
     cash_session = serializers.UUIDField(required=False, allow_null=True)
     customer = serializers.UUIDField(required=False, allow_null=True)
     cart_lines = CheckoutLineSerializer(many=True)

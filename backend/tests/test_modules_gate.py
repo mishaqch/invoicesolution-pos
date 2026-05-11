@@ -60,10 +60,15 @@ def test_catalog_includes_required_modules():
     assert set(MODULE_KEYS) == expected
 
 
-def test_forced_modules_are_sales_and_fbr():
+def test_forced_modules_are_sales_fbr_customers():
     """If you change this list, audit every place that calls
-    is_module_enabled — disabling sales/fbr would brick the product."""
-    assert FORCED_MODULE_KEYS == {"sales", "fbr"}
+    is_module_enabled — disabling any of these would brick the product:
+       sales      — the core invoicing surface
+       fbr        — the FBR Digital Invoicing endpoint
+       customers  — required for FBR registered-buyer scenarios
+                    (any sale to a tenant with an NTN needs a customer
+                    record; walk-in alone is too restrictive)."""
+    assert FORCED_MODULE_KEYS == {"sales", "fbr", "customers"}
 
 
 def test_default_modules_enabled_is_everything():
