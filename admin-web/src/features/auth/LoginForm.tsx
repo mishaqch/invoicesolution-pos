@@ -40,16 +40,22 @@ export function LoginForm() {
         { method: "POST", body: JSON.stringify(values) },
         { auth: false },
       );
-      // Platform-staff users (super-admin operators) sign in successfully
-      // but receive tenant=null because they have no tenant membership.
-      // The tenant API middleware also blocks them from every /api/...
-      // endpoint, so letting them past would produce console-spam 403s
-      // on every page. Reject the session here with a clear message
-      // pointing them to the Django super-admin instead.
+      // Reject the session when tenant=null. Two reasons that's true:
+      //   A) The user is platform-staff (super-admin operator). They
+      //      should sign in at /admin/, not here.
+      //   B) The user is a tenant user but has no active membership
+      //      yet — the super-admin forgot to wire them up. Show a
+      //      different message so the operator knows what to fix.
       if (!resp.tenant) {
-        setSubmitError(
-          "This account is a platform / super-admin account — it cannot sign in to the tenant admin. Use the super-admin at /admin/ instead.",
-        );
+        if (resp.user?.is_platform_staff) {
+          setSubmitError(
+            "This account is a platform / super-admin account — it cannot sign in to the tenant admin. Use the super-admin at http://localhost:8000/admin/ instead.",
+          );
+        } else {
+          setSubmitError(
+            "This account has no active tenant. Ask your platform administrator to add a tenant membership before you can sign in.",
+          );
+        }
         return;
       }
       signIn(resp);

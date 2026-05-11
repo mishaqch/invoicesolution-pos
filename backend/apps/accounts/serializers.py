@@ -20,7 +20,13 @@ class TenantBriefSerializer(serializers.ModelSerializer):
 class UserBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "email", "full_name", "preferred_language", "is_staff")
+        # is_platform_staff is exposed so the login form can give a
+        # specific error message ("super-admin account, use /admin/")
+        # vs a generic ("no tenant access").
+        fields = (
+            "id", "email", "full_name", "preferred_language",
+            "is_staff", "is_platform_staff",
+        )
 
 
 class PosTokenObtainPairSerializer(TokenObtainPairSerializer):
