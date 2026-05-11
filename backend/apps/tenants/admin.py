@@ -192,6 +192,44 @@ class TenantMembershipAdmin(ModelAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
     autocomplete_fields = ("tenant", "user")
 
+    # ------------------------------------------------------------------
+    # Catch the last-owner guard from TenantMembership.delete() and
+    # surface it as a friendly message instead of a 500.
+    # ------------------------------------------------------------------
+
+    def delete_model(self, request, obj):
+        from django.contrib import messages
+        from django.core.exceptions import ValidationError
+        try:
+            super().delete_model(request, obj)
+        except ValidationError as e:
+            msg = e.message if hasattr(e, "message") else "; ".join(e.messages)
+            messages.error(request, msg)
+            raise
+
+    def delete_queryset(self, request, queryset):
+        from django.contrib import messages
+        from django.core.exceptions import ValidationError
+
+        blocked, deleted = [], 0
+        for obj in queryset:
+            try:
+                obj.delete()
+                deleted += 1
+            except ValidationError as e:
+                msg = e.message if hasattr(e, "message") else "; ".join(e.messages)
+                blocked.append(
+                    f"{obj.tenant.business_name} ({obj.role} membership): {msg}",
+                )
+
+        if deleted:
+            messages.success(
+                request,
+                f"Deleted {deleted} membership{'s' if deleted != 1 else ''}.",
+            )
+        for line in blocked:
+            messages.error(request, line)
+
 
 @admin.register(Branch)
 class BranchAdmin(ModelAdmin):

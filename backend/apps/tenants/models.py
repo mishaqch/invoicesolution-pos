@@ -202,6 +202,124 @@ class TenantMembership(models.Model):
     def __str__(self) -> str:
         return f"{self.user_id} → {self.tenant_id} ({self.role})"
 
+    # ------------------------------------------------------------------
+    # Safe-edit guard — same shape as User.tenants_where_last_active_owner.
+    #
+    # Three operations can orphan a tenant by mutating an existing
+    # membership (not just deleting a user):
+    #   1. Toggle is_active False on the only active owner
+    #   2. Change role owner → cashier on the only active owner
+    #   3. Direct DELETE of the only active owner membership row
+    #
+    # We refuse all three at the model layer so admin form, Django
+    # shell, and any future tenant-API endpoint that lets owners
+    # manage memberships all hit the same gate.
+    # ------------------------------------------------------------------
+
+    def _is_contributing_active_owner_now(self) -> bool:
+        """Does THIS row currently (in the DB, pre-save) count as an
+        active owner of its tenant? New rows return False since there
+        is no DB state yet to contribute."""
+        if not self.pk:
+            return False
+        try:
+            db_row = TenantMembership.objects.only(
+                "role", "is_active", "tenant_id",
+            ).get(pk=self.pk)
+        except TenantMembership.DoesNotExist:
+            return False
+        return db_row.role == "owner" and db_row.is_active
+
+    def _would_be_active_owner_after_save(self) -> bool:
+        """Will THIS row count as an active owner after the in-memory
+        values are saved? Used together with the pre-save check to
+        detect 'this row is about to stop being an active owner'."""
+        return self.role == "owner" and self.is_active
+
+    def _tenant_has_other_active_owner(self) -> bool:
+        """Are there OTHER active owners of this tenant (excluding the
+        current row)? If yes, mutating this row is safe — the tenant
+        won't be orphaned."""
+        qs = TenantMembership.objects.filter(
+            tenant_id=self.tenant_id,
+            role="owner",
+            is_active=True,
+        )
+        if self.pk:
+            qs = qs.exclude(pk=self.pk)
+        return qs.exists()
+
+    def clean(self):
+        """Refuse a save that would leave the tenant with no active
+        owners. Three orphaning paths covered:
+
+          • Existing active owner being deactivated   (is_active False)
+          • Existing active owner being demoted       (role change)
+          • Direct delete handled in delete() below.
+        """
+        super().clean()
+        was_owner = self._is_contributing_active_owner_now()
+        will_be_owner = self._would_be_active_owner_after_save()
+
+        # Only flag transitions FROM contributing TO not-contributing.
+        if was_owner and not will_be_owner:
+            if not self._tenant_has_other_active_owner():
+                from django.core.exceptions import ValidationError
+                from .models import Tenant  # avoid circular at import time
+                tname = (
+                    Tenant.objects.only("business_name")
+                    .get(pk=self.tenant_id)
+                    .business_name
+                )
+                # Tell the operator what specifically they changed so
+                # they know what to undo or do instead.
+                if not self.is_active:
+                    why = "deactivate this membership"
+                elif self.role != "owner":
+                    why = f"change the role from owner to {self.role}"
+                else:
+                    why = "save this change"
+                raise ValidationError(
+                    f"Cannot {why}: this is the only active owner of "
+                    f"{tname}. Promote another member to owner first, "
+                    f"OR add a new owner membership, so the tenant "
+                    f"isn't left without an administrator.",
+                )
+
+    def save(self, *args, **kwargs):
+        """Run clean() on every save path. ModelForm.save() already
+        runs full_clean → clean() for us, but direct .save() calls
+        from Django shell / management commands / API code skip it.
+        Wiring it here guarantees the guard fires regardless of path.
+        """
+        self.clean()
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        """Refuse direct deletion of the last active owner.
+
+        Note: when User.delete() is called, the CASCADE on user_id
+        bypasses this method (Django invokes the database-level
+        cascade, not the Python method). That path is guarded by
+        User.delete() instead. This method covers the case where
+        someone deletes the membership row directly (admin → Tenant
+        memberships → delete a row, or via shell).
+        """
+        if self.role == "owner" and self.is_active and not self._tenant_has_other_active_owner():
+            from django.core.exceptions import ValidationError
+            from .models import Tenant
+            tname = (
+                Tenant.objects.only("business_name")
+                .get(pk=self.tenant_id)
+                .business_name
+            )
+            raise ValidationError(
+                f"Cannot delete this membership: it is the only "
+                f"active owner of {tname}. Promote another member "
+                f"to owner first, OR add a new owner membership.",
+            )
+        return super().delete(*args, **kwargs)
+
 
 # ---------------------------------------------------------------------------
 # Locations & devices (DATABASE_SCHEMA.md §2)
