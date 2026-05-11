@@ -1,0 +1,91 @@
+{% comment %}
+Custom widget template for PermissionBundleWidget — renders each
+bundle as a card with label + description + checkbox.
+
+The widget's `attrs.bundles` carries the catalog (list of bundle dicts
+with key/label/description/models) so we render the description below
+each checkbox.
+
+Uses pure CSS for the checked-state styling (matches the modules
+widget pattern in tenants/admin/modules_checkbox.html).
+{% endcomment %}
+
+<style>
+  .pbundles {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: system-ui, sans-serif;
+    font-size: 13px;
+    max-width: 700px;
+  }
+  .pbundle-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-base-200, #e4e4e7);
+    border-radius: 6px;
+    background: var(--color-base-100, #ffffff);
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+  .pbundle-card:has(input:not(:disabled)):hover {
+    border-color: var(--color-primary-500, #22c55e);
+    background-color: var(--color-primary-50, #f0fdf4);
+  }
+  .pbundle-card:has(input:checked) {
+    border-color: var(--color-primary-500, #22c55e);
+    background-color: var(--color-primary-50, #f0fdf4);
+  }
+  .pbundle-card:has(input:checked):hover {
+    border-color: var(--color-primary-600, #16a34a);
+    background-color: var(--color-primary-100, #dcfce7);
+  }
+  .pbundle-card input[type="checkbox"] {
+    margin-top: 3px;
+    flex-shrink: 0;
+  }
+  .pbundle-card .pbundle-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .pbundle-card .pbundle-text strong {
+    display: block;
+    line-height: 1.3;
+  }
+  .pbundle-card .pbundle-text .pbundle-desc {
+    display: block;
+    margin-top: 3px;
+    opacity: 0.7;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+</style>
+
+<div class="pbundles">
+  {% for option_group in widget.optgroups %}
+    {% for option in option_group.1 %}
+      {# `option.value` is the bundle key ("tenant_management" etc.).
+         Find the matching bundle dict from widget.attrs.bundles. #}
+      {% with bundle_key=option.value %}
+        {% for b in widget.attrs.bundles %}
+          {% if b.key == bundle_key %}
+            <label class="pbundle-card">
+              <input
+                type="checkbox"
+                name="{{ widget.name }}"
+                value="{{ bundle_key }}"
+                {% if option.selected %}checked{% endif %}
+              />
+              <span class="pbundle-text">
+                <strong>{{ b.label }}</strong>
+                <span class="pbundle-desc">{{ b.description }}</span>
+              </span>
+            </label>
+          {% endif %}
+        {% endfor %}
+      {% endwith %}
+    {% endfor %}
+  {% endfor %}
+</div>

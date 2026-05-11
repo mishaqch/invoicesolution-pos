@@ -32,6 +32,7 @@ from apps.accounts.permissions import (
 )
 from apps.tenants.models import TenantMembership
 
+from .forms import PlatformUserChangeForm
 from .models import User
 
 
@@ -169,15 +170,25 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
                 "every tenant API endpoint."
             ),
         }),
-        (_("Django permissions"), {
+        (_("Platform permissions"), {
             "fields": ("is_active", "is_staff", "is_superuser",
-                       "groups", "user_permissions"),
+                       "permission_bundles"),
             "description": (
-                "Standard Django row-level permissions. Only relevant "
-                "for platform-staff users — controls which Django "
-                "admin pages they can see / edit. Tenant users get "
-                "their permissions from the TenantMembership role "
-                "shown in the inline below."
+                "Tick the bundles this operator needs to do their "
+                "job. Each bundle grants a coherent set of view + "
+                "add + change + delete permissions on related models. "
+                "Cleaner than the stock Django picker, and removes "
+                "the irrelevant rows (content types, JWT blacklist, "
+                "etc.)."
+            ),
+        }),
+        (_("Advanced Django permissions"), {
+            "classes": ("collapse",),
+            "fields": ("groups", "user_permissions"),
+            "description": (
+                "Power-user escape hatch. Use bundles above for the "
+                "common cases. Permissions added here outside the "
+                "bundles' coverage are preserved across saves."
             ),
         }),
         (_("Activity"), {
@@ -266,6 +277,52 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
         if obj.is_platform_staff or obj.is_superuser:
             return self._PLATFORM_FIELDSETS
         return self._TENANT_FIELDSETS
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        """Swap the form when editing a platform-staff user so we get
+        the curated permission_bundles field. Tenant users (and the
+        add form) keep the stock UserChangeForm — they don't have
+        permission_bundles."""
+        if change and obj is not None and (obj.is_platform_staff or obj.is_superuser):
+            kwargs["form"] = PlatformUserChangeForm
+        return super().get_form(request, obj, change=change, **kwargs)
+
+    # App labels we ALWAYS hide from both the bundles' allow-list and
+    # the advanced user_permissions widget — Django plumbing + JWT
+    # internals + materialized report tables. Editing these via the
+    # admin is at best useless, at worst dangerous (breaks auth).
+    _HIDDEN_APP_LABELS = frozenset({
+        "contenttypes",         # Django internal model registry
+        "token_blacklist",      # JWT blacklist + outstanding tokens
+        "admin",                # Django admin LogEntry
+        "sessions",             # Web session rows
+    })
+    # Models whose rows are computed / append-only — editing perms on
+    # them is misleading. Hide from the advanced widget too.
+    _HIDDEN_MODELS = frozenset({
+        ("reports", "dailysalessummary"),
+        ("reports", "productvelocity"),
+        ("reports", "reportrun"),
+        ("reports", "reportfavorite"),
+        ("sync", "synclog"),
+        ("customers", "customerledger"),
+        ("sales", "saleitemhistory"),
+        ("auth", "permission"),     # editing Permission rows themselves
+    })
+
+    def formfield_for_manytomany(self, db_field, request=None, **kwargs):
+        """Filter the user_permissions queryset to drop the plumbing /
+        dangerous rows even in the advanced expandable section."""
+        if db_field.name == "user_permissions":
+            qs = kwargs.get("queryset") or db_field.remote_field.model.objects
+            qs = qs.exclude(content_type__app_label__in=self._HIDDEN_APP_LABELS)
+            for app_label, model_name in self._HIDDEN_MODELS:
+                qs = qs.exclude(
+                    content_type__app_label=app_label,
+                    content_type__model=model_name,
+                )
+            kwargs["queryset"] = qs.select_related("content_type")
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     def get_inline_instances(self, request, obj=None):
         """Hide the tenant-membership inline on the create form
