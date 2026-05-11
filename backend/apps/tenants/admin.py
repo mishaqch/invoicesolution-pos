@@ -194,18 +194,26 @@ class TenantMembershipAdmin(ModelAdmin):
 
     # ------------------------------------------------------------------
     # Catch the last-owner guard from TenantMembership.delete() and
-    # surface it as a friendly message instead of a 500.
+    # surface it as a friendly admin message + redirect instead of a 500.
+    # See UserAdmin.delete_view for the same pattern.
     # ------------------------------------------------------------------
 
-    def delete_model(self, request, obj):
+    def delete_view(self, request, object_id, extra_context=None):
         from django.contrib import messages
         from django.core.exceptions import ValidationError
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
         try:
-            super().delete_model(request, obj)
+            return super().delete_view(request, object_id, extra_context)
         except ValidationError as e:
             msg = e.message if hasattr(e, "message") else "; ".join(e.messages)
             messages.error(request, msg)
-            raise
+            return HttpResponseRedirect(
+                reverse(
+                    f"admin:{self.opts.app_label}_{self.opts.model_name}_change",
+                    args=[object_id],
+                ),
+            )
 
     def delete_queryset(self, request, queryset):
         from django.contrib import messages

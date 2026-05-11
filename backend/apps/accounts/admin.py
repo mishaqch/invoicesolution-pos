@@ -395,22 +395,32 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
     # delete a user who is the last active owner of any tenant.
     # ------------------------------------------------------------------
 
-    def delete_model(self, request, obj):
-        """Single-row delete via the change form. Catch the model
-        guard's ValidationError and surface it as an admin message.
-        Without this, the operator sees a server-error page with no
-        explanation of why the delete refused."""
+    def delete_view(self, request, object_id, extra_context=None):
+        """Wrap Django's delete_view to convert the model-level
+        ValidationError into a flash message + redirect, instead of
+        letting it bubble to a 500 page.
+
+        Django's delete_view calls delete_model() inside its own
+        try-less flow; an exception bubbles up to the request handler
+        and renders a debug 500. We catch the ValidationError here
+        and redirect back to the user's change form with a clear
+        message. The operator stays in context and sees the reason.
+        """
         from django.contrib import messages
         from django.core.exceptions import ValidationError
+        from django.http import HttpResponseRedirect
+        from django.urls import reverse
         try:
-            super().delete_model(request, obj)
+            return super().delete_view(request, object_id, extra_context)
         except ValidationError as e:
             msg = e.message if hasattr(e, "message") else "; ".join(e.messages)
             messages.error(request, msg)
-            # Re-raise so Django's flow knows not to redirect with a
-            # success message. The view machinery converts this back
-            # into a friendly page render.
-            raise
+            return HttpResponseRedirect(
+                reverse(
+                    f"admin:{self.opts.app_label}_{self.opts.model_name}_change",
+                    args=[object_id],
+                ),
+            )
 
     def delete_queryset(self, request, queryset):
         """Bulk-delete action. Tries each user one by one so a single
