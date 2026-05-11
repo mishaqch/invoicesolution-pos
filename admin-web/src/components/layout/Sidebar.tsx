@@ -33,8 +33,8 @@ interface Item {
 
 const TOP: Item[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
-  { to: "/sales", label: "Invoices", icon: Receipt, end: true, module: "sales" },
-  { to: "/sales/new", label: "New sale", icon: ShoppingCart, module: "sales" },
+  { to: "/sales", label: "Sales", icon: Receipt, end: true, module: "sales" },
+  { to: "/sales/new", label: "New invoice", icon: ShoppingCart, module: "sales" },
   { to: "/sales/held", label: "Held sales", icon: ShoppingCart, module: "sales" },
   { to: "/returns", label: "Returns", icon: ShoppingCart, end: true, module: "returns" },
 ];

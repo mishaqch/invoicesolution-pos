@@ -40,6 +40,18 @@ export function LoginForm() {
         { method: "POST", body: JSON.stringify(values) },
         { auth: false },
       );
+      // Platform-staff users (super-admin operators) sign in successfully
+      // but receive tenant=null because they have no tenant membership.
+      // The tenant API middleware also blocks them from every /api/...
+      // endpoint, so letting them past would produce console-spam 403s
+      // on every page. Reject the session here with a clear message
+      // pointing them to the Django super-admin instead.
+      if (!resp.tenant) {
+        setSubmitError(
+          "This account is a platform / super-admin account — it cannot sign in to the tenant admin. Use the super-admin at /admin/ instead.",
+        );
+        return;
+      }
       signIn(resp);
       navigate("/", { replace: true });
     } catch (err) {
