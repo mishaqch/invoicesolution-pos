@@ -198,11 +198,24 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
             "fields": ("is_active",),
             "description": (
                 "Tenant users always have is_staff=False (no Django "
-                "admin access) and is_platform_staff=False (this is "
-                "a tenant user, not a platform operator). Their "
-                "actual permissions come from the tenant membership "
-                "role shown below — pick a role there, save, and the "
-                "user can do whatever that role allows."
+                "admin access). Their actual permissions come from "
+                "the tenant membership role shown below — pick a role "
+                "there, save, and the user can do whatever that role "
+                "allows."
+            ),
+        }),
+        (_("Promote to platform staff"), {
+            "fields": ("is_platform_staff",),
+            "classes": ("collapse",),
+            "description": (
+                "Tick this and save to convert this account into a "
+                "platform staff member (super-admin operator). After "
+                "saving, the page will reload showing the platform "
+                "fieldset where you can pick a platform role "
+                "(super_admin / billing_admin / support_lead / etc.). "
+                "Platform staff cannot access tenant APIs and any "
+                "existing tenant memberships will be hidden but not "
+                "deleted."
             ),
         }),
         (_("Activity"), {
@@ -211,18 +224,30 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
         }),
     )
 
-    # Add (create) form — minimal. is_staff stays off by default.
+    # Add (create) form — minimal but lets the operator decide between
+    # tenant user vs platform-staff at creation time. Two paths:
+    #
+    #   Default (is_platform_staff unticked):
+    #     → creates a TENANT user. After saving, page reloads with
+    #       the tenant fieldset + a Tenant memberships inline. Add
+    #       a membership there to grant access to a specific tenant.
+    #
+    #   is_platform_staff ticked:
+    #     → creates a PLATFORM-STAFF user. After saving, page reloads
+    #       with the platform fieldset where you pick the platform
+    #       role (super_admin / billing_admin / support_lead / etc.).
+    #       No tenant membership inline (platform staff don't belong
+    #       to tenants).
     add_fieldsets = (
         (None, {
             "classes": ("wide",),
             "fields": ("email", "full_name", "password1", "password2",
-                       "is_active"),
+                       "is_active", "is_platform_staff"),
             "description": (
-                "Creates a tenant user by default (is_staff=False, "
-                "is_platform_staff=False, is_active=True). After "
-                "saving, add a Tenant membership in the inline that "
-                "appears, OR tick 'Is platform staff' on the change "
-                "form to promote to super-admin."
+                "Leave 'Is platform staff' unticked for a tenant user "
+                "(cashier / manager / owner of a business). Tick it "
+                "for a super-admin / platform operator. After saving, "
+                "the page reloads with role-specific fields."
             ),
         }),
     )
