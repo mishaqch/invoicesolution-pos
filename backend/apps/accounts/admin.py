@@ -347,6 +347,48 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
             return []
         return super().get_inline_instances(request, obj)
 
+    # ------------------------------------------------------------------
+    # Two-tier admin hierarchy enforcement
+    #
+    # Tier 1 — Super super admin (request.user.is_superuser=True)
+    #   Full CRUD on all users including other super admins.
+    #
+    # Tier 2 — Super admins / platform staff (is_platform_staff=True)
+    #   Can add new users. Cannot edit OR delete platform-staff peers
+    #   (other super admins), even if they hold the User management
+    #   bundle. They can edit their own profile (password, name).
+    #
+    # Tier 3 — Tenant users
+    #   These checks aren't relevant — tenant users don't access
+    #   /admin/ at all (is_staff=False). The middleware bounces them.
+    # ------------------------------------------------------------------
+
+    def has_change_permission(self, request, obj=None):
+        # Base check (does the user have accounts.change_user at all?)
+        # — if no, deny early. is_superuser bypasses everything.
+        if not super().has_change_permission(request, obj):
+            return False
+        # Without a specific object, we're rendering the changelist —
+        # show it; per-row filtering happens when an operator clicks
+        # into a specific row.
+        if obj is None:
+            return True
+        # Super super admin: unrestricted.
+        if request.user.is_superuser:
+            return True
+        # Anyone may edit their own profile (password reset, name change).
+        if obj.pk == request.user.pk:
+            return True
+        # Rule 2 (strict): non-superusers cannot change ANY existing
+        # user. Only Add is allowed. Self-edit covered above.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Only the super super admin can delete users. Rule 2.
+        if not request.user.is_superuser:
+            return False
+        return super().has_delete_permission(request, obj)
+
     # ----- List display helpers ---------------------------------------
 
     @admin.display(description="Type", ordering="is_platform_staff")

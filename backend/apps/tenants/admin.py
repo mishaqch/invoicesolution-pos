@@ -158,6 +158,31 @@ class TenantAdmin(ModelAdmin):
             body,
         )
 
+    # ------------------------------------------------------------------
+    # Two-tier admin hierarchy — same rules as UserAdmin.
+    #
+    # Only the super super admin (is_superuser=True) can edit or
+    # delete existing Tenant rows. Delegated platform staff with the
+    # Tenant management bundle can ADD new tenants but cannot modify
+    # or remove existing ones — onboarding flow only.
+    # ------------------------------------------------------------------
+
+    def has_change_permission(self, request, obj=None):
+        if not super().has_change_permission(request, obj):
+            return False
+        if obj is None:
+            # Changelist visible to anyone with view perms; per-row
+            # rejection happens when they click into a row.
+            return True
+        if request.user.is_superuser:
+            return True
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        if not request.user.is_superuser:
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 @admin.register(TenantMembership)
 class TenantMembershipAdmin(ModelAdmin):
