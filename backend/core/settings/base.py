@@ -280,7 +280,12 @@ UNFOLD = {
     "SITE_TITLE": "POS System — Super Admin",
     "SITE_HEADER": "POS System",
     "SITE_SUBHEADER": "Platform control plane",
-    "SITE_URL": "/",
+    # No "Return to site" link — this Django app is super-admin only,
+    # there's no public-facing site at /. Setting SITE_URL to None
+    # hides Unfold's back-arrow link in the top-right of the admin
+    # chrome. (The React tenant admin lives on a separate host:port
+    # and isn't accessible via this link.)
+    "SITE_URL": None,
     "SITE_SYMBOL": "storefront",          # Material icon shown in sidebar
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,
