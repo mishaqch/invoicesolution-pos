@@ -29,6 +29,46 @@ def role_has_perm(role: str, perm: str) -> bool:
     return role in DEFAULT_ROLE_PERMS.get(perm, set())
 
 
+# Plain-English summary of what each role can do, shown in the Django
+# admin's TenantMembership inline so super-admin operators can pick a
+# role without memorising the permission matrix.
+#
+# Keep these synced with DEFAULT_ROLE_PERMS above.
+ROLE_DESCRIPTIONS: dict[str, str] = {
+    "owner":
+        "Full access. Create + cancel invoices, manage users + FBR "
+        "tokens, edit business profile, see every branch's reports, "
+        "view audit log. The buck stops here.",
+    "manager":
+        "Operational manager. Create + cancel invoices (any amount), "
+        "adjust inventory, manage products + customers, see own "
+        "branch's reports. Cannot manage users or FBR tokens.",
+    "cashier":
+        "Front-of-house. Ring up sales, accept payments, cancel "
+        "low-value sales. Cannot adjust inventory, manage products, "
+        "or see reports beyond today's totals.",
+    "accountant":
+        "Finance role. View invoices + payments + ledger across all "
+        "branches, view audit log, run reports. Read-only for sales "
+        "and inventory — does not create invoices.",
+    "auditor":
+        "External / compliance read-only. View invoices, FBR "
+        "submissions, audit log, all-branch reports. Cannot edit "
+        "anything.",
+}
+
+
+def role_description(role: str) -> str:
+    """Return the plain-English summary for a role."""
+    return ROLE_DESCRIPTIONS.get(role, f"Custom role: {role}")
+
+
+def all_perms_for_role(role: str) -> list[str]:
+    """Return the list of perm keys this role has. Useful for showing
+    a "what does this role unlock?" chip list in the admin."""
+    return sorted(p for p, roles in DEFAULT_ROLE_PERMS.items() if role in roles)
+
+
 class IsTenantMember(BasePermission):
     """Authenticated + has an active membership in some tenant on this request."""
 
