@@ -2,6 +2,12 @@ import { forwardRef, type HTMLAttributes, type TdHTMLAttributes, type ThHTMLAttr
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Table primitives. Header gets a soft muted bar so the column titles
+ * read distinctly from the rows. Rows hover with a faint emerald tint
+ * to match the brand, with selected-state support via data-state.
+ */
+
 export const Table = forwardRef<HTMLTableElement, HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
     <div className="relative w-full overflow-auto">
@@ -13,7 +19,16 @@ Table.displayName = "Table";
 
 export const TableHeader = forwardRef<HTMLTableSectionElement, HTMLAttributes<HTMLTableSectionElement>>(
   ({ className, ...props }, ref) => (
-    <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
+    <thead
+      ref={ref}
+      className={cn(
+        // Sticky-able header strip with a subtle background so column
+        // labels separate visually from rows.
+        "bg-muted/40 [&_tr]:border-b [&_tr]:border-border",
+        className,
+      )}
+      {...props}
+    />
   ),
 );
 TableHeader.displayName = "TableHeader";
@@ -30,7 +45,11 @@ export const TableRow = forwardRef<HTMLTableRowElement, HTMLAttributes<HTMLTable
     <tr
       ref={ref}
       className={cn(
-        "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+        // Brand-tinted hover so the row reads as "selectable" — matches
+        // the rest of the emerald system.
+        "border-b border-border transition-colors",
+        "hover:bg-primary-soft/40",
+        "data-[state=selected]:bg-primary-soft",
         className,
       )}
       {...props}
@@ -44,7 +63,7 @@ export const TableHead = forwardRef<HTMLTableCellElement, ThHTMLAttributes<HTMLT
     <th
       ref={ref}
       className={cn(
-        "h-10 px-3 text-left align-middle font-medium text-muted-foreground",
+        "h-10 px-3 text-left align-middle font-semibold text-xs uppercase tracking-wider text-muted-foreground",
         className,
       )}
       {...props}

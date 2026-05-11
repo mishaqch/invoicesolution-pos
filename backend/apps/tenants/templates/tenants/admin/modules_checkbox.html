@@ -3,83 +3,204 @@ Custom widget template for ModulesCheckboxWidget — groups the module
 checklist by its catalog `group` field (Sales & FBR / Multi-location /
 Operations / Insights) and renders forced modules pre-checked + disabled.
 
-The widget gives us `widget.optgroups` from the choices iterable, but we
-want the catalog metadata (group, description, forced) which the choices
-tuple doesn't carry. The form's clean() re-includes forced modules, so
-even if a sneaky operator submits a form bypassing the disabled checkbox,
-the server still ends up with the right list.
+States via CSS only (no JS) using :has(:checked) — supported in every
+modern browser (Chrome 105+, Safari 15.4+, Firefox 121+):
+  - rest:       light grey border, white bg
+  - hover:      green border, very-light green bg
+  - checked:    green border, slightly stronger green bg  (active state)
+  - disabled:   no hover effect, slight transparency
 {% endcomment %}
 
 {% load tenants_modules_tags %}
 
-<div class="modules-grid" style="
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-  font-family: system-ui, sans-serif;
-  font-size: 13px;
-">
+<style>
+  .modules-stack { display: flex; flex-direction: column; gap: 14px;
+                   font-family: system-ui, sans-serif; font-size: 13px; }
+
+  .modules-fieldset {
+    border: 1px solid var(--color-base-300, #d4d4d8);
+    border-radius: 8px;
+    padding: 12px 14px 14px;
+    background: var(--color-base-50, #fafafa);
+  }
+  .modules-legend {
+    font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    opacity: 0.75; padding: 0 6px;
+  }
+
+  /* Wrap container for both layout variants. */
+  .modules-rows {
+    display: flex; flex-direction: column; gap: 8px; margin-top: 4px;
+  }
+  .modules-cards {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px;
+  }
+
+  /* Card base. */
+  .module-card {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-base-200, #e4e4e7);
+    border-radius: 6px;
+    background: var(--color-base-100, #ffffff);
+    cursor: pointer;
+    transition: border-color 120ms ease, background-color 120ms ease;
+  }
+
+  /* Grid-card variant (other 3 groups). */
+  .modules-cards .module-card {
+    align-items: flex-start;
+    flex: 1 1 240px;
+    min-width: 240px;
+    max-width: 360px;
+  }
+  /* Row variant (Sales & FBR group). */
+  .modules-rows .module-card {
+    align-items: center;
+    width: 100%;
+    padding: 10px 14px;
+    gap: 12px;
+  }
+
+  /* Hover — only when the underlying checkbox is enabled. */
+  .module-card:has(input:not(:disabled)):hover {
+    border-color: var(--color-primary-500, #22c55e);
+    background-color: var(--color-primary-50, #f0fdf4);
+  }
+
+  /* Active / selected — checked state wins over hover so a moused-out
+     selected card stays green. Hovering a selected card keeps it green
+     (no flicker, no reset). */
+  .module-card:has(input:checked) {
+    border-color: var(--color-primary-500, #22c55e);
+    background-color: var(--color-primary-50, #f0fdf4);
+  }
+  .module-card:has(input:checked):hover {
+    border-color: var(--color-primary-600, #16a34a);
+    background-color: var(--color-primary-100, #dcfce7);
+  }
+
+  /* Forced (disabled + checked) — green like active, but slightly muted
+     and no pointer affordance. */
+  .module-card:has(input:disabled) {
+    cursor: not-allowed;
+    opacity: 0.85;
+  }
+
+  .module-card input[type="checkbox"] {
+    flex-shrink: 0;
+  }
+  .modules-cards .module-card input[type="checkbox"] {
+    margin-top: 3px;
+  }
+
+  .module-label-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .module-label-text strong {
+    display: block;
+    line-height: 1.3;
+  }
+  .module-description {
+    display: block;
+    margin-top: 3px;
+    opacity: 0.7;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  /* Row layout — label column fixed width so descriptions align. */
+  .modules-rows .module-card .module-label-block {
+    flex: 0 0 200px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .modules-rows .module-card .module-description {
+    flex: 1;
+    min-width: 0;
+    opacity: 0.7;
+    font-size: 12px;
+    line-height: 1.4;
+    margin-top: 0;
+  }
+
+  .module-forced-pill {
+    font-size: 10px;
+    background: var(--color-primary-600, #16a34a);
+    color: white;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    margin-left: 6px;
+    vertical-align: middle;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .modules-rows .module-card .module-forced-pill {
+    margin-left: 0;
+  }
+</style>
+
+<div class="modules-stack">
   {% regroup widget|grouped_modules by group as groups %}
   {% for group in groups %}
-    <fieldset style="
-      border: 1px solid var(--color-base-300, #d4d4d8);
-      border-radius: 8px;
-      padding: 12px 14px;
-      background: var(--color-base-50, #fafafa);
-    ">
-      <legend style="
-        font-weight: 600;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        opacity: 0.75;
-        padding: 0 6px;
-      ">{{ group.grouper }}</legend>
+    <fieldset class="modules-fieldset">
+      <legend class="modules-legend">{{ group.grouper }}</legend>
 
-      {% for entry in group.list %}
-        <label style="
-          display: flex;
-          align-items: flex-start;
-          gap: 8px;
-          padding: 6px 0;
-          cursor: {% if entry.forced %}not-allowed{% else %}pointer{% endif %};
-          opacity: {% if entry.forced %}0.7{% else %}1{% endif %};
-        ">
-          <input
-            type="checkbox"
-            name="{{ widget.name }}"
-            value="{{ entry.key }}"
-            {% if entry.checked or entry.forced %}checked{% endif %}
-            {% if entry.forced %}disabled{% endif %}
-            style="margin-top: 3px;"
-          />
-          {% if entry.forced %}
-            {# Hidden mirror so the form posts the value even when the
-               visible checkbox is disabled. clean() re-adds forced
-               keys server-side too — belt + braces. #}
-            <input type="hidden" name="{{ widget.name }}" value="{{ entry.key }}" />
-          {% endif %}
-          <span style="flex: 1;">
-            <strong style="display: block;">
-              {{ entry.label }}
+      {% if group.grouper == "Sales & FBR" %}
+        <div class="modules-rows">
+          {% for entry in group.list %}
+            <label class="module-card">
+              <input
+                type="checkbox"
+                name="{{ widget.name }}"
+                value="{{ entry.key }}"
+                {% if entry.checked or entry.forced %}checked{% endif %}
+                {% if entry.forced %}disabled{% endif %}
+              />
               {% if entry.forced %}
-                <span style="
-                  font-size: 10px;
-                  background: var(--color-primary-600, #16a34a);
-                  color: white;
-                  padding: 1px 6px;
-                  border-radius: 9999px;
-                  margin-left: 6px;
-                  vertical-align: middle;
-                ">Forced</span>
+                <input type="hidden" name="{{ widget.name }}" value="{{ entry.key }}" />
               {% endif %}
-            </strong>
-            <span style="opacity: 0.7; font-size: 12px;">
-              {{ entry.description }}
-            </span>
-          </span>
-        </label>
-      {% endfor %}
+              <span class="module-label-block">
+                <strong>{{ entry.label }}</strong>
+                {% if entry.forced %}
+                  <span class="module-forced-pill">Forced</span>
+                {% endif %}
+              </span>
+              <span class="module-description">{{ entry.description }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="modules-cards">
+          {% for entry in group.list %}
+            <label class="module-card">
+              <input
+                type="checkbox"
+                name="{{ widget.name }}"
+                value="{{ entry.key }}"
+                {% if entry.checked or entry.forced %}checked{% endif %}
+                {% if entry.forced %}disabled{% endif %}
+              />
+              {% if entry.forced %}
+                <input type="hidden" name="{{ widget.name }}" value="{{ entry.key }}" />
+              {% endif %}
+              <span class="module-label-text">
+                <strong>
+                  {{ entry.label }}
+                  {% if entry.forced %}
+                    <span class="module-forced-pill">Forced</span>
+                  {% endif %}
+                </strong>
+                <span class="module-description">{{ entry.description }}</span>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      {% endif %}
     </fieldset>
   {% endfor %}
 </div>

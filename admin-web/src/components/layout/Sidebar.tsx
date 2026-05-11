@@ -88,19 +88,31 @@ export function Sidebar() {
   const adminItems = visible(ADMIN);
 
   return (
-    <aside className="hidden border-r bg-muted/40 md:block md:w-60">
+    <aside className="hidden border-r bg-card md:block md:w-60">
       <div className="flex h-full flex-col">
-        <div className="border-b px-4 py-4 text-sm font-semibold tracking-tight">
-          Pakistan POS
+        {/* Brand strip — emerald square logo + product name */}
+        <div className="flex items-center gap-2.5 border-b px-4 py-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm">
+            <Receipt className="h-4 w-4" aria-hidden />
+          </div>
+          <div className="flex flex-col leading-tight">
+            <span className="text-sm font-semibold tracking-tight">Pakistan POS</span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Admin
+            </span>
+          </div>
         </div>
-        <nav className="flex-1 space-y-3 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
+        <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
           {top.length > 0 && <Group items={top} />}
           {catalog.length > 0 && <Section title="Catalog" items={catalog} />}
           {inventory.length > 0 && <Section title="Inventory" items={inventory} />}
           {adminItems.length > 0 && <Section title="Admin" items={adminItems} />}
         </nav>
-        <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-          Phase 1 build
+        <div className="border-t px-4 py-3 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            FBR-compliant build
+          </span>
         </div>
       </div>
     </aside>
@@ -110,7 +122,7 @@ export function Sidebar() {
 function Section({ title, items }: { title: string; items: Item[] }) {
   return (
     <div>
-      <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+      <div className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         {title}
       </div>
       <Group items={items} />
@@ -128,20 +140,37 @@ function Group({ items }: { items: Item[] }) {
           end={end}
           className={({ isActive }) =>
             cn(
-              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150",
               disabled
                 ? "cursor-not-allowed text-muted-foreground/60"
                 : isActive
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  // Active: brand-tinted background + emerald ink + left accent bar
+                  ? "bg-primary-soft text-primary-soft-foreground"
+                  : "text-foreground/70 hover:bg-accent hover:text-accent-foreground",
             )
           }
           onClick={disabled ? (e) => e.preventDefault() : undefined}
           aria-disabled={disabled}
           title={disabled ? "Coming in a later phase" : undefined}
         >
-          <Icon className="h-4 w-4" />
-          <span>{label}</span>
+          {({ isActive }) => (
+            <>
+              {/* Active accent bar on the left edge — brand emphasis */}
+              {isActive && (
+                <span
+                  aria-hidden
+                  className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-primary"
+                />
+              )}
+              <Icon
+                className={cn(
+                  "h-4 w-4 transition-colors",
+                  isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+                )}
+              />
+              <span>{label}</span>
+            </>
+          )}
         </NavLink>
       ))}
     </div>

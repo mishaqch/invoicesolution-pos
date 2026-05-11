@@ -2,26 +2,133 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme tokens — emerald brand palette.
+ *
+ * All values are HSL "<h> <s>% <l>%" (no commas) so Tailwind's
+ * hsl(var(--token)) wrapper works. Naming follows the shadcn convention
+ * so existing components light up automatically.
+ *
+ * Brand colour: emerald-600 (#16a34a-ish) — Pakistan flag green, reads
+ * trustworthy/official, matches the Django super-admin so both surfaces
+ * feel like one product.
+ */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Surfaces */
+    --background: 0 0% 100%;                 /* white */
+    --foreground: 222 47% 11%;               /* near-black ink */
+
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Brand — emerald */
+    --primary: 142 71% 36%;                  /* emerald-600 */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 142 71% 30%;            /* emerald-700 (hover/active) */
+    --primary-soft: 142 76% 96%;             /* emerald-50 (soft bg) */
+    --primary-soft-foreground: 142 71% 24%;  /* emerald-800 (ink on soft bg) */
+
+    /* Neutrals */
+    --secondary: 210 20% 96%;                /* slate-50 — soft chip */
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;         /* slate-500 */
+
+    --accent: 142 76% 96%;                   /* emerald-50 (sidebar hover, etc.) */
+    --accent-foreground: 142 71% 24%;        /* emerald-800 */
+
+    --destructive: 0 84% 60%;                /* red-500 */
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 86% 97%;           /* red-50 */
+    --destructive-soft-foreground: 0 70% 35%;/* red-700 */
+
+    --success: 142 71% 36%;                  /* same as primary */
+    --success-foreground: 0 0% 100%;
+    --success-soft: 142 76% 96%;
+    --success-soft-foreground: 142 71% 24%;
+
+    --warning: 38 92% 50%;                   /* amber-500 */
+    --warning-foreground: 0 0% 100%;
+    --warning-soft: 48 100% 96%;             /* amber-50 */
+    --warning-soft-foreground: 32 81% 29%;   /* amber-800 */
+
+    --info: 217 91% 60%;                     /* blue-500 */
+    --info-foreground: 0 0% 100%;
+    --info-soft: 214 100% 97%;               /* blue-50 */
+    --info-soft-foreground: 224 76% 33%;     /* blue-800 */
+
+    /* Strokes & inputs */
+    --border: 214 32% 91%;                   /* slate-200 */
+    --input: 214 32% 91%;
+    --ring: 142 71% 36%;                     /* focus ring = brand */
+
+    /* Geometry */
+    --radius: 0.5rem;                        /* 8px — used by Card, Button, Input */
+
+    /* Elevation tokens (used by Card etc. via class helpers) */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.08),
+                 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 24px -4px rgba(0, 0, 0, 0.12),
+                 0 6px 12px -4px rgba(0, 0, 0, 0.08);
+  }
+
+  .dark {
+    /* Dark mode is wired but not yet activated by a toggle. Tokens are
+     * tuned so a future <ThemeToggle /> Just Works. */
+    --background: 222 47% 7%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 142 71% 45%;                  /* emerald-500 — brighter in dark */
+    --primary-foreground: 222 47% 7%;
+    --primary-hover: 142 71% 52%;
+    --primary-soft: 142 71% 14%;
+    --primary-soft-foreground: 142 76% 88%;
+
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 142 71% 14%;
+    --accent-foreground: 142 76% 88%;
+
+    --destructive: 0 63% 50%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --destructive-soft: 0 63% 17%;
+    --destructive-soft-foreground: 0 90% 88%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 222 47% 7%;
+    --success-soft: 142 71% 14%;
+    --success-soft-foreground: 142 76% 88%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 222 47% 7%;
+    --warning-soft: 32 81% 16%;
+    --warning-soft-foreground: 48 100% 88%;
+
+    --info: 217 91% 65%;
+    --info-foreground: 222 47% 7%;
+    --info-soft: 224 76% 18%;
+    --info-soft-foreground: 214 100% 88%;
+
+    --border: 217 33% 20%;
+    --input: 217 33% 20%;
+    --ring: 142 71% 45%;
   }
 }
 
@@ -30,13 +137,45 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1, "ss01" 1;
   }
 
-  /* Visible focus ring for keyboard users on every interactive element. */
+  /* Better defaults for tabular numbers (money columns, KPI tiles). */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Visible focus ring for keyboard users — emerald, 2px, 2px offset.
+   * Meets WCAG 2.2 SC 2.4.13 ("Focus Appearance"). */
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Headings get tighter tracking and slightly bumped weight. */
+  h1, h2, h3 {
+    @apply tracking-tight;
+  }
+
+  /* Selection in brand color so highlighted text feels on-theme. */
+  ::selection {
+    background-color: hsl(var(--primary-soft));
+    color: hsl(var(--primary-soft-foreground));
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Custom utilities — small extras Tailwind doesn't ship by default.
+ * ------------------------------------------------------------------------- */
+@layer utilities {
+  .shadow-card {
+    box-shadow: var(--shadow-sm);
+  }
+  .shadow-card-hover {
+    box-shadow: var(--shadow-md);
+  }
+  .shadow-popover {
+    box-shadow: var(--shadow-lg);
   }
 }
 
