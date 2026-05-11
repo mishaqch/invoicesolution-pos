@@ -6,6 +6,7 @@ import type {
   TaxRate, UnitOfMeasure,
 } from "@pos/shared/types";
 
+import { useModules } from "@/features/modules/hooks";
 import { api } from "./api";
 
 interface Page<T> {
@@ -93,10 +94,27 @@ export function useDeleteProduct() {
 }
 
 // ----- Branches -----
+//
+// Gated on the `branches` module. Tenants without the module get an
+// empty result instead of a 403 — callers (filter dropdowns, branch
+// pickers) render a sensible "no branches available" state without us
+// having to thread the module check into every page.
 export function useBranches() {
+  const { data: modules } = useModules();
+  // While the modules call is in flight we let the query fire — most
+  // tenants have all modules and the 403-on-disabled tenants quickly
+  // get flipped to disabled once /me/modules/ resolves.
+  const enabled = modules ? modules.enabled.includes("branches") : true;
   return useQuery({
     queryKey: ["branches"],
     queryFn: () => api<Page<Branch>>("/branches/"),
+    enabled,
+    // When the module is off, hand consumers an empty page so the
+    // standard `branches.data?.results.map(...)` idiom keeps working.
+    initialData: enabled ? undefined : ({ count: 0, results: [] } as Page<Branch>),
+    // Don't pile on retries / focus refetches if the gate denied us.
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -307,19 +307,24 @@ export default function InvoicesList() {
               </Select>
             </div>
 
-            <div className="space-y-1.5 md:col-span-2">
-              <Label htmlFor="invoice-branch">Branch</Label>
-              <Select
-                id="invoice-branch"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-              >
-                <option value="">All branches</option>
-                {branches.data?.results.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </Select>
-            </div>
+            {/* Branch filter — only shown when the tenant actually has
+                branches. Single-branch / branchless tenants don't need
+                a dropdown that filters across one (or zero) options. */}
+            {(branches.data?.results.length ?? 0) > 0 && (
+              <div className="space-y-1.5 md:col-span-2">
+                <Label htmlFor="invoice-branch">Branch</Label>
+                <Select
+                  id="invoice-branch"
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                >
+                  <option value="">All branches</option>
+                  {branches.data!.results.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-1.5 md:col-span-2">
               <Label htmlFor="invoice-from">From</Label>

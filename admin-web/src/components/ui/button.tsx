@@ -64,15 +64,29 @@ export interface ButtonProps
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, loading, disabled, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
+
+    // Radix <Slot> (asChild mode) demands React.Children.only — so we
+    // can't inject the loading spinner alongside children. asChild is
+    // typically used to render a <Link>, where a spinner doesn't apply
+    // anyway; consumers needing a spinner should use the regular
+    // <button>-rendering form.
+    const content = !asChild && loading ? (
+      <>
+        <Loader2 className="animate-spin" aria-hidden />
+        {children}
+      </>
+    ) : (
+      children
+    );
+
     return (
       <Comp
         className={cn(buttonVariants({ variant, size }), className)}
         ref={ref}
-        disabled={disabled || loading}
+        disabled={!asChild && (disabled || loading)}
         {...props}
       >
-        {loading && <Loader2 className="animate-spin" aria-hidden />}
-        {children}
+        {content}
       </Comp>
     );
   },
