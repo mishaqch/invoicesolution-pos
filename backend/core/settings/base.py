@@ -277,8 +277,8 @@ LOGGING = {
 #    look smeared on rounded buttons.
 #
 UNFOLD = {
-    "SITE_TITLE": "Pakistan POS — Super Admin",
-    "SITE_HEADER": "Pakistan POS",
+    "SITE_TITLE": "POS System — Super Admin",
+    "SITE_HEADER": "POS System",
     "SITE_SUBHEADER": "Platform control plane",
     "SITE_URL": "/",
     "SITE_SYMBOL": "storefront",          # Material icon shown in sidebar

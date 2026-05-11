@@ -18,7 +18,7 @@ export default function LoginRoute() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
-          <CardDescription>Pakistan POS — admin dashboard</CardDescription>
+          <CardDescription>POS System — admin dashboard</CardDescription>
         </CardHeader>
         <CardContent>
           <LoginForm />

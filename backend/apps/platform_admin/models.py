@@ -35,7 +35,7 @@ class PlatformSettings(TimestampedModel):
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
 
     platform_name = models.CharField(
-        max_length=100, default="Pakistan POS",
+        max_length=100, default="POS System",
         help_text="Brand name shown on customer-facing surfaces.",
     )
     support_email = models.EmailField(blank=True, default="")

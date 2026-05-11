@@ -96,7 +96,7 @@ export function Sidebar() {
             <Receipt className="h-4 w-4" aria-hidden />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight">Pakistan POS</span>
+            <span className="text-sm font-semibold tracking-tight">POS System</span>
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Admin
             </span>
