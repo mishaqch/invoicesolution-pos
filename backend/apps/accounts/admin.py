@@ -389,6 +389,97 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
             return False
         return super().has_delete_permission(request, obj)
 
+    # ------------------------------------------------------------------
+    # Safe delete — surface the User.delete() guard as a friendly admin
+    # error instead of letting it bubble to a 500. The guard refuses to
+    # delete a user who is the last active owner of any tenant.
+    # ------------------------------------------------------------------
+
+    def delete_model(self, request, obj):
+        """Single-row delete via the change form. Catch the model
+        guard's ValidationError and surface it as an admin message.
+        Without this, the operator sees a server-error page with no
+        explanation of why the delete refused."""
+        from django.contrib import messages
+        from django.core.exceptions import ValidationError
+        try:
+            super().delete_model(request, obj)
+        except ValidationError as e:
+            msg = e.message if hasattr(e, "message") else "; ".join(e.messages)
+            messages.error(request, msg)
+            # Re-raise so Django's flow knows not to redirect with a
+            # success message. The view machinery converts this back
+            # into a friendly page render.
+            raise
+
+    def delete_queryset(self, request, queryset):
+        """Bulk-delete action. Tries each user one by one so a single
+        last-owner row doesn't kill the whole batch — every problem
+        user gets a clear message; everyone else gets deleted."""
+        from django.contrib import messages
+        from django.core.exceptions import ValidationError
+
+        blocked: list[str] = []
+        deleted = 0
+        for user in queryset:
+            try:
+                user.delete()
+                deleted += 1
+            except ValidationError as e:
+                msg = e.message if hasattr(e, "message") else "; ".join(e.messages)
+                blocked.append(f"{user.email}: {msg}")
+
+        if deleted:
+            messages.success(
+                request,
+                f"Deleted {deleted} user{'s' if deleted != 1 else ''}.",
+            )
+        for line in blocked:
+            messages.error(request, line)
+
+    def get_deleted_objects(self, objs, request):
+        """Hook into the delete-confirmation page rendering.
+
+        Django's standard page lists what will cascade (memberships,
+        notifications, etc.). We additionally inject a prominent
+        warning for users who are the last owner of a tenant — so
+        the operator sees the problem BEFORE clicking confirm, not
+        after.
+        """
+        deleted, model_count, perms_needed, protected = super().get_deleted_objects(
+            objs, request,
+        )
+
+        warnings: list[str] = []
+        for obj in objs:
+            if isinstance(obj, User):
+                last_owner_of = list(obj.tenants_where_last_active_owner())
+                if last_owner_of:
+                    names = ", ".join(t.business_name for t in last_owner_of)
+                    warnings.append(
+                        f"⚠ {obj.email} is the only active owner of: "
+                        f"{names}. Deleting will orphan "
+                        f"{'these tenants' if len(last_owner_of) > 1 else 'this tenant'}. "
+                        f"Promote another member to owner first.",
+                    )
+        if warnings:
+            # Prepend our warnings to the deleted list so they appear
+            # at the top of the confirmation page, where the operator
+            # actually reads them.
+            from django.utils.safestring import mark_safe
+            from django.utils.html import format_html
+            warning_html = format_html(
+                '<ul style="background:#fef2f2;border:1px solid #fca5a5;'
+                'border-radius:6px;padding:12px 16px;margin:0 0 12px;'
+                'color:#991b1b;list-style:none;">{}</ul>',
+                mark_safe("".join(
+                    f'<li style="margin:4px 0;">{w}</li>' for w in warnings
+                )),
+            )
+            deleted = [warning_html] + list(deleted)
+
+        return deleted, model_count, perms_needed, protected
+
     # ----- List display helpers ---------------------------------------
 
     @admin.display(description="Type / role", ordering="is_platform_staff")

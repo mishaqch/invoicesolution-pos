@@ -112,3 +112,66 @@ class User(AbstractBaseUser, PermissionsMixin):
         if not self.pin_hash:
             return False
         return check_password(raw_pin, self.pin_hash)
+
+    # --- Safe-delete guard ------------------------------------------------
+
+    def tenants_where_last_active_owner(self):
+        """Return tenants where THIS user is the only active owner.
+
+        Deleting the user would leave those tenants with zero owners —
+        no one able to manage them via the React admin. The admin's
+        delete flow + the model's delete() both consult this list to
+        block the deletion with a clear error.
+
+        Returns: queryset of Tenant rows (empty if safe to delete).
+        """
+        from apps.tenants.models import Tenant, TenantMembership
+
+        # Tenants where THIS user has an active owner membership.
+        owned_tenant_ids = list(
+            TenantMembership.objects.filter(
+                user=self, role="owner", is_active=True,
+            ).values_list("tenant_id", flat=True)
+        )
+        if not owned_tenant_ids:
+            return Tenant.objects.none()
+
+        # Of those, which still have OTHER active owners?
+        other_owners_q = (
+            TenantMembership.objects.filter(
+                tenant_id__in=owned_tenant_ids,
+                role="owner",
+                is_active=True,
+            )
+            .exclude(user=self)
+            .values_list("tenant_id", flat=True)
+            .distinct()
+        )
+        tenants_with_other_owners = set(other_owners_q)
+        last_owner_tenant_ids = [
+            t_id for t_id in owned_tenant_ids
+            if t_id not in tenants_with_other_owners
+        ]
+        return Tenant.objects.filter(pk__in=last_owner_tenant_ids)
+
+    def delete(self, *args, **kwargs):
+        """Refuse to delete a user who is the LAST active owner of any
+        tenant. Forces the operator to either (a) promote another
+        member to owner OR (b) explicitly remove the membership first.
+
+        This guard fires at the model layer so it catches all paths:
+        Django admin form, bulk-delete admin action, Django shell,
+        management commands. Defense in depth — even if someone
+        bypasses the admin overrides, the model itself refuses.
+        """
+        last_owner_of = list(self.tenants_where_last_active_owner())
+        if last_owner_of:
+            from django.core.exceptions import ValidationError
+            names = ", ".join(t.business_name for t in last_owner_of)
+            raise ValidationError(
+                f"Cannot delete {self.email}: this user is the only "
+                f"active owner of {names}. Promote another member to "
+                f"owner first, OR remove these owner memberships, "
+                f"so the tenant isn't left without an administrator.",
+            )
+        return super().delete(*args, **kwargs)
