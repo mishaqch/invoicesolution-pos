@@ -1,4 +1,4 @@
-import { FileText, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, FileText, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { useModules } from "@/features/modules/hooks";
 import { ApiError } from "@/lib/api";
 import {
   useBranches,
@@ -79,6 +80,22 @@ export default function NewInvoiceRoute() {
   const terminals = useTerminals();
   const customers = useCustomers();
   const create = useCreateManualInvoice();
+
+  // The form requires both a branch UUID and a terminal UUID server-side
+  // (checkout pipeline). If the tenant doesn't have the branches/terminals
+  // modules enabled, manual sale creation is impossible — we render an
+  // inline notice instead of letting the user fill out a form that will
+  // 400 on submit. The fix path is for the super-admin to enable the
+  // modules OR (future work) for the server to fall back to a default
+  // branch + terminal automatically.
+  const { data: modules } = useModules();
+  const hasBranchesModule = modules
+    ? modules.enabled.includes("branches")
+    : true;
+  const hasTerminalsModule = modules
+    ? modules.enabled.includes("terminals")
+    : true;
+  const formBlocked = !hasBranchesModule || !hasTerminalsModule;
 
   // Debit-note flow: invoice-detail page passes these via Link state when
   // the user clicks "Add debit note". The reference_invoice + invoice_type
@@ -332,6 +349,40 @@ export default function NewInvoiceRoute() {
         </Card>
       )}
 
+      {formBlocked && (
+        <Card className="border-warning/40 bg-warning-soft">
+          <CardContent className="flex items-start gap-3 py-4 text-sm text-warning-soft-foreground">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="space-y-1">
+              <p className="font-semibold">
+                Cannot create invoices with the current tenant configuration
+              </p>
+              <p>
+                Manual invoice creation requires the{" "}
+                <strong>
+                  {!hasBranchesModule && "Branches"}
+                  {!hasBranchesModule && !hasTerminalsModule && " and "}
+                  {!hasTerminalsModule && "Terminals"}
+                </strong>{" "}
+                module
+                {!hasBranchesModule && !hasTerminalsModule ? "s" : ""}.
+                Ask your platform administrator to enable
+                {!hasBranchesModule && !hasTerminalsModule ? " them" : " it"}{" "}
+                in the super-admin panel, or use the POS terminal app
+                directly if cashiers are already onboarded.
+              </p>
+              <Link
+                to="/sales"
+                className="inline-block pt-1 font-medium underline-offset-4 hover:underline"
+              >
+                ← Back to invoices
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!formBlocked && (<>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
@@ -681,6 +732,8 @@ export default function NewInvoiceRoute() {
           {create.isPending ? "Submitting…" : "Create invoice & submit to FBR"}
         </Button>
       </div>
+      </>
+      )}
     </div>
   );
 }

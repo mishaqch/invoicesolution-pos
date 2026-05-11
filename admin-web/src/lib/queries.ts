@@ -6,8 +6,20 @@ import type {
   TaxRate, UnitOfMeasure,
 } from "@pos/shared/types";
 
-import { useModules } from "@/features/modules/hooks";
+import { useModules, type ModuleKey } from "@/features/modules/hooks";
 import { api } from "./api";
+
+/**
+ * Returns true while `modules` is loading (so the query fires once),
+ * and after it resolves, returns whether the module is in the enabled
+ * set. Used to gate every data hook that maps to a tenant module —
+ * keeps the gated 403s from spamming the console when super-admin
+ * has turned the module off for this tenant.
+ */
+function useModuleEnabled(key: ModuleKey): boolean {
+  const { data } = useModules();
+  return data ? data.enabled.includes(key) : true;
+}
 
 interface Page<T> {
   count: number;
@@ -100,19 +112,12 @@ export function useDeleteProduct() {
 // pickers) render a sensible "no branches available" state without us
 // having to thread the module check into every page.
 export function useBranches() {
-  const { data: modules } = useModules();
-  // While the modules call is in flight we let the query fire — most
-  // tenants have all modules and the 403-on-disabled tenants quickly
-  // get flipped to disabled once /me/modules/ resolves.
-  const enabled = modules ? modules.enabled.includes("branches") : true;
+  const enabled = useModuleEnabled("branches");
   return useQuery({
     queryKey: ["branches"],
     queryFn: () => api<Page<Branch>>("/branches/"),
     enabled,
-    // When the module is off, hand consumers an empty page so the
-    // standard `branches.data?.results.map(...)` idiom keeps working.
     initialData: enabled ? undefined : ({ count: 0, results: [] } as Page<Branch>),
-    // Don't pile on retries / focus refetches if the gate denied us.
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -440,9 +445,16 @@ export interface AdminTerminal {
 }
 
 export function useTerminals() {
+  const enabled = useModuleEnabled("terminals");
   return useQuery({
     queryKey: ["terminals"],
     queryFn: () => api<{ count: number; results: AdminTerminal[] }>("/terminals/"),
+    enabled,
+    initialData: enabled
+      ? undefined
+      : ({ count: 0, results: [] } as { count: number; results: AdminTerminal[] }),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -845,12 +857,19 @@ export function useCustomers(filters: { search?: string; page?: number } = {}) {
   if (filters.search) params.set("search", filters.search);
   if (filters.page) params.set("page", String(filters.page));
   const query = params.toString();
+  const enabled = useModuleEnabled("customers");
   return useQuery({
     queryKey: ["customers", filters],
     queryFn: () =>
       api<{ count: number; results: AdminCustomer[] }>(
         `/customers/${query ? `?${query}` : ""}`,
       ),
+    enabled,
+    initialData: enabled
+      ? undefined
+      : ({ count: 0, results: [] } as { count: number; results: AdminCustomer[] }),
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
