@@ -43,14 +43,65 @@ class TenantMembershipInline(TabularInline):
     Most of the time the user has exactly one membership, so showing
     it inline makes the whole onboarding flow click → save on a single
     screen.
+
+    Defaults are tuned for the 99% case (1 user = 1 tenant):
+      - extra=0 → no blank "add more" rows pre-rendered. The "Add
+        another Tenant membership" button is still there at the bottom
+        for users who legitimately belong to multiple tenants.
+      - We override get_extra() below to show ONE blank row for users
+        with zero memberships (the create flow) so the operator knows
+        to fill it in.
     """
 
     model = TenantMembership
-    extra = 1  # Show one empty row by default so creating a new user
-              # naturally invites the operator to add a membership.
+    extra = 0  # See get_extra() below.
+    max_num = 10  # Hard cap; a user with >10 tenant memberships is a
+                  # red flag. The Add button still works under this limit.
     autocomplete_fields = ("tenant",)
     fields = ("tenant", "role", "is_active", "role_summary")
     readonly_fields = ("role_summary",)
+
+    def get_extra(self, request, obj=None, **kwargs):
+        """Show one blank row only when the user has no memberships
+        yet (so the create flow visibly prompts for one). For an
+        existing user, show only what's actually saved + the "Add
+        another" button — no surprise duplicate-looking empty rows."""
+        if obj and obj.memberships.exists():
+            return 0
+        return 1
+
+    def get_formset(self, request, obj=None, **kwargs):
+        """Inject a custom formset that rejects duplicate tenants.
+        Without this, posting two rows with the same tenant raises a
+        DB unique-constraint IntegrityError (which renders as a 500
+        page, not a friendly form error)."""
+        FormSet = super().get_formset(request, obj, **kwargs)
+        original_clean = FormSet.clean
+
+        def clean(self):
+            original_clean(self)
+            seen: set = set()
+            for form in self.forms:
+                if (
+                    not form.cleaned_data
+                    or form.cleaned_data.get("DELETE")
+                ):
+                    continue
+                tenant = form.cleaned_data.get("tenant")
+                if tenant is None:
+                    continue
+                if tenant.id in seen:
+                    from django.core.exceptions import ValidationError
+                    raise ValidationError(
+                        f"This user already has a membership for "
+                        f"{tenant.business_name}. A user can only have "
+                        f"one membership per tenant — change the role "
+                        f"on the existing row instead of adding a new one.",
+                    )
+                seen.add(tenant.id)
+
+        FormSet.clean = clean
+        return FormSet
 
     @admin.display(description="What this role can do")
     def role_summary(self, obj):
