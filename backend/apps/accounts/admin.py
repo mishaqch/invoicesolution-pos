@@ -391,27 +391,92 @@ class UserAdmin(DjangoUserAdmin, ModelAdmin):
 
     # ----- List display helpers ---------------------------------------
 
-    @admin.display(description="Type", ordering="is_platform_staff")
+    @admin.display(description="Type / role", ordering="is_platform_staff")
     def user_type_badge(self, obj):
+        """Surface the user's tier at a glance:
+          - Super super admin (is_superuser=True) → red 'Super admin' pill
+          - Platform staff → purple pill + platform_role label
+          - Tenant user → green pill (membership column carries the role)
+        """
+        # Tier 1 — the super super admin.
+        if obj.is_superuser:
+            return format_html(
+                '<span style="background:#dc2626;color:white;'
+                'padding:2px 8px;border-radius:9999px;font-size:11px;'
+                'font-weight:600;" title="Super super admin — '
+                'unrestricted access">Super admin</span>',
+            )
+        # Tier 2 — platform staff. Show the platform_role label when set.
         if obj.is_platform_staff:
+            role_label = (
+                obj.get_platform_role_display() if obj.platform_role
+                else "Platform staff"
+            )
             return format_html(
                 '<span style="background:#7c3aed;color:white;'
                 'padding:2px 8px;border-radius:9999px;font-size:11px;'
-                'font-weight:600;">Platform staff</span>',
+                'font-weight:600;" title="Platform staff — {}">{}</span>',
+                obj.platform_role or "no role assigned",
+                role_label,
             )
+        # Tier 3 — tenant user.
         return format_html(
             '<span style="background:#16a34a;color:white;'
             'padding:2px 8px;border-radius:9999px;font-size:11px;'
             'font-weight:600;">Tenant user</span>',
         )
 
-    @admin.display(description="Tenant(s) / role")
+    @admin.display(description="Permissions / tenants")
     def membership_summary(self, obj):
-        """Compact list of this user's tenants + roles, shown in the
-        user list. Catches the 'forgot to add membership' bug at a
-        glance — the cell is empty for users with no membership."""
+        """Two different summaries depending on user tier:
+          - Platform staff → chip list of bundle keys they HOLD
+            (derived live from user_permissions). Lets operators see
+            at a glance which bundles each staff member has.
+          - Tenant user → list of their active TenantMembership rows
+            (tenant name + role). Catches 'forgot to add membership'
+            with a red warning when empty.
+        """
+        # ---- Platform staff: show held bundles ----
         if obj.is_platform_staff:
-            return format_html('<span style="opacity:0.5;">—</span>')
+            # Defer import so the admin module doesn't pull this at load.
+            from .platform_perms import (
+                PLATFORM_PERMISSION_BUNDLES,
+                bundle_perm_keys,
+            )
+
+            # Super super admin holds everything by definition.
+            if obj.is_superuser:
+                return format_html(
+                    '<span style="background:#fef3c7;color:#92400e;'
+                    'padding:2px 8px;border-radius:9999px;font-size:11px;'
+                    'font-weight:600;" title="Super super admin has '
+                    'full CRUD on every model">All bundles (super)</span>',
+                )
+
+            # Derive which bundles the user fully holds.
+            held_pairs = {
+                (p.content_type.app_label, p.codename)
+                for p in obj.user_permissions.select_related("content_type")
+            }
+            held_bundles = [
+                b for b in PLATFORM_PERMISSION_BUNDLES
+                if bundle_perm_keys(b["key"]).issubset(held_pairs)
+            ]
+            if not held_bundles:
+                return format_html(
+                    '<span style="color:#dc2626;font-size:11px;">'
+                    '⚠ no bundles assigned</span>',
+                )
+            return format_html_join(
+                mark_safe(" "),
+                '<span style="display:inline-block;background:#ede9fe;'
+                'color:#5b21b6;font-size:10px;padding:1px 6px;'
+                'border-radius:9999px;font-weight:500;margin:1px 2px;" '
+                'title="{}">{}</span>',
+                ((b["description"], b["label"]) for b in held_bundles),
+            )
+
+        # ---- Tenant user: show tenant memberships ----
         memberships = list(
             TenantMembership.objects.filter(user=obj, is_active=True)
             .select_related("tenant")
