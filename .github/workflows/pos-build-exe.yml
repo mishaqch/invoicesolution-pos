@@ -36,7 +36,11 @@ jobs:
           # Explicitly clear signing so electron-builder doesn't try to sign.
           CSC_LINK: ""
           CSC_KEY_PASSWORD: ""
-        run: npx electron-builder --win --publish never
+        # --publish never + null out the publish config so electron-builder
+        # doesn't try to generate auto-update metadata (latest.yml), which
+        # crashes here ("Cannot read properties of null (reading 'channel')")
+        # because there's no release channel for a plain artifact build.
+        run: npx electron-builder --win --publish never -c.publish=null
 
       - name: Locate the built .exe
         shell: pwsh
