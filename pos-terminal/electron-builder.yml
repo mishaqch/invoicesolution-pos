@@ -63,12 +63,11 @@ win:
   # Fixed installer filename so the public download link is stable:
   #   https://client.invoicesolution.pk/download/terminal/  ->  invoiceSolution.exe
   artifactName: invoiceSolution.exe
-  signingHashAlgorithms: [sha256]
-  publisherName: InvoiceSolution
-  # Cert resolved from CSC_LINK + CSC_KEY_PASSWORD env. Override here
-  # if you have an installed cert by subject name instead.
-  # certificateSubjectName: "Your Company Name"
-  verifyUpdateCodeSignature: true   # auto-update refuses unsigned diffs
+  # Unsigned build: don't make the updater verify a code signature (there is
+  # none yet). When a real cert is added later, set this to true and move the
+  # signing options under `signtoolOptions` (electron-builder 26 relocated
+  # publisherName + signingHashAlgorithms there).
+  verifyUpdateCodeSignature: false
 
 mac:
   target:
