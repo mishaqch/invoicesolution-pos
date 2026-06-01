@@ -91,14 +91,9 @@ linux:
   category: Office
   maintainer: support@pakistanpos.example.com
 
-# Auto-update channel — electron-updater on the cashier machine pulls
-# new versions from this GitHub Releases repo. Configure `repo` to the
-# private releases repository the deployer maintains; defaults to the
-# repository this build runs from when omitted.
-publish:
-  provider: github
-  releaseType: release
-  # Uncomment + fill when you split the public source repo from the
-  # private release-artifact repo:
-  # owner: pakistanpos
-  # repo: pos-releases
+# Auto-update / publishing is intentionally NOT configured here. This build
+# produces a plain downloadable installer (hosted on our server, not GitHub
+# Releases), and a `publish` block makes electron-builder try to generate
+# auto-update metadata (latest.yml) — which crashes a no-channel artifact
+# build. When you later set up signed auto-updates, add a `publish:` block
+# (provider: github, releaseType: release) back here + use pos-release.yml.
