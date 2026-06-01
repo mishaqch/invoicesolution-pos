@@ -32,26 +32,46 @@ from apps.tenants.models import Branch, Tenant
 # ---------------------------------------------------------------------------
 
 UOM_FBR_MAP: dict[str, str] = {
+    # Local code → exact PRAL UoM string.
+    #
+    # Source of truth: GET https://gw.fbr.gov.pk/pdi/v1/uom
+    # PRAL accepts short, fixed strings — "KG" not "Kilograms",
+    # "Liter" not "Liters", "Meter" not "Meters". Sending the long
+    # plural form gets rejected with errorCode 0099 ("Provided UoM is
+    # not allowed against the provided HS Code"), even when the UoM
+    # is otherwise valid for that HS row.
     "PCS":     "Numbers, pieces, units",
     "DOZEN":   "Dozen",
-    "PACK":    "Numbers, pieces, units",
+    "PACK":    "Packs",
     "BOX":     "Numbers, pieces, units",
     "CARTON":  "Numbers, pieces, units",
-    "BAG":     "Numbers, pieces, units",
+    "BAG":     "Bag",
     "BOTTLE":  "Numbers, pieces, units",
     "TIN":     "Numbers, pieces, units",
-    "PAIR":    "Numbers, pieces, units",
+    "PAIR":    "Pair",
     "ROLL":    "Numbers, pieces, units",
     "SHEET":   "Numbers, pieces, units",
-    "KG":      "Kilograms",
-    "GM":      "Grams",
-    "MG":      "Milligrams",
-    "LTR":     "Liters",
-    "ML":      "Milliliters",
-    "METER":   "Meters",
-    "CM":      "Centimeters",
-    "MM":      "Millimeters",
-    "SQM":     "Square Meters",
+    "KG":      "KG",
+    "GM":      "Gram",
+    "MG":      "Gram",          # PRAL has no mg row; round up.
+    "LTR":     "Liter",
+    "LITER":   "Liter",
+    "ML":      "Liter",         # PRAL has no ml row; aggregate.
+    "METER":   "Meter",
+    "M":       "Meter",
+    "CM":      "Meter",
+    "MM":      "Meter",
+    "SQM":     "Square Metre",
+    "SQF":     "Square Foot",
+    "SQY":     "SqY",
+    "MT":      "MT",            # metric ton
+    "40KG":    "40KG",
+    "CUBIC_M": "Cubic Metre",
+    "GALLON":  "Gallon",
+    "POUND":   "Pound",
+    "CARAT":   "Carat",
+    "KWH":     "KWH",
+    "MMBTU":   "MMBTU",
 }
 
 INVOICE_TYPE_FBR_MAP: dict[str, str] = {
@@ -86,36 +106,84 @@ def format_rate(percentage: Decimal | str | int | float) -> str:
 def _to_money_number(d: Decimal | None) -> float:
     """Money fields go on the wire as numbers (not strings).
 
-    Python's json encoder writes a Decimal via float(), which truncates
-    precision; we round to 4dp before that conversion to avoid surprises.
+    PRAL's wire spec limits numeric fields to 2 decimal places (the
+    only 4-dp field is `quantity`). Sending more than 2 dp gets the
+    invoice rejected with errorCode 0302 — "Please provide numeric
+    values with up to 2 decimal places". We round HALF-UP to 2 dp.
+
+    We previously rounded to 4 dp here, which was wrong for money
+    fields and tripped the 0302 rule whenever 3rd-Schedule reverse-
+    math produced an awkward remainder (e.g. 800 / 1.18 = 677.9661).
     """
     if d is None:
         return 0
-    return float(Decimal(d).quantize(Decimal("0.0001")))
+    return float(Decimal(d).quantize(Decimal("0.01")))
 
 
 def build_item(item: SaleItem) -> dict[str, Any]:
     qty_dec = item.quantity
     qty_int = qty_dec.to_integral_value() if qty_dec == qty_dec.to_integral() else qty_dec
+
+    # 3rd-Schedule (retail-price-fixed) lines have different math:
+    # tax is charged on the MRP, not on the seller's actual revenue.
+    # PRAL enforces this with errorCode 0122 if we send sale-price math
+    # for a 3rd-Schedule item. When SaleItem.fixed_notified_value is
+    # populated (checkout snapshots Product.retail_price * qty when the
+    # product is marked is_third_schedule), we recompute the wire
+    # values from the retail price:
+    #   fixedNotifiedValueOrRetailPrice = retail_price * qty
+    #   valueSalesExcludingST           = retail / (1 + rate/100)
+    #   salesTaxApplicable              = fixedNotified - valueExcl
+    #   totalValues                     = fixedNotified
+    # The on-receipt totals (line_total + tax_amount on the SaleItem)
+    # remain untouched — they're what the customer paid. The wire
+    # values are FBR's view of the transaction.
+    is_retail_priced = (
+        item.fixed_notified_value is not None
+        and item.fixed_notified_value > 0
+    )
+    if is_retail_priced:
+        retail_total = Decimal(item.fixed_notified_value)
+        rate_pct = Decimal(item.tax_rate or 0)
+        # Reverse-compute the pre-tax retail value. retail = excl + (excl * rate),
+        # so excl = retail / (1 + rate/100).
+        if rate_pct > 0:
+            value_excl_st = (retail_total / (Decimal(1) + rate_pct / Decimal(100)))
+        else:
+            value_excl_st = retail_total
+        sales_tax = retail_total - value_excl_st
+        total_values = retail_total
+        sale_type = item.sale_type or "3rd Schedule Goods"
+    else:
+        value_excl_st = (
+            item.line_total - item.tax_amount
+            - item.further_tax_amount - item.fed_amount
+        )
+        sales_tax = item.tax_amount
+        total_values = item.line_total
+        sale_type = item.sale_type or "Goods at standard rate (default)"
+
     return {
         "hsCode": item.hs_code or "",
         "productDescription": item.product_name,
         "rate": format_rate(item.tax_rate),
         "uoM": map_uom(item.uom_code),
         "quantity": float(qty_int) if isinstance(qty_int, Decimal) else int(qty_int),
-        "totalValues": _to_money_number(item.line_total),
-        "valueSalesExcludingST": _to_money_number(
-            item.line_total - item.tax_amount - item.further_tax_amount - item.fed_amount
-        ),
+        "totalValues": _to_money_number(total_values),
+        "valueSalesExcludingST": _to_money_number(value_excl_st),
         "fixedNotifiedValueOrRetailPrice": _to_money_number(item.fixed_notified_value),
-        "salesTaxApplicable": _to_money_number(item.tax_amount),
+        "salesTaxApplicable": _to_money_number(sales_tax),
         "salesTaxWithheldAtSource": _to_money_number(item.st_withheld_amount),
-        "extraTax": 0,  # we don't track this separately in V1
+        # FBR's published spec shows extraTax as an empty string ""
+        # (unlike the other numeric tax fields). We don't track it
+        # separately in V1, so always send "" — matches the spec
+        # exactly and PRAL accepts it either as number or string.
+        "extraTax": "",
         "furtherTax": _to_money_number(item.further_tax_amount),
         "sroScheduleNo": item.sro_schedule_no or "",
         "fedPayable": _to_money_number(item.fed_amount),
         "discount": _to_money_number(item.discount_amount),
-        "saleType": item.sale_type or "Goods at standard rate (default)",
+        "saleType": sale_type,
         "sroItemSerialNo": item.sro_item_serial_no or "",
     }
 

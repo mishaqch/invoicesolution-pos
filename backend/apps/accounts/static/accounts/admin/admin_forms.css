@@ -1,0 +1,93 @@
+/*
+ * Admin-side form polish — minimal layer on top of django-unfold.
+ *
+ * History: this file used to override Unfold's input/select/label styles
+ * with our own Tailwind-flavoured rules. That fought Unfold's modern
+ * form chrome and produced visible bugs:
+ *
+ *   1. Double `*` markers on required-field labels — Unfold renders
+ *      its own `<span>*</span>` after the label text; our `::after`
+ *      rule added a second one.
+ *   2. Double dropdown chevrons on <select> — Unfold positions a
+ *      `material-symbols-outlined expand_more` overlay; our
+ *      `background-image` SVG arrow stacked on top.
+ *   3. Date / time inputs over-padded — we reserved 2.4rem of right
+ *      padding for a calendar icon Unfold doesn't actually inject by
+ *      default on plain DateField, leaving an awkward blank gutter.
+ *   4. Subscription column layout broken — our `max-width: 32rem` on
+ *      <select> fought Unfold's `max-w-2xl` (42rem) wrapper, producing
+ *      misaligned columns next to the SplitDateTime widget.
+ *
+ * Conclusion: Unfold's form chrome is already correct and consistent.
+ * Don't override it. This file now ONLY handles the two surfaces
+ * Unfold leaves alone:
+ *
+ *   A. The Select2 autocomplete widget (used by `autocomplete_fields`),
+ *      which ships its own Select2 stylesheet not aware of Unfold.
+ *   B. The `+ / view / change / delete` icon chips that sit next to
+ *      FK fields — Unfold doesn't space them consistently.
+ *
+ * Anything else (asterisks, chevrons, focus rings, borders, fieldset
+ * chrome) belongs to Unfold. Do not add overrides here.
+ */
+
+
+/* =====================================================================
+ * (A) Select2 autocomplete widgets (admin's `autocomplete_fields`)
+ * ---------------------------------------------------------------------
+ * Django renders a hidden <select class="admin-autocomplete"> + a
+ * Select2-wrapped UI. Select2's defaults look like a Bootstrap 2 form
+ * field — flat grey border, awkward padding, no focus ring. Re-style to
+ * match Unfold's regular inputs visually.
+ * ===================================================================== */
+
+.select2-container--admin-autocomplete .select2-selection,
+.select2-container--admin-autocomplete .select2-selection--single,
+.select2-container--admin-autocomplete .select2-selection--multiple {
+  border: 1px solid rgb(209, 213, 219) !important;
+  border-radius: 6px !important;
+  min-height: 38px !important;
+  padding: 2px 8px !important;
+  background: white !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  transition: border-color 120ms ease, box-shadow 120ms ease !important;
+}
+
+.select2-container--admin-autocomplete.select2-container--focus .select2-selection,
+.select2-container--admin-autocomplete.select2-container--open .select2-selection {
+  border-color: rgb(34, 197, 94) !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15) !important;
+}
+
+.select2-container--admin-autocomplete .select2-selection__rendered {
+  line-height: 1.7 !important;
+  color: rgb(17, 24, 39) !important;
+  padding-left: 4px !important;
+}
+
+.select2-container--admin-autocomplete .select2-selection__arrow {
+  height: 100% !important;
+  top: 0 !important;
+}
+
+.select2-dropdown.select2-dropdown--admin-autocomplete {
+  border: 1px solid rgb(209, 213, 219) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08) !important;
+}
+
+
+/* =====================================================================
+ * (B) Related-widget action icons (+ / change / view / delete)
+ * ---------------------------------------------------------------------
+ * In modern Unfold (2024+), the `.related-widget-wrapper` is already
+ * a `flex flex-row` container with a single "more_vert" menu button
+ * (a popover that holds Change / Add / View / Delete actions). We
+ * intentionally do NOT set any layout on `.related-widget-wrapper`
+ * itself — overriding flex-direction or display here would break
+ * Unfold's row layout (the Select2 input + the action chip end up
+ * stacked vertically instead of side-by-side).
+ *
+ * If we ever need to tweak the action-chip popover or its links, do
+ * it via `.related-widget-wrapper-link` (the popover <a> elements).
+ * ===================================================================== */

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useProductSearch } from "@/features/catalog/useProducts";
 
@@ -6,15 +6,39 @@ import type { CartLine } from "@/stores/sale";
 
 interface Props {
   onAdd: (line: Omit<CartLine, "id">) => void;
+  /** Bumped by the parent after a hardware scan so we clear any stray chars
+   *  the scanner leaked into the search box and re-focus for the next item. */
+  clearSignal?: number;
 }
 
-export function ProductGrid({ onAdd }: Props) {
+export function ProductGrid({ onAdd, clearSignal }: Props) {
   const [query, setQuery] = useState("");
   const { results, loading } = useProductSearch(query);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus on mount so manual typing is immediately usable. The hardware
+  // scanner works regardless of focus (window-level listener in sale.tsx), but
+  // a focused box is the expected default for keying in a search.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Clear + re-focus after a scan (parent bumps clearSignal). Skip the initial
+  // render so we don't fight the mount auto-focus.
+  const firstClear = useRef(true);
+  useEffect(() => {
+    if (firstClear.current) {
+      firstClear.current = false;
+      return;
+    }
+    setQuery("");
+    inputRef.current?.focus();
+  }, [clearSignal]);
 
   return (
     <div className="flex h-full flex-col gap-3">
       <input
+        ref={inputRef}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Scan barcode or search…"

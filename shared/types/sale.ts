@@ -48,6 +48,10 @@ export interface Invoice {
   customer: string | null;
   local_invoice_number: string;
   fbr_invoice_number: string | null;
+  // JSON payload (string) that goes inside the QR code on the printed
+  // invoice once FBR validates the submission. Populated by the FBR
+  // task after a successful PRAL response — null until then.
+  fbr_qr_payload: string | null;
   invoice_type: "sale" | "debit_note" | "credit_note";
   invoice_date: string;
   buyer_name: string | null;

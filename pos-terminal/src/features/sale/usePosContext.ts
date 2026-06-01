@@ -4,14 +4,14 @@
  *   - the terminal row itself (for the local_invoice_number prefix)
  *   - the open cash session (if any)
  *
- * Phase 2 simplification: the POS picks the first branch + terminal returned
- * by the API. Phase 8 will wire a per-machine fingerprint that maps to a
- * specific terminal row.
+ * The branch + terminal come from the DEVICE PAIRING (kv_meta), not from
+ * "pick the first branch the API returns". Pairing binds this physical machine
+ * to exactly one terminal row in one branch, so invoice numbers can never
+ * collide between terminals and every sale carries the correct branch/terminal.
  */
 
 import { useEffect, useState } from "react";
 
-import { ApiError, api } from "@/lib/api";
 import { useSessionStore } from "@/stores/session";
 
 import type { PosCashSessionRow } from "../../../electron/preload";
@@ -20,12 +20,14 @@ interface BranchLite {
   id: string;
   name: string;
   code: string;
+  fbrPosId: string | null;
 }
 
 interface TerminalLite {
   id: string;
   branch: string;
   name: string;
+  index: number;
 }
 
 interface PosContext {
@@ -56,27 +58,28 @@ export function usePosContext(): PosContext {
     void (async () => {
       setLoading(true);
       try {
-        const branches = await api<{ results: BranchLite[] }>("/branches/");
-        const b = branches.results[0];
-        if (!b) {
-          setError("No branches configured for this tenant. Add one in admin web.");
-          return;
-        }
-        const terminals = await api<{ results: TerminalLite[] }>(
-          `/terminals/?branch=${b.id}`,
-        );
-        const t = terminals.results.find((x) => x.branch === b.id) ?? terminals.results[0];
-        if (!t) {
-          setError("No terminals configured. Add one in admin web.");
+        const { paired, identity } = await window.api.pairing.status();
+        if (!paired || !identity) {
+          setError("This terminal isn't paired to a branch. Pair it first.");
           return;
         }
         if (cancelled) return;
-        setBranch(b);
-        setTerminal(t);
-        await loadSession(t.id);
-      } catch (err) {
+        setBranch({
+          id: identity.branchId,
+          name: identity.branchName,
+          code: identity.branchCode,
+          fbrPosId: identity.branchFbrPosId,
+        });
+        setTerminal({
+          id: identity.terminalId,
+          branch: identity.branchId,
+          name: identity.terminalName,
+          index: identity.terminalIndex,
+        });
+        await loadSession(identity.terminalId);
+      } catch {
         if (cancelled) return;
-        setError(err instanceof ApiError ? `API ${err.status}` : "Failed to load context.");
+        setError("Failed to load terminal context.");
       } finally {
         if (!cancelled) setLoading(false);
       }

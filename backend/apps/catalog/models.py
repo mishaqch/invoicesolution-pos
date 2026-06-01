@@ -198,6 +198,27 @@ class Product(TenantScopedModel):
     cost_price = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     sale_price = models.DecimalField(max_digits=14, decimal_places=4)
     retail_price = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
+
+    # Pakistan's 3rd Schedule (Sales Tax Act 1990): for these goods,
+    # sales tax is charged on the printed retail price (MRP), not on
+    # the actual sale value. Typical 3rd-Schedule items: refined sugar
+    # (1701.9910), carbonated drinks, biscuits, cigarettes, mobile
+    # phones, tea, infant milk, ice cream. PRAL enforces this on the
+    # wire: invoices for these HS codes must carry
+    # fixedNotifiedValueOrRetailPrice > 0 AND saleType="3rd Schedule
+    # Goods" — otherwise rejected with error 0122. When this flag is
+    # True, checkout snapshots retail_price → SaleItem.fixed_notified_value
+    # and the FBR builder picks the retail-price saleType.
+    is_third_schedule = models.BooleanField(
+        default=False,
+        help_text=(
+            "Tick if this product is on Pakistan's 3rd Schedule "
+            "(taxed on retail price, not sale price). Common 3rd-"
+            "Schedule items: sugar, biscuits, carbonated drinks, "
+            "cigarettes, mobile phones, tea. retail_price must be "
+            "set when this is on."
+        ),
+    )
     min_sale_price = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     max_discount_pct = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
 

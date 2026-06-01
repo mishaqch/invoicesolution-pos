@@ -51,6 +51,11 @@ export interface Product {
   retail_price: string | null;
   min_sale_price: string | null;
   max_discount_pct: string | null;
+  // Pakistan 3rd-Schedule flag. When true, FBR submission uses
+  // retail_price * qty as the taxable base + saleType="3rd Schedule
+  // Goods" (instead of sale_price-based math). Required by PRAL for
+  // sugar / drinks / biscuits / cigarettes / mobile phones etc.
+  is_third_schedule: boolean;
   reorder_level: string | null;
   reorder_quantity: string | null;
   is_serialized: boolean;

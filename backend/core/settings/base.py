@@ -40,6 +40,18 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.
 # so the test suite is reproducible without forcing every dev to set the var.
 FBR_FERNET_KEY = env("FBR_FERNET_KEY", default="")
 
+# Absolute base URL for links minted outside a live request (e.g. share links
+# generated in a Celery task or email). When a request is available, the
+# request host is used instead. Set to the tenant app origin in prod.
+PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="")
+
+# FBR SDC (Sale Data Controller / IMS Fiscalization Service) base URL. When set
+# (e.g. http://<windows-sdc-host>:8524), POS invoices for branches with a POS ID
+# are fiscalized through the SDC instead of the direct DI-API. Empty => DI-API
+# path only. The SDC is a Windows service installed centrally; one SDC serves
+# many POS IDs (POSID is per-invoice). See apps/fbr/sdc_client.py.
+FBR_SDC_BASE_URL = env("FBR_SDC_BASE_URL", default="")
+
 # ---------------------------------------------------------------------------
 # Apps
 # ---------------------------------------------------------------------------
@@ -178,10 +190,20 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # JWT — 15 min access / 7 day refresh, with rotation + blacklist (PROJECT_PLAN §10).
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
+    # Long enough to cover a full working shift without surprise logouts.
+    # A 15-min access token forced a refresh every 15 min; any hiccup in the
+    # rotate/blacklist dance logged the user out mid-work. A 12h access token
+    # is a reasonable security/UX balance for a POS, and the 30-day refresh
+    # gives a smooth "stay signed in" experience.
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=12),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
+    # Rotation + blacklist caused premature logouts: with multiple tabs / the
+    # POS terminal + admin-web sharing a session, concurrent refreshes would
+    # rotate the token one client still held, blacklisting it → instant
+    # logout. Disable rotation; the access-token expiry is the security
+    # boundary. (Logout still works via the client clearing its tokens.)
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
     "ALGORITHM": "HS256",
     "SIGNING_KEY": SECRET_KEY,
     "AUTH_HEADER_TYPES": ("Bearer",),
@@ -314,6 +336,15 @@ UNFOLD = {
             "950": "5 46 22",
         },
     },
+    # Sidebar nav. Each section and each item carries a "permission"
+    # callback (dotted path resolved by Unfold via import_string). The
+    # callback receives `request` and returns True/False — False hides
+    # the row. Without these, a delegated platform_admin who only has
+    # User+Tenant+Billing bundles would still see "Operations" (FBR /
+    # invoices / audit) in the nav and get 403 on click.
+    #
+    # Callbacks live in core/admin_nav_perms.py and short-circuit to
+    # True for is_superuser.
     "SIDEBAR": {
         "show_search": True,
         "show_all_applications": False,
@@ -332,84 +363,106 @@ UNFOLD = {
             {
                 "title": "Tenants",
                 "separator": True,
+                "permission": "core.admin_nav_perms.tenants_section",
                 "items": [
                     {
                         "title": "Tenants",
                         "icon": "domain",
                         "link": "/admin/tenants/tenant/",
+                        "permission": "core.admin_nav_perms.view_tenant",
                     },
                     {
                         "title": "Branches",
                         "icon": "store",
                         "link": "/admin/tenants/branch/",
+                        "permission": "core.admin_nav_perms.view_branch",
                     },
                     {
                         "title": "Terminals",
                         "icon": "point_of_sale",
                         "link": "/admin/tenants/terminal/",
+                        "permission": "core.admin_nav_perms.view_terminal",
+                    },
+                    {
+                        "title": "Cashiers",
+                        "icon": "badge",
+                        "link": "/admin/tenants/cashier/",
+                        "permission": "core.admin_nav_perms.view_cashier",
                     },
                 ],
             },
             {
                 "title": "Billing",
                 "separator": True,
+                "permission": "core.admin_nav_perms.billing_section",
                 "items": [
                     {
                         "title": "Subscription plans",
                         "icon": "workspace_premium",
                         "link": "/admin/platform_admin/subscriptionplan/",
+                        "permission": "core.admin_nav_perms.view_subscription_plan",
                     },
                     {
                         "title": "Subscriptions",
                         "icon": "subscriptions",
                         "link": "/admin/platform_admin/subscription/",
+                        "permission": "core.admin_nav_perms.view_subscription",
                     },
                     {
                         "title": "Platform settings",
                         "icon": "tune",
                         "link": "/admin/platform_admin/platformsettings/",
+                        "permission": "core.admin_nav_perms.view_platform_settings",
                     },
                 ],
             },
             {
                 "title": "People",
                 "separator": True,
+                "permission": "core.admin_nav_perms.people_section",
                 "items": [
                     {
                         "title": "Users",
                         "icon": "person",
                         "link": "/admin/accounts/user/",
+                        "permission": "core.admin_nav_perms.view_user",
                     },
                     {
                         "title": "Groups",
                         "icon": "groups",
                         "link": "/admin/auth/group/",
+                        "permission": "core.admin_nav_perms.view_group",
                     },
                 ],
             },
             {
                 "title": "Operations",
                 "separator": True,
+                "permission": "core.admin_nav_perms.operations_section",
                 "items": [
                     {
                         "title": "FBR submissions",
                         "icon": "send",
                         "link": "/admin/fbr/fbrsubmission/",
+                        "permission": "core.admin_nav_perms.view_fbr_submission",
                     },
                     {
                         "title": "FBR tokens",
                         "icon": "vpn_key",
                         "link": "/admin/fbr/fbrtoken/",
+                        "permission": "core.admin_nav_perms.view_fbr_token",
                     },
                     {
                         "title": "Invoices",
                         "icon": "receipt_long",
                         "link": "/admin/sales/invoice/",
+                        "permission": "core.admin_nav_perms.view_invoice",
                     },
                     {
                         "title": "Audit log",
                         "icon": "fact_check",
                         "link": "/admin/audit/auditlog/",
+                        "permission": "core.admin_nav_perms.view_audit_log",
                     },
                 ],
             },

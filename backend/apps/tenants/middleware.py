@@ -20,6 +20,7 @@ import json
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 from apps.tenants.models import TenantMembership
 
@@ -36,6 +37,11 @@ EXEMPT_PREFIXES: tuple[str, ...] = (
     "/api/auth/pin-login/",
     "/static/",
     "/media/",
+    # Local PRAL mock gateway (mounted only when DEBUG, see core/urls.py).
+    # These carry a PRAL *bearer* (not our JWT); without exemption this
+    # middleware would try to decode it as a JWT and 401. They 404 in prod.
+    "/__mock_pral/",
+    "/pdi/",
 )
 
 # Phase 0 platform stub. Endpoints under these prefixes are reachable
@@ -44,6 +50,17 @@ EXEMPT_PREFIXES: tuple[str, ...] = (
 # platform staff unless mid-impersonation (Phase 9).
 PLATFORM_PREFIXES: tuple[str, ...] = (
     "/api/platform/",
+)
+
+# Endpoints that are tenant-side BUT also legitimately reachable by
+# platform staff and by users-without-a-membership. They report on
+# WHO the caller is, not on tenant data. The React tenant admin calls
+# /auth/me/ on shell mount to detect a broken session — if it 403s
+# here we'd never see the broken-session signal and would loop on
+# 403s forever. Logout / refresh also fall into this category.
+PLATFORM_STAFF_ALLOWED_TENANT_PATHS: tuple[str, ...] = (
+    "/api/auth/me/",
+    "/api/auth/logout/",
 )
 
 
@@ -65,7 +82,17 @@ class TenantContextMiddleware:
 
         # The JWTAuthentication runs in DRF view dispatch, which is *after*
         # middleware. To access JWT claims here we run authentication early.
-        # Catch failures silently — the view's permission_classes will reject.
+        #
+        # When the token is EXPIRED (or otherwise invalid), we MUST surface
+        # a 401 with the WWW-Authenticate header — not silently swallow.
+        # Swallowing turns the request into "anonymous-but-tenant-scoped",
+        # and downstream permission checks (HasModule, HasRolePerm) then
+        # return 403 because there's no authenticated user. The client
+        # only refreshes on 401, so the user gets stuck in a 403 loop
+        # forever — exactly the "every-time-I-open-my-laptop" pattern.
+        #
+        # Other exceptions (DB errors, unrelated bugs) we still swallow
+        # so middleware doesn't 500 a tenant-context resolution issue.
         token_payload = None
         try:
             auth = self._jwt_auth.authenticate(request)
@@ -73,7 +100,19 @@ class TenantContextMiddleware:
                 user, validated_token = auth
                 request.user = user
                 token_payload = validated_token.payload
+        except (InvalidToken, TokenError) as exc:
+            # Token sent but expired/forged/malformed. Return 401 so the
+            # admin-web client knows to try the refresh-token flow.
+            resp = JsonResponse(
+                {"detail": "Token is invalid or expired.",
+                 "code": "token_not_valid"},
+                status=401,
+            )
+            resp["WWW-Authenticate"] = 'Bearer realm="api"'
+            return resp
         except Exception:
+            # Unrelated infrastructure error — keep swallowing so we
+            # don't 500 in middleware. View will reject as unauthenticated.
             pass
 
         if not getattr(request, "user", None) or not request.user.is_authenticated:
@@ -88,9 +127,15 @@ class TenantContextMiddleware:
             request.path.startswith(p) for p in PLATFORM_PREFIXES
         )
         is_platform_user = bool(getattr(request.user, "is_platform_staff", False))
+        is_identity_path = request.path in PLATFORM_STAFF_ALLOWED_TENANT_PATHS
         if is_platform_request and not is_platform_user:
             return _forbid("Platform staff only.")
-        if (not is_platform_request) and is_platform_user and request.path.startswith("/api/"):
+        if (
+            (not is_platform_request)
+            and is_platform_user
+            and request.path.startswith("/api/")
+            and not is_identity_path
+        ):
             return _forbid(
                 "Platform staff cannot access tenant API endpoints directly. "
                 "Use /api/platform/* or impersonate (Phase 9).",

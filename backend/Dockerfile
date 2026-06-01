@@ -14,13 +14,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps first to maximize layer caching
-COPY pyproject.toml /app/
+# Install Python deps. `pip install -e .` needs an actual project
+# tree (not just pyproject.toml), so we COPY the source first.
+# We can't isolate the deps install in its own layer here, but with
+# the bind-mount in dev the actual code edits happen at runtime
+# anyway — layer caching matters most for build-time speed, not
+# request-time speed. The trade-off is OK.
+COPY . /app/
 RUN pip install --upgrade pip && \
     pip install -e ".[dev]"
-
-# Source is bind-mounted in dev via docker-compose; COPY here for prod images
-COPY . /app/
 
 EXPOSE 8000
 

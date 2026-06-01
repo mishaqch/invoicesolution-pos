@@ -14,6 +14,7 @@ from decimal import Decimal
 from typing import Iterable
 from uuid import UUID
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -44,6 +45,8 @@ def create_invoice(
     local_invoice_number: str | None = None,
     invoice_type: str = "sale",
     reference_invoice: Invoice | None = None,
+    reason: str | None = None,
+    reason_notes: str | None = None,
     request=None,
 ) -> Invoice:
     """Create an invoice (sale, debit-note, or credit-note).
@@ -59,6 +62,17 @@ def create_invoice(
     existing = Invoice.objects.filter(client_uuid=client_uuid).first()
     if existing is not None:
         return existing
+
+    # Consistency: the terminal must belong to the invoice's branch. Otherwise
+    # the invoice would be numbered under one branch but submitted to FBR under
+    # that branch's token while the sale came from a terminal registered to a
+    # different branch — mis-attributing it to the wrong POS registration.
+    if terminal.branch_id != branch.id:
+        raise ValidationError(
+            f"Terminal {terminal.id} belongs to branch {terminal.branch_id}, "
+            f"not the invoice branch {branch.id}. A terminal can only sell "
+            f"under its own branch."
+        )
 
     quote = quote_cart(cart_lines, cart_discount_pct=cart_discount_pct)
     paid_total = sum(Decimal(str(p["amount"])) for p in payments)
@@ -99,6 +113,8 @@ def create_invoice(
         local_invoice_number=local_invoice_number or next_invoice_number(terminal=terminal),
         invoice_type=invoice_type,
         reference_invoice=reference_invoice,
+        reason=reason,
+        reason_notes=reason_notes,
         invoice_date=dt.date.today(),
         # Buyer snapshot — resolved above (customer arg, then reference, then None)
         buyer_name=buyer_name,
@@ -119,6 +135,32 @@ def create_invoice(
         status="pending_sync",
     )
 
+    # Pre-flight: any 3rd-Schedule product without a retail_price would
+    # produce a PRAL rejection (errorCode 0122 — retail price > 0
+    # required). Fail fast with a clear error so the operator fixes
+    # the catalog instead of debugging a downstream FBR submission.
+    third_schedule_missing_retail: list[str] = []
+    for line_input in cart_lines:
+        product = _resolve_product(tenant_id, line_input["product"])
+        if (
+            product.is_third_schedule
+            and (product.retail_price is None or product.retail_price <= 0)
+        ):
+            third_schedule_missing_retail.append(
+                f"{product.sku} ({product.name})",
+            )
+    if third_schedule_missing_retail:
+        from rest_framework import serializers as drf_serializers
+        raise drf_serializers.ValidationError({
+            "cart_lines": (
+                "These products are marked '3rd Schedule item' but have "
+                "no retail price set, so PRAL will reject the invoice. "
+                "Open the product in Catalog and set Retail price before "
+                "ringing them up: "
+                + ", ".join(third_schedule_missing_retail)
+            ),
+        })
+
     # Sale items + corresponding stock_movement (sale type, negative qty)
     for line_no, (line_input, line_quote) in enumerate(zip(cart_lines, quote.lines), start=1):
         product: Product = _resolve_product(tenant_id, line_input["product"])
@@ -128,6 +170,24 @@ def create_invoice(
         batch: ProductBatch | None = (
             ProductBatch.objects.get(pk=line_input["batch"]) if line_input.get("batch") else None
         )
+
+        # 3rd-Schedule snapshot: PRAL rejects invoice lines for these
+        # HS codes (sugar 1701.9910, biscuits, drinks, cigarettes, mobile
+        # phones, etc.) unless fixedNotifiedValueOrRetailPrice > 0 AND
+        # saleType="3rd Schedule Goods". We capture the marker + the
+        # product's retail_price * qty onto SaleItem here so the FBR
+        # builder doesn't need to re-fetch Product (which can be soft-
+        # deleted or have its retail_price changed after the sale).
+        #
+        # Non-3rd-Schedule lines get the default sale_type string —
+        # SaleItem.sale_type is NOT NULL with a CharField default, so
+        # passing None violates the constraint.
+        if product.is_third_schedule and product.retail_price is not None:
+            fixed_notified = product.retail_price * line_quote.quantity
+            sale_type = "3rd Schedule Goods"
+        else:
+            fixed_notified = None
+            sale_type = "Goods at standard rate (default)"
 
         SaleItem.objects.create(
             invoice=invoice,
@@ -147,6 +207,8 @@ def create_invoice(
             tax_rate=line_quote.tax_rate,
             tax_amount=line_quote.tax_amount.amount,
             line_total=line_quote.line_total.amount,
+            fixed_notified_value=fixed_notified,
+            sale_type=sale_type,
         )
 
         record_movement(

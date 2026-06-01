@@ -2,6 +2,7 @@ import { Pause, Receipt } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { NumberInput } from "@/components/ui/number-input";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 
 interface Props {
@@ -31,14 +32,12 @@ export function TotalsPane({ onHold }: Props) {
 
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-sm text-muted-foreground">Cart discount %</span>
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="1"
+          <NumberInput
+            mode="decimal"
             value={cartDiscountPct}
-            onChange={(e) => setCartDiscountPct(e.target.value)}
-            className="h-8 w-20 rounded-md border bg-background px-2 text-right text-sm"
+            onChange={setCartDiscountPct}
+            aria-label="Cart discount percent"
+            className="h-8 w-20 text-right"
           />
         </div>
         <Row label="Cart discount" value={`- Rs ${totals.cart_discount_amount.display()}`} muted />

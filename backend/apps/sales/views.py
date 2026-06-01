@@ -14,6 +14,7 @@ GET  /api/sales/cash-sessions/<id>/x-report/  — running totals for the open or
 
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError as DjValidationError
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound
@@ -34,6 +35,12 @@ from .serializers import (
     SessionOpenSerializer,
 )
 from .services import cancellation, checkout, holds, sessions
+
+
+def _dj_error_message(exc: DjValidationError) -> str:
+    """First human message from a Django ValidationError (for DRF responses)."""
+    messages = exc.messages if hasattr(exc, "messages") else [str(exc)]
+    return messages[0] if messages else "Validation error."
 
 
 class _TenantQuerySetMixin:
@@ -122,6 +129,77 @@ class InvoiceViewSet(
             "total_revenue": str(totals["revenue"] or Decimal("0")),
         })
 
+    @action(detail=False, methods=["get"], url_path="timeseries")
+    def timeseries(self, request):
+        """Bucketed invoice counts + revenue for the chart on the
+        Dashboard (matches PRAL DI manual page 20–21).
+
+        Query params:
+          interval = day | month | quarter | year  (default: day)
+          invoice_type = sale | debit_note | credit_note (default: sale)
+          from, to: same date filters as `list` and `summary`.
+
+        Returns: { interval, invoice_type, buckets: [{label, count,
+        revenue}] } sorted chronologically. Empty buckets are NOT
+        padded — the chart should show whatever the DB has.
+        """
+        from decimal import Decimal
+
+        from django.db.models import Count, Sum
+        from django.db.models.functions import (
+            TruncDay, TruncMonth, TruncQuarter, TruncYear,
+        )
+
+        interval = (request.query_params.get("interval") or "day").lower()
+        invoice_type = request.query_params.get("invoice_type") or "sale"
+
+        trunc_map = {
+            "day": (TruncDay, "%Y-%m-%d"),
+            "month": (TruncMonth, "%Y-%m"),
+            "quarter": (TruncQuarter, "%Y-Q%q"),
+            "year": (TruncYear, "%Y"),
+        }
+        if interval not in trunc_map:
+            return Response(
+                {"detail": (
+                    f"interval must be one of {sorted(trunc_map)}; "
+                    f"got {interval!r}."
+                )},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        TruncCls, _label_fmt = trunc_map[interval]
+
+        qs = self.get_queryset().filter(invoice_type=invoice_type)
+        rows = (
+            qs.annotate(bucket=TruncCls("invoice_date"))
+            .values("bucket")
+            .annotate(count=Count("id"), revenue=Sum("grand_total"))
+            .order_by("bucket")
+        )
+
+        def _fmt(bucket) -> str:
+            # %q isn't portable across Postgres/SQLite; compute quarter
+            # manually for the quarter case.
+            if interval == "quarter":
+                q = (bucket.month - 1) // 3 + 1
+                return f"{bucket.year}-Q{q}"
+            return bucket.strftime(trunc_map[interval][1])
+
+        buckets = [
+            {
+                "label": _fmt(r["bucket"]),
+                "count": r["count"],
+                "revenue": str(r["revenue"] or Decimal("0")),
+            }
+            for r in rows
+        ]
+        return Response({
+            "interval": interval,
+            "invoice_type": invoice_type,
+            "buckets": buckets,
+        })
+
     @action(detail=False, methods=["post"], url_path="checkout",
             permission_classes=[HasRolePerm.with_perm("sales.create")])
     def checkout(self, request):
@@ -154,20 +232,24 @@ class InvoiceViewSet(
             if v.get("customer") else None
         )
 
-        invoice = checkout.create_invoice(
-            tenant_id=request.tenant_id,
-            branch=branch,
-            terminal=terminal,
-            cashier=request.user,
-            cash_session=session,
-            customer=customer,
-            cart_lines=[dict(line) for line in v["cart_lines"]],
-            cart_discount_pct=v.get("cart_discount_pct", 0),
-            payments=[dict(p) for p in v["payments"]],
-            client_uuid=v["client_uuid"],
-            notes=v.get("notes"),
-            request=request,
-        )
+        try:
+            invoice = checkout.create_invoice(
+                tenant_id=request.tenant_id,
+                branch=branch,
+                terminal=terminal,
+                cashier=request.user,
+                cash_session=session,
+                customer=customer,
+                cart_lines=[dict(line) for line in v["cart_lines"]],
+                cart_discount_pct=v.get("cart_discount_pct", 0),
+                payments=[dict(p) for p in v["payments"]],
+                client_uuid=v["client_uuid"],
+                notes=v.get("notes"),
+                request=request,
+            )
+        except DjValidationError as exc:
+            from rest_framework.exceptions import ValidationError as DrfValidationError
+            raise DrfValidationError({"detail": _dj_error_message(exc)})
         return Response(
             InvoiceSerializer(invoice).data,
             status=status.HTTP_201_CREATED,
@@ -251,25 +333,36 @@ class InvoiceViewSet(
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        invoice = checkout.create_invoice(
-            tenant_id=request.tenant_id,
-            branch=branch,
-            terminal=terminal,
-            cashier=request.user,
-            cash_session=None,
-            customer=customer,
-            cart_lines=[dict(line) for line in v["cart_lines"]],
-            cart_discount_pct=v.get("cart_discount_pct", 0),
-            payments=[dict(p) for p in v["payments"]],
-            client_uuid=v["client_uuid"],
-            notes=v.get("notes"),
-            invoice_type=invoice_type,
-            reference_invoice=reference,
-            request=request,
-        )
-        # Auto-submit to FBR — wholesaler flow expects the FBR number
-        # without a separate manual click. Same async pipeline POS uses.
-        submit_invoice_to_fbr.delay(str(invoice.id))
+        try:
+            invoice = checkout.create_invoice(
+                tenant_id=request.tenant_id,
+                branch=branch,
+                terminal=terminal,
+                cashier=request.user,
+                cash_session=None,
+                customer=customer,
+                cart_lines=[dict(line) for line in v["cart_lines"]],
+                cart_discount_pct=v.get("cart_discount_pct", 0),
+                payments=[dict(p) for p in v["payments"]],
+                client_uuid=v["client_uuid"],
+                notes=v.get("notes"),
+                invoice_type=invoice_type,
+                reference_invoice=reference,
+                reason=v.get("reason"),
+                reason_notes=v.get("reason_notes"),
+                request=request,
+            )
+        except DjValidationError as exc:
+            from rest_framework.exceptions import ValidationError as DrfValidationError
+            raise DrfValidationError({"detail": _dj_error_message(exc)})
+        # NB: deliberately NOT auto-submitting to FBR here. The manual
+        # invoice flow lets the operator review the saved invoice on
+        # the detail page, optionally run "Validate with FBR" as a free
+        # dry-run, and only then click "Submit to FBR" to issue the
+        # FBR Invoice Number. The POS terminal `/checkout/` flow still
+        # auto-submits because cashiers can't afford a two-step UX at
+        # the counter. Office-staff manual invoices are different —
+        # they want control over the moment of submission.
         return Response(
             InvoiceSerializer(invoice).data,
             status=status.HTTP_201_CREATED,
@@ -291,16 +384,47 @@ class InvoiceViewSet(
         holds.recall(invoice, user=request.user, request=request)
         return Response(InvoiceSerializer(invoice).data)
 
-    @action(detail=True, methods=["post"],
+    @action(detail=True, methods=["post"], url_path="force-cancel",
             permission_classes=[HasRolePerm.with_perm("sales.cancel.threshold_high")])
-    def cancel(self, request, pk=None):
+    def force_cancel(self, request, pk=None):
+        """LOCAL-ONLY force-cancel escape hatch — does NOT touch PRAL.
+
+        The compliant, FBR-aware cancel lives at
+        `/api/fbr/invoices/<id>/cancel/` (CancelInvoiceFbrView). That
+        endpoint consumes the tenant's 10% monthly cancel-budget AND
+        calls PRAL's `cancelinvoice` endpoint so the invoice is also
+        amended on FBR's side. The React 'Cancel sale' button points
+        there.
+
+        This endpoint exists for the rare case where the tenant needs
+        to mark an invoice locally cancelled WITHOUT notifying PRAL —
+        e.g. an invoice that was created locally, never reached PRAL
+        (status='failed' with no fbr_invoice_number) and should be
+        removed from the operator's view without ever being submitted.
+        Even here, the rules layer still gates pre-validation states
+        away from this path; the only realistic caller is offline-mode
+        cleanup on terminals.
+
+        Renamed from `cancel` so the URL difference (`force-cancel`
+        vs `cancel`) discourages accidental use from the UI.
+        """
         invoice = self.get_object()
         body = CancelSerializer(data=request.data)
         body.is_valid(raise_exception=True)
-        cancellation.cancel_invoice(
-            invoice, reason=body.validated_data["reason"],
-            user=request.user, request=request,
-        )
+        try:
+            cancellation.cancel_invoice(
+                invoice, reason=body.validated_data["reason"],
+                user=request.user, request=request,
+            )
+        except DjValidationError as exc:
+            messages = (
+                exc.messages if hasattr(exc, "messages") else [str(exc)]
+            )
+            return Response(
+                {"detail": messages[0] if messages else "Cannot cancel."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="resubmit",
@@ -325,6 +449,223 @@ class InvoiceViewSet(
             raise
         invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["get"], url_path="fiscal-payload",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def fiscal_payload(self, request, pk=None):
+        """What the LOCAL SDC needs to fiscalize this invoice.
+
+        Returned to the client app (browser / POS terminal) running on the
+        same machine as the branch's FBR SDC. The client POSTs this to
+        http://localhost:8524/api/IMSFiscal/... using the branch POS ID, then
+        sends the result back via `fiscal-result`. The cloud server never
+        contacts the SDC itself (it can't reach a branch's localhost).
+        """
+        from apps.fbr.sdc_client import build_sdc_payload, SUBMIT_PATH
+
+        invoice = self.get_object()
+        pos_id = getattr(invoice.branch, "fbr_pos_id", None)
+        already = bool(invoice.fbr_invoice_number)
+        body = None
+        if not already and pos_id:
+            # Real SDC (IMSFiscal) request body — POSTed by the client to the
+            # local SDC at http://localhost:8524/api/IMSFiscal/GetInvoiceNumberByModel
+            body = build_sdc_payload(invoice=invoice, pos_id=pos_id)
+        return Response({
+            "invoice_id": str(invoice.id),
+            "local_invoice_number": invoice.local_invoice_number,
+            "branch_fbr_pos_id": pos_id,
+            "already_fiscalized": already,
+            "fbr_invoice_number": invoice.fbr_invoice_number,
+            # Where the client should POST the body, on its own machine:
+            "sdc_submit_path": SUBMIT_PATH,  # /api/IMSFiscal/GetInvoiceNumberByModel
+            # The exact SDC request body (null if no POS ID, or already done).
+            "sdc_payload": body,
+        })
+
+    @action(detail=True, methods=["post"], url_path="fiscal-result",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def fiscal_result(self, request, pk=None):
+        """Save the FBR fiscal number + QR the LOCAL SDC returned.
+
+        Idempotent + anti-duplication: if the invoice ALREADY has an FBR
+        number, we DO NOT overwrite (the number is immutable) — we return the
+        existing one with `already=true`. So retries, double-clicks, or two
+        terminals racing all converge on one number; never a duplicate.
+
+        Body: { "fbr_invoice_number": "...", "qr_payload": "<optional>" }
+        """
+        from django.utils import timezone
+        from apps.fbr.qr import build_qr_payload
+        from apps.fbr.budget import compute_edit_deadline
+        from apps.audit.services import log as audit_log
+
+        invoice = self.get_object()
+
+        # Anti-duplication guard: already fiscalized → return existing, no write.
+        if invoice.fbr_invoice_number:
+            return Response({
+                "ok": True, "already": True,
+                "fbr_invoice_number": invoice.fbr_invoice_number,
+            })
+
+        fbr_no = (request.data.get("fbr_invoice_number") or "").strip()
+        if not fbr_no:
+            return Response(
+                {"detail": "fbr_invoice_number is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        qr = (request.data.get("qr_payload") or "").strip() or build_qr_payload(
+            fbr_invoice_number=fbr_no, validated_at=timezone.now(),
+            amount=invoice.grand_total, seller_ntn=invoice.tenant.ntn,
+        )
+        now = timezone.now()
+        invoice.fbr_invoice_number = fbr_no
+        invoice.fbr_qr_payload = qr
+        invoice.fbr_submitted_at = invoice.fbr_submitted_at or now
+        invoice.fbr_validated_at = now
+        invoice.edit_deadline_at = compute_edit_deadline(invoice.fbr_submitted_at)
+        invoice.status = "valid"
+        invoice.save(update_fields=[
+            "fbr_invoice_number", "fbr_qr_payload", "fbr_submitted_at",
+            "fbr_validated_at", "edit_deadline_at", "status", "updated_at",
+        ])
+        audit_log(
+            tenant_id=invoice.tenant_id, entity_type="invoice",
+            entity_id=invoice.id, action="fbr_validated_via_sdc",
+            after={"fbr_invoice_number": fbr_no}, request=request,
+        )
+        return Response({
+            "ok": True, "already": False,
+            "fbr_invoice_number": fbr_no,
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="validate",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def validate(self, request, pk=None):
+        """Lint the invoice payload against PRAL's /validateinvoicedata
+        without persisting a submission. Returns PRAL's verdict so the
+        operator can fix problems before spending sandbox/production
+        budget on a real submit.
+
+        Logs the roundtrip as an FbrSubmission with endpoint
+        'validateinvoicedata' so the FBR-log panel shows it alongside
+        actual submits. The invoice itself is NOT mutated — no status
+        change, no fbr_invoice_number write.
+        """
+        from apps.fbr.builder import build_invoice_payload
+        from apps.fbr.client import (
+            FbrClient,
+            PralBusinessError,
+            PralError,
+            PralValidationError,
+            PralTransientError,
+        )
+        from apps.fbr.models import FbrSubmission, FbrToken
+
+        invoice = self.get_object()
+        tenant = invoice.tenant
+        token = (
+            FbrToken.objects.filter(tenant=tenant, environment="production", is_active=True).first()
+            or FbrToken.objects.filter(tenant=tenant, environment="sandbox", is_active=True).first()
+        )
+        if token is None:
+            return Response(
+                {"detail": "No FBR token configured for this tenant."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        environment = token.environment
+        if environment == "sandbox":
+            # PRAL's scenarioId applies to the WHOLE invoice (every line
+            # must be compatible). SN007 demands ALL lines be 3rd-
+            # Schedule; mixed invoices must fall back to the standard
+            # scenario (SN001/SN002) and rely on per-line `saleType` +
+            # `fixedNotifiedValueOrRetailPrice` to communicate the 3rd-
+            # Schedule treatment of individual lines. See apps/fbr/
+            # tasks.py for the longer explanation.
+            items = list(invoice.items.all())
+            all_third_schedule = items and all(
+                i.fixed_notified_value is not None and i.fixed_notified_value > 0
+                for i in items
+            )
+            if all_third_schedule:
+                scenario_id = "SN007"
+            elif (invoice.buyer_registration_type or "").lower() == "registered":
+                scenario_id = "SN001"
+            else:
+                scenario_id = "SN002"
+        else:
+            scenario_id = None
+        payload = build_invoice_payload(invoice, environment=environment, scenario_id=scenario_id)
+
+        client = FbrClient(
+            environment=environment, token=token.token,
+            endpoint_base=token.api_endpoint or "https://gw.fbr.gov.pk",
+        )
+
+        try:
+            result = client.validate_invoice(payload)
+        except (PralValidationError, PralBusinessError) as exc:
+            FbrSubmission.objects.create(
+                tenant_id=tenant.id, invoice=invoice, environment=environment,
+                endpoint="validateinvoicedata", request_payload=payload,
+                response_payload=exc.response or {"error": str(exc)},
+                http_status=getattr(exc, "http_status", None),
+                status_code="01",
+                error_message=str(exc),
+                attempt_number=1,
+            )
+            return Response(
+                {"valid": False, "error": str(exc), "error_code": getattr(exc, "error_code", None)},
+                status=status.HTTP_200_OK,
+            )
+        except (PralTransientError, PralError) as exc:
+            # PRAL's gateway misbehaved (timeout, non-JSON page, 5xx).
+            # Persist the attempt so the operator can see WHAT PRAL
+            # returned — without this, transient failures are invisible
+            # in the submissions log and the operator has no way to
+            # distinguish "PRAL service down" from "we built a bad
+            # payload". The `kind: 'transient'` flag tells the
+            # admin-web error UI to show a service-status message
+            # instead of "rejected the payload".
+            FbrSubmission.objects.create(
+                tenant_id=tenant.id, invoice=invoice, environment=environment,
+                endpoint="validateinvoicedata", request_payload=payload,
+                response_payload=getattr(exc, "response", None) or {"error": str(exc)},
+                http_status=getattr(exc, "http_status", None),
+                status_code="transient",
+                error_message=str(exc),
+                attempt_number=1,
+            )
+            return Response(
+                {
+                    "valid": False,
+                    "kind": "transient",
+                    "detail": (
+                        f"FBR's PRAL gateway is not responding correctly "
+                        f"right now ({exc}). This is on FBR's side, not "
+                        f"a problem with your invoice. Wait a moment and "
+                        f"click Validate again — sandbox is often flaky "
+                        f"during business hours."
+                    ),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # Success — record the validate roundtrip for audit. We do
+        # NOT touch the invoice's fbr_invoice_number; validate doesn't
+        # issue one.
+        FbrSubmission.objects.create(
+            tenant_id=tenant.id, invoice=invoice, environment=environment,
+            endpoint="validateinvoicedata", request_payload=payload,
+            response_payload=result.body,
+            http_status=result.http_status,
+            status_code=result.status_code,
+            attempt_number=1, duration_ms=result.duration_ms,
+        )
+        return Response({"valid": True, "response": result.body})
 
     @action(detail=True, methods=["post"],
             url_path="items/(?P<item_id>[^/.]+)/edit",
@@ -378,13 +719,18 @@ class InvoiceViewSet(
         """Cancel one line on an invoice (PRAL per-item cancel pattern).
 
         Per the FBR Digital Invoicing Manual section 4.1.2, individual
-        items can be cancelled within the 72-hour window. Same constraints
-        apply: cannot cancel an edited item, cannot cancel after the
-        deadline, cannot cancel an annexure-C-linked invoice.
+        items can be cancelled within the 72-hour window. The rule
+        check is per-line (`can_cancel_item`) — not invoice-wide —
+        because a previously-edited item on the same invoice doesn't
+        block cancelling a *different* item.
         """
-        from apps.fbr.rules import can_cancel_invoice
+        from apps.fbr.rules import can_cancel_item
         invoice = self.get_object()
-        allowed, why = can_cancel_invoice(invoice)
+        try:
+            item = invoice.items.get(pk=item_id)
+        except invoice.items.model.DoesNotExist:
+            raise NotFound("Item not found on this invoice.")
+        allowed, why = can_cancel_item(invoice, item)
         if not allowed:
             return Response({"detail": why}, status=status.HTTP_400_BAD_REQUEST)
         body = CancelSerializer(data=request.data)
@@ -485,3 +831,78 @@ class CashSessionViewSet(
             request=request,
         )
         return Response(self.get_serializer(session).data)
+
+
+# ---------------------------------------------------------------------------
+# Public (signed-URL) endpoints
+# ---------------------------------------------------------------------------
+#
+# Reachable WITHOUT authentication — the security boundary is the
+# HMAC-signed token in the URL itself. Used by SendToBuyer so the
+# seller can paste a link into a WhatsApp / email message and the
+# buyer can fetch the PDF without an account.
+
+from django.http import HttpResponse, HttpResponseNotFound
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET
+
+from .services.share_links import (
+    BadSignature,
+    SignatureExpired,
+    verify_share_token,
+)
+
+
+@csrf_exempt  # No cookies/CSRF; auth IS the signed token in the URL.
+@require_GET
+def public_invoice_pdf(request, token: str):
+    """GET /p/inv/<token>.pdf
+
+    The path captures `<token>.pdf` so when the buyer's browser
+    auto-downloads it, the filename has the right extension. We strip
+    the `.pdf` suffix before verifying the token.
+    """
+    from apps.sales.services.invoice_pdf import render_invoice_pdf
+
+    # Strip trailing .pdf if present — the URL template captures it as
+    # part of the slug for the filename, but the signed payload is
+    # just the invoice id.
+    raw = token[:-4] if token.endswith(".pdf") else token
+
+    try:
+        invoice_id = verify_share_token(raw)
+    except SignatureExpired:
+        return HttpResponse(
+            "This share link has expired. Ask the seller for a new link.",
+            status=410, content_type="text/plain",
+        )
+    except BadSignature:
+        return HttpResponseNotFound("Invalid link.")
+
+    try:
+        invoice = (
+            Invoice.objects
+            .select_related("tenant", "branch", "customer")
+            .prefetch_related("items", "items__product")
+            .get(pk=invoice_id)
+        )
+    except Invoice.DoesNotExist:
+        return HttpResponseNotFound("Invoice not found.")
+
+    # Defensive: only share invoices that actually have an FBR number.
+    # build_share_url already gates on this, but a stale token from
+    # before a cancellation could still arrive here.
+    if not invoice.fbr_invoice_number:
+        return HttpResponse(
+            "This invoice is no longer available for sharing.",
+            status=410, content_type="text/plain",
+        )
+
+    pdf_bytes = render_invoice_pdf(invoice)
+    resp = HttpResponse(pdf_bytes, content_type="application/pdf")
+    # `inline` so it previews in the browser tab; the buyer can hit
+    # download from there. Filename uses the local invoice number, not
+    # the FBR one (shorter, more readable).
+    filename = f"invoice-{invoice.local_invoice_number}.pdf"
+    resp["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp

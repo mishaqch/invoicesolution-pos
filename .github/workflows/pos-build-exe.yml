@@ -1,0 +1,55 @@
+name: pos-build-exe
+
+# Builds the Windows POS terminal installer (invoiceSolution.exe) on a Windows
+# runner and uploads it as a downloadable artifact. UNSIGNED — no code-signing
+# cert required, so this can run with zero secrets. Windows SmartScreen will
+# warn "unknown publisher" on first install (More info → Run anyway); add a
+# cert later (see pos-release.yml) to remove that warning.
+#
+# Trigger from the GitHub UI: Actions → pos-build-exe → Run workflow.
+# Then download the "invoiceSolution-exe" artifact from the run summary.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: pos-terminal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer + main (electron-vite)
+        run: npm run build
+
+      - name: Package Windows installer (unsigned)
+        env:
+          # Explicitly clear signing so electron-builder doesn't try to sign.
+          CSC_LINK: ""
+          CSC_KEY_PASSWORD: ""
+        run: npx electron-builder --win --publish never
+
+      - name: Locate the built .exe
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path release -Recurse -Filter invoiceSolution.exe | Select-Object -First 1
+          if (-not $exe) { Write-Error "invoiceSolution.exe not found under release/"; exit 1 }
+          Write-Host "Built: $($exe.FullName)  ($([math]::Round($exe.Length/1MB,1)) MB)"
+          "EXE_PATH=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: invoiceSolution-exe
+          path: ${{ env.EXE_PATH }}
+          if-no-files-found: error
+          retention-days: 30

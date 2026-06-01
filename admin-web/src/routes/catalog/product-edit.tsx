@@ -4,14 +4,18 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HsCodePicker } from "@/components/ui/hs-code-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
+import { extractApiErrorMessage } from "@/lib/api";
 import {
   useCategories,
   useCreateProduct,
   useProduct,
   useTaxRates,
+  useTenantSetup,
   useUoms,
   useUpdateProduct,
 } from "@/lib/queries";
@@ -32,6 +36,17 @@ interface FormValues {
   reorder_level: string;
   is_active: boolean;
   description: string;
+  // PRAL HS code — required for FBR Digital Invoicing. Every invoice
+  // line item PRAL receives must carry an hsCode; the cart line copies
+  // this value off the product at sale time. Free-text wasn't a viable
+  // UX so we use an autocomplete against the live ~7,900-code catalog.
+  hs_code: string;
+  // Pakistan 3rd-Schedule flag. When on, FBR submission uses retail_price
+  // as the taxable base (saleType="3rd Schedule Goods") instead of
+  // sale_price. Required by PRAL for sugar / drinks / biscuits /
+  // cigarettes / mobile phones / tea etc. retail_price must be set
+  // when this is on (backend serializer enforces this).
+  is_third_schedule: boolean;
 }
 
 const blank: FormValues = {
@@ -41,6 +56,8 @@ const blank: FormValues = {
   cost_price: "0", sale_price: "0", retail_price: "",
   min_sale_price: "", reorder_level: "",
   is_active: true, description: "",
+  hs_code: "",
+  is_third_schedule: false,
 };
 
 export default function ProductEdit() {
@@ -52,6 +69,9 @@ export default function ProductEdit() {
   const uoms = useUoms();
   const taxRates = useTaxRates();
   const categories = useCategories();
+  const { data: setup } = useTenantSetup();
+  const di = setup?.business_mode === "digital_invoicing";
+  const noun = di ? "item" : "product";
 
   const create = useCreateProduct();
   const update = useUpdateProduct();
@@ -78,6 +98,8 @@ export default function ProductEdit() {
         reorder_level: existing.reorder_level ?? "",
         is_active: existing.is_active,
         description: existing.description,
+        hs_code: existing.hs_code ?? "",
+        is_third_schedule: existing.is_third_schedule ?? false,
       });
     }
   }, [existing]);
@@ -89,6 +111,32 @@ export default function ProductEdit() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    // Client-side guard: HS code is required for FBR submission.
+    // The backend serializer also validates this — defence in depth.
+    if (!values.hs_code) {
+      setError(
+        "HS code is required. Every product line submitted to FBR must "
+        + "carry a valid HS code from PRAL's catalog. Pick one from the "
+        + "field above.",
+      );
+      return;
+    }
+    // 3rd-Schedule items must have a retail_price set (the value PRAL
+    // uses as the taxable base). Catch it client-side so the operator
+    // sees the requirement near the field they need to fix, rather
+    // than after a roundtrip.
+    if (values.is_third_schedule) {
+      const retail = Number(values.retail_price);
+      if (!values.retail_price || Number.isNaN(retail) || retail <= 0) {
+        setError(
+          "Retail price is required and must be > 0 when '3rd Schedule "
+          + "item' is on. PRAL charges tax on retail price for 3rd-"
+          + "Schedule goods (sugar, biscuits, drinks, cigarettes, mobile "
+          + "phones, tea). Set the Retail price above before saving.",
+        );
+        return;
+      }
+    }
     const payload = {
       ...values,
       barcode: values.barcode || null,
@@ -106,19 +154,18 @@ export default function ProductEdit() {
       }
       navigate("/catalog/products");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Save failed.";
-      setError(message);
+      setError(extractApiErrorMessage(err));
     }
   }
 
   return (
     <div className="space-y-4">
       <Link to="/catalog/products" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="mr-1 h-4 w-4" /> Back to products
+        <ArrowLeft className="mr-1 h-4 w-4" /> Back to {noun}s
       </Link>
 
       <h1 className="text-2xl font-semibold tracking-tight">
-        {isNew ? "New product" : values.name || "Edit product"}
+        {isNew ? `New ${noun}` : values.name || `Edit ${noun}`}
       </h1>
 
       <form onSubmit={onSubmit} className="grid gap-6 md:grid-cols-2">
@@ -159,18 +206,18 @@ export default function ProductEdit() {
           <CardContent className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Cost price" id="cost_price">
-                <Input id="cost_price" inputMode="decimal" value={values.cost_price} onChange={(e) => set("cost_price", e.target.value)} />
+                <NumberInput id="cost_price" mode="decimal" value={values.cost_price} onChange={(v) => set("cost_price", v)} />
               </Field>
               <Field label="Sale price *" id="sale_price">
-                <Input id="sale_price" inputMode="decimal" value={values.sale_price} onChange={(e) => set("sale_price", e.target.value)} required />
+                <NumberInput id="sale_price" mode="decimal" value={values.sale_price} onChange={(v) => set("sale_price", v)} required />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Retail price" id="retail_price">
-                <Input id="retail_price" inputMode="decimal" value={values.retail_price} onChange={(e) => set("retail_price", e.target.value)} />
+                <NumberInput id="retail_price" mode="decimal" value={values.retail_price} onChange={(v) => set("retail_price", v)} />
               </Field>
               <Field label="Min sale price" id="min_sale_price">
-                <Input id="min_sale_price" inputMode="decimal" value={values.min_sale_price} onChange={(e) => set("min_sale_price", e.target.value)} />
+                <NumberInput id="min_sale_price" mode="decimal" value={values.min_sale_price} onChange={(v) => set("min_sale_price", v)} />
               </Field>
             </div>
           </CardContent>
@@ -178,9 +225,22 @@ export default function ProductEdit() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Tax</CardTitle>
+            <CardTitle>Tax & FBR</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            <Field label="HS code *" id="hs_code">
+              <HsCodePicker
+                id="hs_code"
+                value={values.hs_code}
+                onChange={(code) => set("hs_code", code)}
+                required
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                The PRAL HS code that appears on every invoice line for
+                this product. Required for FBR submission. Type to
+                search ~7,900 codes by code or description.
+              </p>
+            </Field>
             <Field label="Unit of measure *" id="uom">
               <Select id="uom" value={values.uom} onChange={(e) => set("uom", e.target.value)} required>
                 {uoms.data?.map((u) => (
@@ -204,6 +264,24 @@ export default function ProductEdit() {
               />
               Taxable
             </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={values.is_third_schedule}
+                onChange={(e) => set("is_third_schedule", e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">3rd Schedule item</span>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Tick for goods taxed on retail price (MRP) rather than
+                  sale price — sugar, biscuits, carbonated drinks,
+                  cigarettes, mobile phones, tea, infant milk. Requires
+                  Retail price to be set above. Without this, PRAL
+                  rejects the invoice line with error 0122.
+                </p>
+              </span>
+            </label>
           </CardContent>
         </Card>
 
@@ -213,7 +291,7 @@ export default function ProductEdit() {
           </CardHeader>
           <CardContent className="space-y-3">
             <Field label="Reorder level" id="reorder_level">
-              <Input id="reorder_level" inputMode="decimal" value={values.reorder_level} onChange={(e) => set("reorder_level", e.target.value)} />
+              <NumberInput id="reorder_level" mode="decimal" value={values.reorder_level} onChange={(v) => set("reorder_level", v)} />
             </Field>
             <label className="flex items-center gap-2 text-sm">
               <input

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { extractApiErrorMessage } from "@/lib/api";
 import {
   useCustomer,
   useCustomerLedger,
@@ -57,23 +58,37 @@ export default function CustomerDetail() {
 
   async function save() {
     setError(null);
+    // Guard: registration_type must be one of "registered" / "unregistered".
+    // Empty / null fails DRF validation with a generic "not a valid choice"
+    // 400 — default to unregistered when the field is blank.
+    const regType: "registered" | "unregistered" =
+      form.registration_type === "registered" ? "registered" : "unregistered";
     try {
-      const result = await upsert.mutateAsync({
+      await upsert.mutateAsync({
         ...(isNew ? {} : { id }),
         name: form.name?.trim() ?? "",
         phone: form.phone || null,
         email: form.email || null,
         cnic: form.cnic || null,
         ntn: form.ntn || null,
-        registration_type: form.registration_type,
+        registration_type: regType,
         province: form.province || null,
         address: form.address ?? "",
         credit_limit: form.credit_limit ?? "0",
         notes: form.notes ?? "",
       });
-      if (isNew) navigate(`/customers/${result.id}`, { replace: true });
+      // Post-create: return to the customers list. Same UX principle
+      // as the Tenant admin — the operator filled a complete form in
+      // one shot; drop them back to the list with the new row in it
+      // rather than the edit page (which would otherwise re-show the
+      // same form and feel like nothing happened).
+      if (isNew) navigate("/customers", { replace: true });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed.");
+      // DRF returns field-level errors as `{ field: ["message", ...] }`.
+      // ApiError.data carries that body; surface the first useful message
+      // so the operator sees the actual reason (e.g. "ntn: already
+      // exists") instead of a generic "Save failed."
+      setError(extractApiErrorMessage(e));
     }
   }
 

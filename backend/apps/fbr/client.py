@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -56,6 +57,29 @@ class PralTransientError(PralError): ...
 class PralValidationError(PralError): ...
 class PralBusinessError(PralError): ...
 class PralAuthError(PralError): ...
+
+
+_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+
+
+def _try_lenient_json(text: str) -> dict[str, Any] | None:
+    """Best-effort recovery of PRAL's quirky 'mostly-JSON' responses.
+
+    Returns the parsed dict on success, None if the recovery still
+    fails. We attempt one fix:
+      - remove trailing commas before `}` / `]` (PRAL emits these
+        between blocks; strict json.loads rejects them).
+
+    Stray tabs and \n are valid whitespace in JSON, so they're left
+    alone — Python's parser ignores them.
+    """
+    if not text or text[0] not in "{[":
+        return None  # not even pretending to be JSON
+    cleaned = _TRAILING_COMMA_RE.sub(r"\1", text)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        return None
 
 
 def _exception_for(category: ErrorCategory) -> type[PralError]:
@@ -170,13 +194,29 @@ class FbrClient:
         try:
             body = r.json()
         except json.JSONDecodeError:
-            body = {"raw_text": r.text[:2000]}
-            logger.error("PRAL returned non-JSON (status %s)", r.status_code)
-            # Treat as transient — likely a gateway/firewall page.
-            raise PralTransientError(
-                f"Malformed response from PRAL (status {r.status_code})",
-                http_status=r.status_code,
-                response=body,
+            # PRAL's API server has a known bug: under some load
+            # conditions it returns *almost*-JSON with trailing commas
+            # and stray tabs (verified via raw_text capture in the
+            # FbrSubmission log — the text starts and ends with `{`/`}`
+            # and parses fine after stripping the trailing comma
+            # before `}`). Try one lenient pass before declaring it
+            # malformed: strip ASCII whitespace inside braces + remove
+            # trailing commas before `}` / `]`. If THAT also fails, it
+            # really is a gateway/firewall page and we surface a
+            # transient error.
+            body = _try_lenient_json(r.text)
+            if body is None:
+                body = {"raw_text": r.text[:2000]}
+                logger.error("PRAL returned non-JSON (status %s)", r.status_code)
+                raise PralTransientError(
+                    f"Malformed response from PRAL (status {r.status_code})",
+                    http_status=r.status_code,
+                    response=body,
+                )
+            logger.warning(
+                "PRAL returned malformed JSON (trailing commas / tabs); "
+                "recovered via lenient parse (status %s)",
+                r.status_code,
             )
 
         result = PralResponse(http_status=r.status_code, body=body, duration_ms=duration_ms)

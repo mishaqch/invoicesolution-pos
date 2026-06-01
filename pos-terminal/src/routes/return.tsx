@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
+import { useToast } from "@/components/feedback/Toast";
 import { ApiError, api } from "@/lib/api";
 import { Money } from "@/lib/money";
 import { newClientUuid } from "@/lib/uuid";
@@ -59,6 +61,7 @@ export default function ReturnRoute() {
   const navigate = useNavigate();
   const ctx = usePosContext();
   const user = useSessionStore((s) => s.user);
+  const toast = useToast();
 
   // Step 1 — find original invoice
   const [searchLocal, setSearchLocal] = useState("");
@@ -152,9 +155,10 @@ export default function ReturnRoute() {
       );
       // Drawer fires for cash refunds.
       if (refundMethod === "cash") void window.api.drawer.open();
-      window.alert(
-        `Return ${ret.return_number} processed. Refund: Rs ${ret.refund_amount}`,
-      );
+      toast.show({
+        message: `Return ${ret.return_number} processed · Refund Rs ${ret.refund_amount}`,
+        variant: "success",
+      });
       navigate("/sale", { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? `API ${err.status}` : "Return failed.");
@@ -164,8 +168,12 @@ export default function ReturnRoute() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex h-12 items-center justify-between border-b px-4">
+    // h-full + min-h-0 so the inner <main> scrolls instead of the
+    // whole window — matches the layout pattern used on sale.tsx and
+    // today-invoices.tsx. Without this the body grows past viewport
+    // and the header scrolls off-screen.
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <button
           onClick={() => navigate("/sale", { replace: true })}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -175,7 +183,7 @@ export default function ReturnRoute() {
         <div className="text-sm font-medium">Return / refund</div>
       </header>
 
-      <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 gap-4 p-6 md:grid-cols-12">
+      <main className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 md:grid-cols-12">
         {/* Step 1 */}
         <section className="md:col-span-4">
           <Card>
@@ -236,15 +244,15 @@ export default function ReturnRoute() {
                           Sold qty: {line.quantity} · Rs {line.unit_price} ea
                         </div>
                       </div>
-                      <input
-                        type="number"
-                        min="0" step="0.01" max={line.quantity}
+                      <NumberInput
+                        mode="decimal"
                         value={pickedLines[line.id] ?? ""}
-                        onChange={(e) =>
-                          setPickedLines({ ...pickedLines, [line.id]: e.target.value })
+                        onChange={(v) =>
+                          setPickedLines({ ...pickedLines, [line.id]: v })
                         }
-                        className="w-20 rounded-md border bg-background px-2 py-1 text-right text-sm"
+                        className="w-20 py-1 text-right text-sm"
                         disabled={line.is_cancelled}
+                        aria-label={`Return quantity for ${line.product_name}`}
                       />
                     </div>
                   ))}

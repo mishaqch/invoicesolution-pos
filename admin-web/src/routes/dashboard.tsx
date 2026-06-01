@@ -2,8 +2,9 @@ import { AlertCircle, Package, Receipt } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InvoiceTimeseriesChart } from "@/features/invoices/InvoiceTimeseriesChart";
 import { OnboardingWizard } from "@/features/onboarding/Wizard";
-import { useDashboard } from "@/lib/queries";
+import { useDashboard, useTenantSetup } from "@/lib/queries";
 import { useAuthStore } from "@/stores/auth";
 
 function formatRs(amount: string): string {
@@ -43,6 +44,26 @@ export default function DashboardRoute() {
   const user = useAuthStore((s) => s.user);
   const tenant = useAuthStore((s) => s.tenant);
   const { data, isLoading } = useDashboard();
+  const { data: setup } = useTenantSetup();
+
+  // Digital-Invoicing tenants don't have a till — relabel the POS-
+  // flavoured KPI tiles ("Today gross", "Returns today") with what
+  // the back-office operator actually cares about. The underlying
+  // numbers come from the same endpoint; only the framing changes.
+  const isDigitalOnly = setup?.business_mode === "digital_invoicing";
+  const tileLabels = isDigitalOnly
+    ? {
+      gross: "Invoices today",
+      count: "Sent to FBR",
+      avg: "Avg invoice",
+      fourth: "Pending validation",
+    }
+    : {
+      gross: "Today gross",
+      count: "Invoices",
+      avg: "Avg ticket",
+      fourth: "Returns today",
+    };
 
   return (
     <div className="space-y-6">
@@ -62,6 +83,11 @@ export default function DashboardRoute() {
         )}
       </div>
 
+      {/* SetupWizard removed: business_mode + FBR taxonomy are set
+          by the platform super-admin at tenant creation, not by the
+          tenant operator. Tenants get a pre-configured environment
+          appropriate for their plan (POS / IMS or Digital Invoicing). */}
+
       <OnboardingWizard />
 
       {isLoading || !data ? (
@@ -72,7 +98,7 @@ export default function DashboardRoute() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Today gross
+                  {tileLabels.gross}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -83,7 +109,7 @@ export default function DashboardRoute() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Invoices
+                  {tileLabels.count}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -93,7 +119,7 @@ export default function DashboardRoute() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Avg ticket
+                  {tileLabels.avg}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -103,7 +129,7 @@ export default function DashboardRoute() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
-                  Returns today
+                  {tileLabels.fourth}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -111,6 +137,10 @@ export default function DashboardRoute() {
               </CardContent>
             </Card>
           </div>
+
+          {/* FBR-style invoice bar chart — daily/monthly/quarterly/yearly,
+              sale vs debit/credit note. Matches PRAL DI manual §4.1.2 §2.1. */}
+          <InvoiceTimeseriesChart />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>

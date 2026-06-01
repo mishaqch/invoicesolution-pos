@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
 import { Money } from "@/lib/money";
 
@@ -40,12 +41,13 @@ function AmountField({ amount, setAmount, remaining }: AmountFieldProps) {
   return (
     <div>
       <Label>Amount</Label>
-      <Input
-        inputMode="decimal"
+      <NumberInput
+        mode="decimal"
         value={amount}
-        onChange={(e) => setAmount(e.target.value)}
+        onChange={setAmount}
         placeholder={remaining.display()}
         className="font-mono"
+        aria-label="Tender amount"
       />
       <div className="mt-2 flex flex-wrap gap-1">
         <Button
@@ -68,7 +70,7 @@ export function CashSubFlow({ remaining, onAdd }: Props) {
     <div className="space-y-3">
       <AmountField amount={amount} setAmount={setAmount} remaining={remaining} />
       {change.isPositive() && (
-        <div className="rounded bg-green-50 p-2 text-sm">
+        <div className="rounded bg-success-soft text-success-soft-foreground p-2 text-sm">
           Change: <span className="font-mono">Rs {change.display()}</span>
         </div>
       )}
@@ -106,16 +108,18 @@ export function CardSubFlow({
       <div className="grid grid-cols-2 gap-2">
         <div>
           <Label>Last 4</Label>
-          <Input
-            inputMode="numeric" maxLength={4}
-            value={last4} onChange={(e) => setLast4(e.target.value.replace(/\D/g, ""))}
+          <NumberInput
+            mode="integer" maxLength={4}
+            value={last4} onChange={setLast4}
+            aria-label="Card last 4 digits"
           />
         </div>
         <div>
           <Label>Auth code</Label>
-          <Input
-            inputMode="numeric" maxLength={6}
-            value={authCode} onChange={(e) => setAuthCode(e.target.value.replace(/\D/g, ""))}
+          <NumberInput
+            mode="integer" maxLength={6}
+            value={authCode} onChange={setAuthCode}
+            aria-label="Card auth code"
           />
         </div>
       </div>
@@ -131,9 +135,10 @@ export function CardSubFlow({
               Skip RRN
             </button>
           </div>
-          <Input
-            inputMode="numeric"
-            value={rrn} onChange={(e) => setRrn(e.target.value.replace(/\D/g, ""))}
+          <NumberInput
+            mode="integer"
+            value={rrn} onChange={setRrn}
+            aria-label="Card RRN"
           />
         </div>
       ) : (
@@ -180,7 +185,7 @@ export function WalletSubFlow({
           </p>
         </div>
       ) : (
-        <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+        <p className="rounded bg-warning-soft p-2 text-xs text-warning-soft-foreground">
           No QR configured. Set the QR image URL under admin → Payment methods.
         </p>
       )}
@@ -193,10 +198,11 @@ export function WalletSubFlow({
       </div>
       <div>
         <Label>Customer phone (optional)</Label>
-        <Input
-          inputMode="tel"
-          value={phone} onChange={(e) => setPhone(e.target.value)}
+        <NumberInput
+          mode="integer" maxLength={11}
+          value={phone} onChange={setPhone}
           placeholder="03001234567"
+          aria-label="Customer phone"
         />
       </div>
       <Button
@@ -228,7 +234,7 @@ export function RaastSubFlow({ remaining, onAdd, config }: Props) {
           </p>
         </div>
       ) : (
-        <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+        <p className="rounded bg-warning-soft p-2 text-xs text-warning-soft-foreground">
           No Raast QR configured. Set it under admin → Payment methods.
         </p>
       )}
@@ -274,9 +280,10 @@ export function BankTransferSubFlow({ remaining, onAdd, config }: Props) {
       </div>
       <div>
         <Label>Last 4 (optional)</Label>
-        <Input
-          inputMode="numeric" maxLength={4}
-          value={last4} onChange={(e) => setLast4(e.target.value.replace(/\D/g, ""))}
+        <NumberInput
+          mode="integer" maxLength={4}
+          value={last4} onChange={setLast4}
+          aria-label="Bank account last 4 digits"
         />
       </div>
       <div>
@@ -306,7 +313,7 @@ export function StoreCreditSubFlow({
 
   if (!hasCustomer) {
     return (
-      <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+      <p className="rounded bg-warning-soft p-2 text-xs text-warning-soft-foreground">
         Store credit requires a registered customer on the sale. Pick a
         customer from the cart pane first.
       </p>
@@ -314,7 +321,7 @@ export function StoreCreditSubFlow({
   }
   if (storeCredit.isZero() || storeCredit.isNegative()) {
     return (
-      <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+      <p className="rounded bg-warning-soft p-2 text-xs text-warning-soft-foreground">
         This customer has no store credit available.
       </p>
     );

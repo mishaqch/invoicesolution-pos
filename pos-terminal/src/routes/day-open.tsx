@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { NumberInput } from "@/components/ui/number-input";
 import { ApiError, api } from "@/lib/api";
 import { newClientUuid } from "@/lib/uuid";
 import { useSessionStore } from "@/stores/session";
@@ -84,7 +85,7 @@ export default function DayOpenRoute() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
+    <div className="flex h-full items-center justify-center overflow-y-auto bg-muted/40 p-4">
       <div className="w-full max-w-sm rounded-2xl border bg-background p-6 shadow-sm">
         <div className="mb-1 text-center text-xs uppercase tracking-wide text-muted-foreground">
           {ctx.branch.name} · {ctx.terminal.name}
@@ -97,13 +98,12 @@ export default function DayOpenRoute() {
         </div>
 
         <label className="text-sm font-medium">{t("day_open.opening_float")}</label>
-        <input
-          type="text"
-          inputMode="decimal"
+        <NumberInput
+          mode="decimal"
           value={opening}
-          onChange={(e) => setOpening(e.target.value)}
+          onChange={setOpening}
           aria-label={t("day_open.opening_float")}
-          className="mt-1 h-10 w-full rounded-md border border-input bg-background px-3 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-1 h-10 text-base"
         />
         <p className="mt-2 text-xs text-muted-foreground">
           {t("day_open.opening_help", "Enter the cash float you are starting the day with.")}
@@ -126,7 +126,7 @@ function FullScreen({
   variant?: "info" | "error";
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-8 text-sm">
+    <div className="flex h-full items-center justify-center p-8 text-sm">
       <div className={variant === "error" ? "text-destructive" : "text-muted-foreground"}>
         {msg}
       </div>

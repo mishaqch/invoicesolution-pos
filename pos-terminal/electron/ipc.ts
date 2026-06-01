@@ -11,15 +11,20 @@
  *          numbering.
  */
 
-import { ipcMain, type IpcMainInvokeEvent, BrowserWindow } from "electron";
+import { app, ipcMain, type IpcMainInvokeEvent, BrowserWindow } from "electron";
 
 import { getDb, getMeta, setMeta } from "./db/client";
 import { nextInvoiceNumber } from "./db/numbering";
+import { checkSdcHealth, fiscalizeInvoice } from "./fiscalize";
+import {
+  getPairedIdentity, getSdcUrl, isPaired, pairWithCode, setSdcUrl, unpair,
+} from "./pairing";
 import {
   currentStatus, kickWorker, manualRetryFailed, setAuthTokens, subscribe,
 } from "./sync/manager";
 import {
   closeCashSession,
+  deleteHeldInvoice,
   getInvoiceWithLines,
   getOpenSession,
   holdInvoice,
@@ -27,20 +32,52 @@ import {
   openCashSession,
   persistInvoice,
   recallInvoice,
+  setInvoiceFbrFields,
   totalsForSession,
   type PosCashSession,
   type PosInvoiceInput,
   type PosPaymentInput,
   type PosSaleItemInput,
 } from "./db/sales";
-import { listProducts, productsCount, searchProducts, syncCatalog } from "./db/sync";
+import { listProducts, productByBarcode, productsCount, searchProducts, syncCatalog } from "./db/sync";
 import { openCashDrawer, printReceipt } from "./printer";
 import { postToCustomerDisplay } from "./customer-display";
 
-export function registerIpcHandlers() {
+export function registerIpcHandlers(opts: { apiBase: string }) {
+  const { apiBase } = opts;
+
   // Meta
   ipcMain.handle("meta:get", (_e, key: string) => getMeta(key));
   ipcMain.handle("meta:set", (_e, key: string, value: string) => setMeta(key, value));
+
+  // --- Device pairing -----------------------------------------------------
+  ipcMain.handle("pairing:status", () => ({
+    paired: isPaired(),
+    identity: getPairedIdentity(),
+  }));
+  ipcMain.handle("pairing:pair", async (_e, code: string) => {
+    try {
+      const identity = await pairWithCode(apiBase, code, app.getVersion());
+      return { ok: true, identity };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : "Pairing failed." };
+    }
+  });
+  ipcMain.handle("pairing:unpair", () => {
+    unpair();
+    return { ok: true };
+  });
+
+  // --- SDC config + fiscalization ----------------------------------------
+  ipcMain.handle("sdc:get-url", () => getSdcUrl());
+  ipcMain.handle("sdc:set-url", (_e, url: string) => {
+    setSdcUrl(url);
+    return { ok: true };
+  });
+  ipcMain.handle("sdc:health", async () => checkSdcHealth());
+  ipcMain.handle("fiscalize:invoice", async (_e, invoiceId: string) =>
+    fiscalizeInvoice(apiBase, invoiceId),
+  );
 
   // Queue
   ipcMain.handle(
@@ -84,6 +121,7 @@ export function registerIpcHandlers() {
     searchProducts(query, limit),
   );
   ipcMain.handle("catalog:list", (_e, limit?: number) => listProducts(limit));
+  ipcMain.handle("catalog:by-barcode", (_e, barcode: string) => productByBarcode(barcode));
   ipcMain.handle("catalog:count", () => productsCount());
 
   // Sales — Phase 2
@@ -115,6 +153,25 @@ export function registerIpcHandlers() {
     recallInvoice(invoice_id);
     return { ok: true };
   });
+  ipcMain.handle("sales:delete-held", (_e, invoice_id: string) => {
+    deleteHeldInvoice(invoice_id);
+    return { ok: true };
+  });
+  ipcMain.handle(
+    "sales:set-fbr-fields",
+    (
+      _e,
+      args: {
+        invoice_id: string;
+        fbr_invoice_number: string;
+        fbr_qr_payload: string | null;
+        fbr_validated_at: string | null;
+      },
+    ) => {
+      setInvoiceFbrFields(args);
+      return { ok: true };
+    },
+  );
 
   // Cash sessions
   ipcMain.handle("session:open", (_e, payload: PosCashSession) => {

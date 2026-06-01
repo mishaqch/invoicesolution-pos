@@ -24,10 +24,17 @@ export default defineConfig(({ mode }) => {
       // which dominates the bundle once the report viewer + wizard ship.
       rollupOptions: {
         output: {
-          manualChunks: {
-            "react-vendor": ["react", "react-dom", "react-router-dom"],
-            "query-vendor": ["@tanstack/react-query"],
-            "form-vendor": ["react-hook-form", "@hookform/resolvers", "zod"],
+          // Function form (required by Rolldown / Vite 8; also valid on
+          // Rollup). Splits the heavy, rarely-changing vendor libs into
+          // their own cacheable chunks so app-code edits don't bust them.
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return undefined;
+            if (/[\\/]node_modules[\\/](react|react-dom|react-router-dom|react-router|scheduler)[\\/]/.test(id))
+              return "react-vendor";
+            if (/[\\/]node_modules[\\/]@tanstack[\\/]/.test(id)) return "query-vendor";
+            if (/[\\/]node_modules[\\/](react-hook-form|@hookform|zod)[\\/]/.test(id))
+              return "form-vendor";
+            return undefined;
           },
         },
       },

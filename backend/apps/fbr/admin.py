@@ -13,7 +13,13 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 from unfold.decorators import display
 
-from .models import FbrCancelBudget, FbrScenarioTest, FbrSubmission, FbrToken
+from .models import (
+    FbrCancelBudget,
+    FbrScenarioTest,
+    FbrSubmission,
+    FbrToken,
+    ScenarioPayloadTemplate,
+)
 
 
 class _ReadOnlyAdmin(ModelAdmin):
@@ -81,3 +87,37 @@ class FbrCancelBudgetAdmin(_ReadOnlyAdmin):
     search_fields = ("tenant__business_name",)
     list_filter = ("month_start",)
     date_hierarchy = "month_start"
+
+
+# ---------------------------------------------------------------------------
+# Scenario payload templates — editable (super-admin only)
+# ---------------------------------------------------------------------------
+
+
+@admin.register(ScenarioPayloadTemplate)
+class ScenarioPayloadTemplateAdmin(ModelAdmin):
+    """Curated library of working PRAL payloads, one per scenario per
+    business type. Super-admin only — used when onboarding new tenants
+    of the same type so we don't have to re-iterate sandbox runs.
+
+    Editable (unlike the other FBR admin pages) because the whole
+    purpose is for super-admin to refine + maintain the library."""
+
+    list_fullwidth = True
+    list_display = ("name", "scenario_code", "created_by", "updated_at")
+    list_filter = ("scenario_code",)
+    search_fields = ("name", "scenario_code", "notes")
+    readonly_fields = ("created_by", "created_at", "updated_at")
+    fields = (
+        "name", "scenario_code", "notes", "payload",
+        "created_by", "created_at", "updated_at",
+    )
+
+    def save_model(self, request, obj, form, change):
+        if not obj.created_by_id:
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
+    def has_module_permission(self, request):
+        # Hide entirely from non-superusers.
+        return bool(getattr(request.user, "is_superuser", False))

@@ -22,11 +22,6 @@ import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 import { useTenderStore, type PaymentMethodCode, type Tender } from "@/stores/tender";
 
-function terminalIndexFromName(name: string): number {
-  const digits = name.match(/\d+/);
-  return digits ? parseInt(digits[0], 10) : 1;
-}
-
 export default function PaymentRoute() {
   const navigate = useNavigate();
   const lines = useSaleStore((s) => s.lines);
@@ -82,7 +77,7 @@ export default function PaymentRoute() {
     try {
       const localNumber = await window.api.numbering.next({
         branchCode: ctx.branch.code,
-        terminalIndex: terminalIndexFromName(ctx.terminal.name),
+        terminalIndex: ctx.terminal.index,
       });
       const invoiceId = newClientUuid();
       const invoiceDate = new Date().toISOString().slice(0, 10);
@@ -226,8 +221,11 @@ export default function PaymentRoute() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex h-12 items-center justify-between border-b px-4">
+    // h-full + min-h-0 so the payment form scrolls inside <main> when
+    // a tender flow opens many sub-fields, rather than pushing the
+    // header/total bar off the top of the screen.
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <button
           onClick={() => navigate(-1)}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -237,7 +235,7 @@ export default function PaymentRoute() {
         <div className="font-mono text-base">Total: Rs {grand.display()}</div>
       </header>
 
-      <main className="mx-auto grid w-full max-w-4xl flex-1 grid-cols-1 gap-4 p-6 md:grid-cols-2">
+      <main className="mx-auto grid min-h-0 w-full max-w-4xl flex-1 grid-cols-1 gap-4 overflow-y-auto p-6 md:grid-cols-2">
         <section className="space-y-4">
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="rounded-md border bg-background p-3">
@@ -246,7 +244,9 @@ export default function PaymentRoute() {
             </div>
             <div
               className={`rounded-md border p-3 ${
-                complete ? "bg-green-50 text-green-900" : "bg-amber-50 text-amber-900"
+                complete
+                  ? "bg-success-soft text-success-soft-foreground"
+                  : "bg-warning-soft text-warning-soft-foreground"
               }`}
             >
               <div className="text-xs">{complete ? "Done" : "Remaining"}</div>
@@ -259,7 +259,7 @@ export default function PaymentRoute() {
           <TenderList tenders={tenders} onRemove={removeTender} />
 
           {methodConfigError && (
-            <p className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+            <p className="rounded bg-warning-soft p-2 text-xs text-warning-soft-foreground">
               Couldn't load method config from the server. Falling back to cash only.
             </p>
           )}

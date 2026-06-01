@@ -51,7 +51,14 @@ export default function SyncHealth() {
                   const t = byId.get(s.terminal);
                   return (
                     <TableRow key={s.terminal}>
-                      <TableCell>{t?.name ?? s.terminal}</TableCell>
+                      <TableCell>
+                        {t?.name ?? s.terminal}
+                        {t?.terminal_index != null && (
+                          <span className="ml-1 font-mono text-xs text-muted-foreground">
+                            (T{t.terminal_index})
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell className="font-mono text-xs">
                         {t?.branch.slice(0, 8) ?? "—"}…
                       </TableCell>

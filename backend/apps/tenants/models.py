@@ -9,6 +9,12 @@ from __future__ import annotations
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
+from apps.tenants.business_mode import (
+    BUSINESS_MODES,
+    DEFAULT_BUSINESS_MODE,
+    FBR_BUSINESS_NATURE_CHOICES,
+    FBR_SECTOR_CHOICES,
+)
 from apps.tenants.managers import TenantScopedManager
 from apps.tenants.modules import default_modules_enabled as _default_modules_enabled
 from core.uuid7 import uuid7
@@ -75,12 +81,78 @@ class Tenant(models.Model):
     cnic_owner = models.CharField(max_length=15, blank=True, null=True)
 
     business_type = models.CharField(max_length=50, choices=BUSINESS_TYPES)
+
+    # Product mode — POS vs Digital Invoicing vs both. Drives which
+    # modules are unlocked by default at onboarding and how the
+    # frontend chrome is rendered. Editable post-onboarding via the
+    # admin's setup wizard; flipping it does NOT auto-toggle modules
+    # (super-admin owns module config), only the initial wizard does.
+    business_mode = models.CharField(
+        max_length=20, choices=BUSINESS_MODES, default=DEFAULT_BUSINESS_MODE,
+    )
+
+    # FBR-defined taxonomy. Wire values are the exact strings PRAL
+    # accepts. Mis-spelling these on submission causes hard-to-debug
+    # invoice rejections, so we constrain via choices.
     fbr_business_natures = ArrayField(
-        models.CharField(max_length=50),
+        models.CharField(max_length=50, choices=FBR_BUSINESS_NATURE_CHOICES),
         default=list,
         blank=True,
+        help_text="One or more FBR-defined business natures. Required "
+                  "before submitting invoices to PRAL.",
     )
-    fbr_sector = models.CharField(max_length=50, blank=True, null=True)
+    fbr_sector = models.CharField(
+        max_length=50, choices=FBR_SECTOR_CHOICES, blank=True, null=True,
+        help_text="The single FBR-defined sector this tenant operates "
+                  "in. Drives the scenarioId list for sandbox testing.",
+    )
+
+    # Per-tenant FBR scenario assignment from IRIS.
+    #
+    # Background: PRAL assigns each Digital Invoicing tenant a SPECIFIC
+    # list of scenarios they must pass in sandbox before production
+    # activation. The list is visible to the tenant on their IRIS
+    # profile page (Adnan Jamil's wholesaler/retailer profile, for
+    # instance, lists SN001, SN002, SN008, SN026, SN027, SN028). PRAL
+    # does NOT expose this list via API — we tried every plausible
+    # endpoint and got 404. So the super-admin must paste it from IRIS.
+    #
+    # When set, this list overrides the nature×sector mapping in
+    # apps/fbr/scenarios.py:ELIGIBLE_BY_NATURE_AND_SECTOR. When empty,
+    # we fall back to the table so existing tenants keep working
+    # without operator intervention.
+    #
+    # Stored as a JSON array of scenario codes: ["SN001", "SN002", ...].
+    # Codes are validated against apps.fbr.scenarios.SCENARIOS at the
+    # form layer, not the DB level, because the scenario catalog is
+    # code-driven (registered via @register decorator).
+    assigned_scenarios = models.JSONField(
+        default=list, blank=True,
+        help_text="The FBR scenarios assigned to this tenant in IRIS. "
+                  "Paste from the tenant's IRIS profile. When set, this "
+                  "list determines which scenarios the runner tests "
+                  "(overrides our manual-derived nature×sector default).",
+    )
+
+    # NTN of a real registered buyer that PRAL has on file, used by
+    # registered-buyer scenario tests (SN001, SN005). PRAL's documented
+    # test NTN "1000000000007" is NOT actually registered in their
+    # sandbox database — every registered-buyer scenario fails with
+    # errorCode 0205 ("Provided scenario not valid for unregistered
+    # user") unless we send a real NTN.
+    #
+    # Operator must arrange this with a partner business (any company
+    # with valid FBR/IRIS registration who allows their NTN to be used
+    # for sandbox testing). 13 digits. Leave empty if the tenant has
+    # no registered-buyer scenarios in their IRIS list.
+    fbr_test_buyer_ntn = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="NTN of a real registered buyer for sandbox SN001/SN005 "
+                  "tests. PRAL's docs default (1000000000007) is not "
+                  "actually registered — arrange a real NTN with a "
+                  "partner business. Leave empty if no registered-"
+                  "buyer scenarios are assigned.",
+    )
     province = models.CharField(max_length=20, choices=PROVINCES)
 
     address = models.TextField(blank=True, null=True)
@@ -345,7 +417,14 @@ class Branch(models.Model):
 
     is_active = models.BooleanField(default=True)
     is_default = models.BooleanField(default=False)
+    # FBR POS registration for this outlet. The POS ID + Code are issued by
+    # FBR when the outlet is registered as a POS under Digital Invoicing.
+    # NB: these are NOT sent in the postinvoicedata payload (the Bearer token
+    # in fbr_tokens is what binds submissions to the registered POS on FBR's
+    # side). We store them for our own traceability, receipts, and to surface
+    # the FBR-portal POS ID to operators. See project_pos_fbr_local_fields.
     fbr_pos_id = models.CharField(max_length=50, blank=True, null=True)
+    fbr_pos_code = models.CharField(max_length=50, blank=True, null=True)
 
     receipt_header = models.TextField(blank=True, null=True)
     receipt_footer = models.TextField(blank=True, null=True)
@@ -393,6 +472,25 @@ class Terminal(models.Model):
     )
     name = models.CharField(max_length=100)
     device_fingerprint = models.CharField(max_length=128, unique=True)
+    # Stable per-branch ordinal (1, 2, 3 …) assigned at creation. Drives the
+    # per-terminal segment of the invoice number (BRANCH-T{index}-YYYY-NNNN)
+    # so two terminals in the same branch can NEVER mint colliding numbers —
+    # unlike deriving the index from the (free-text) name. Unique per branch.
+    terminal_index = models.PositiveSmallIntegerField(blank=True, null=True)
+
+    # --- Device pairing (Electron terminal onboarding) ---------------------
+    # The owner creates the Terminal row in admin-web and gets a short one-time
+    # pairing code. On first launch the cashier types the code into the
+    # invoiceSolution.exe terminal; the terminal redeems it via the public
+    # /api/terminals/pair/ endpoint, which binds THIS device to this Terminal
+    # row (stamping device_fingerprint) and returns the branch identity the
+    # terminal needs (branch_id, terminal_index, sdc_url). One branch = one POS
+    # registration; many terminals can pair to that branch, each a distinct row.
+    pairing_code = models.CharField(
+        max_length=16, blank=True, null=True, db_index=True,
+    )
+    pairing_code_expires_at = models.DateTimeField(blank=True, null=True)
+    paired_at = models.DateTimeField(blank=True, null=True)
     os_version = models.CharField(max_length=50, blank=True, null=True)
     app_version = models.CharField(max_length=20, blank=True, null=True)
 
@@ -412,6 +510,13 @@ class Terminal(models.Model):
 
     class Meta:
         db_table = "terminals"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "terminal_index"],
+                name="uniq_terminal_branch_index",
+                condition=models.Q(terminal_index__isnull=False),
+            ),
+        ]
         indexes = [
             models.Index(
                 fields=["branch"],
@@ -422,6 +527,72 @@ class Terminal(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} @ {self.branch_id}"
+
+    def save(self, *args, **kwargs):
+        # Auto-assign a stable per-branch terminal_index on first save so every
+        # creation path (admin API, implicit default, seed, tests) is covered.
+        # Locked + retried so concurrent terminal creations in one branch don't
+        # race to the same index (the unique constraint is the final backstop).
+        from django.db import transaction
+
+        if self.terminal_index is None and self.branch_id is not None:
+            with transaction.atomic():
+                taken = (
+                    Terminal.objects.select_for_update()
+                    .filter(branch_id=self.branch_id, terminal_index__isnull=False)
+                    .values_list("terminal_index", flat=True)
+                )
+                taken_set = set(taken)
+                nxt = 1
+                while nxt in taken_set:
+                    nxt += 1
+                self.terminal_index = nxt
+                super().save(*args, **kwargs)
+            return
+        super().save(*args, **kwargs)
+
+    # --- Pairing helpers ---------------------------------------------------
+    PAIRING_CODE_TTL_DAYS = 14
+
+    @staticmethod
+    def _generate_pairing_code() -> str:
+        """A short, human-typable, unambiguous one-time code (e.g. 'K7P3-9QXM').
+
+        Uses an alphabet with the visually ambiguous chars removed (no 0/O,
+        1/I/L) so a cashier reading it off the screen can't mistype it. 8
+        chars from a 31-symbol alphabet ≈ 31^8 ≈ 8.5e11 combinations — and
+        the code is single-use + expiring, so collisions/guessing aren't a
+        concern at our scale.
+        """
+        import secrets
+
+        alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+        raw = "".join(secrets.choice(alphabet) for _ in range(8))
+        return f"{raw[:4]}-{raw[4:]}"
+
+    def issue_pairing_code(self) -> str:
+        """(Re)issue a fresh pairing code; persists code + expiry. Returns it."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        # Loop on the (rare) unique-ish collision so we never hand out a code
+        # that's already live on another terminal.
+        for _ in range(5):
+            code = self._generate_pairing_code()
+            if not Terminal.objects.filter(pairing_code=code).exclude(pk=self.pk).exists():
+                break
+        self.pairing_code = code
+        self.pairing_code_expires_at = timezone.now() + timedelta(
+            days=self.PAIRING_CODE_TTL_DAYS,
+        )
+        self.save(update_fields=["pairing_code", "pairing_code_expires_at", "updated_at"])
+        return code
+
+    def clear_pairing_code(self) -> None:
+        self.pairing_code = None
+        self.pairing_code_expires_at = None
+        self.save(update_fields=["pairing_code", "pairing_code_expires_at", "updated_at"])
 
 
 class CashSession(models.Model):

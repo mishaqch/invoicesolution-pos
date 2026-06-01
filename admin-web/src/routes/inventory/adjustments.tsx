@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
 import { useBranches, usePostAdjustment, useProducts } from "@/lib/queries";
 
@@ -77,7 +78,7 @@ export default function Adjustments() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="qty">Quantity *</Label>
-              <Input id="qty" inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+              <NumberInput id="qty" mode="decimal" value={quantity} onChange={setQuantity} required />
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label htmlFor="reason">Reason *</Label>

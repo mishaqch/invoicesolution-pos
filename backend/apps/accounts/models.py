@@ -63,6 +63,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         default="",
         choices=(
             ("super_admin", "Super admin"),
+            ("account_manager", "Account manager"),
             ("billing_admin", "Billing admin"),
             ("support_lead", "Support lead"),
             ("support_agent", "Support agent"),
@@ -104,8 +105,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.password_changed_at = timezone.now()
 
     def set_pin(self, raw_pin: str) -> None:
-        if not raw_pin or not raw_pin.isdigit() or not 4 <= len(raw_pin) <= 6:
-            raise ValueError("PIN must be 4–6 digits.")
+        # Exactly 6 digits — kept in lockstep with the pin-login
+        # serializer regex (apps.accounts.serializers.PinLoginSerializer)
+        # and the terminal's PIN_LENGTH (pos-terminal/src/routes/login.tsx).
+        # Variable-length PINs caused the terminal to auto-submit at the
+        # lower bound with a partial value, making longer PINs un-loggable.
+        if not raw_pin or not raw_pin.isdigit() or len(raw_pin) != 6:
+            raise ValueError("PIN must be exactly 6 digits.")
         self.pin_hash = make_password(raw_pin)
 
     def check_pin(self, raw_pin: str) -> bool:

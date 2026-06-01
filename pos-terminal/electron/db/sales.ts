@@ -252,6 +252,35 @@ export function getInvoiceWithLines(invoice_id: string) {
   return { invoice, items, payments };
 }
 
+/**
+ * Persist the PRAL validation result onto the local invoice row. Called from
+ * the renderer once `useFbrConfirmation` polls the central server and sees the
+ * invoice go `valid` with an FBR invoice number. This is what makes an offline
+ * reprint FBR-compliant: the number + QR payload come from the local row, not
+ * from transient in-memory state that's lost on reload.
+ *
+ * Per the "PRAL response is the source of truth" invariant we only ever set
+ * these (never clear them) and only when the server actually reports a number.
+ */
+export function setInvoiceFbrFields(args: {
+  invoice_id: string;
+  fbr_invoice_number: string;
+  fbr_qr_payload: string | null;
+  fbr_validated_at: string | null;
+}): void {
+  getDb()
+    .prepare(
+      `UPDATE invoices
+         SET fbr_invoice_number = @fbr_invoice_number,
+             fbr_qr_payload     = @fbr_qr_payload,
+             fbr_validated_at   = @fbr_validated_at,
+             status             = 'valid',
+             updated_at         = @updated_at
+       WHERE id = @invoice_id`,
+    )
+    .run({ ...args, updated_at: new Date().toISOString() });
+}
+
 export function holdInvoice(invoice_id: string, label: string): void {
   getDb()
     .prepare(
@@ -268,4 +297,29 @@ export function recallInvoice(invoice_id: string): void {
        WHERE id = ?`,
     )
     .run(new Date().toISOString(), invoice_id);
+}
+
+/** Delete a held invoice + its lines. The held row exists only so the
+ *  cashier can find the cart again; once they've recalled it back into
+ *  the in-memory cart, the row can go away. The next checkout creates
+ *  a fresh row with a new client_uuid + local_invoice_number.
+ *
+ *  Guard: refuses to delete a row that's already on the sync queue
+ *  (i.e. was once a completed sale). Held rows by definition were
+ *  never enqueued (see persistInvoice), so this guard fires only on
+ *  unexpected callers.
+ */
+export function deleteHeldInvoice(invoice_id: string): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    const row = db
+      .prepare(`SELECT is_held FROM invoices WHERE id = ?`)
+      .get(invoice_id) as { is_held: number } | undefined;
+    if (!row) return;
+    if (row.is_held !== 1) return; // refuse to nuke a real sale
+    db.prepare(`DELETE FROM sale_items WHERE invoice_id = ?`).run(invoice_id);
+    db.prepare(`DELETE FROM payments WHERE invoice_id = ?`).run(invoice_id);
+    db.prepare(`DELETE FROM invoices WHERE id = ?`).run(invoice_id);
+  });
+  tx();
 }

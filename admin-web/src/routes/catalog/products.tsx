@@ -6,17 +6,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useDeleteProduct, useProducts } from "@/lib/queries";
+import { useDeleteProduct, useProducts, useTenantSetup } from "@/lib/queries";
 
 export default function ProductsList() {
   const [search, setSearch] = useState("");
   const { data, isLoading } = useProducts(search ? { search } : {});
   const del = useDeleteProduct();
+  // Digital-invoicing tenants (service providers, marriage halls) sell
+  // "items" or "services", not "products". Relabel headings + buttons
+  // to match their mental model; URLs and API contract are unchanged.
+  const { data: setup } = useTenantSetup();
+  const di = setup?.business_mode === "digital_invoicing";
+  const heading = di ? "Items" : "Products";
+  const newLabel = di ? "New item" : "New product";
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Products</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{heading}</h1>
         <div className="flex items-center gap-2">
           <Link to="/catalog/products/import">
             <Button variant="outline" size="sm">
@@ -25,7 +32,7 @@ export default function ProductsList() {
           </Link>
           <Link to="/catalog/products/new">
             <Button size="sm">
-              <Plus className="mr-2 h-4 w-4" /> New product
+              <Plus className="mr-2 h-4 w-4" /> {newLabel}
             </Button>
           </Link>
         </div>

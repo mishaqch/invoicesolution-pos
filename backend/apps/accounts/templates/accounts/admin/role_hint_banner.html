@@ -1,0 +1,26 @@
+{% comment %}
+Yellow info banner rendered above the User add form when the page was
+opened with `?platform_role=<role>` — typically from clicking the '+'
+next to "Account Manager" on the Tenant form.
+
+`popup_role_banner` is set in UserAdmin.add_view when a valid
+platform_role query param is detected. The variable is missing on
+normal add/edit pages, so this template is a no-op there.
+{% endcomment %}
+{% if popup_role_banner %}
+  <div style="
+    background:#fef3c7;
+    border:1px solid #fcd34d;
+    color:#92400e;
+    padding:10px 14px;
+    border-radius:8px;
+    font-size:13px;
+    line-height:1.45;
+    margin-bottom:14px;
+    display:flex;
+    gap:10px;
+    align-items:flex-start;">
+    <span class="material-symbols-outlined" style="font-size:18px;line-height:1.2;">info</span>
+    <div>{{ popup_role_banner|safe }}</div>
+  </div>
+{% endif %}

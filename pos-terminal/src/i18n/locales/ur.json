@@ -22,7 +22,7 @@
     "pin": "پن",
     "password": "پاس ورڈ",
     "submit": "سائن ان",
-    "invalid_credentials": "ای میل یا پاس ورڈ غلط ہے۔",
+    "invalid_credentials": "ای میل یا پن غلط ہے۔",
     "too_many_attempts": "بہت زیادہ کوششیں۔ چند منٹ بعد دوبارہ کوشش کریں۔",
     "network_error": "سائن ان نہیں ہو سکا۔ نیٹ ورک چیک کریں۔"
   },
@@ -63,7 +63,9 @@
     "hold_prompt": "فروخت ہولڈ کریں — نام درج کریں (مثلاً گاہک کا نام):",
     "hold_confirm": "فروخت ہولڈ کی گئی۔",
     "loading_catalog": "کیٹلاگ لوڈ ہو رہا ہے…",
-    "network_error": "سرور تک نہیں پہنچ سکا: {{error}}"
+    "network_error": "سرور تک نہیں پہنچ سکا: {{error}}",
+    "barcode_unknown": "بارکوڈ {{code}} کے لیے کوئی پروڈکٹ نہیں ملا۔",
+    "barcode_error": "اسکین کردہ بارکوڈ تلاش نہیں ہو سکا۔"
   },
   "payment": {
     "title": "ادائیگی",

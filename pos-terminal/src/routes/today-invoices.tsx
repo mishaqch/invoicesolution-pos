@@ -5,7 +5,8 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useSessionStore } from "@/stores/session";
+import { useToast } from "@/components/feedback/Toast";
+import { printInvoiceById } from "@/features/printing/printInvoice";
 
 import type { PosInvoiceRow, PosSaleItemRow, PosPaymentRow } from "../../electron/preload";
 
@@ -25,7 +26,7 @@ interface InvoiceWithLines {
 export default function TodayInvoicesRoute() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const tenant = useSessionStore((s) => s.tenant);
+  const toast = useToast();
 
   const [rows, setRows] = useState<PosInvoiceRow[]>([]);
   const [query, setQuery] = useState("");
@@ -63,22 +64,37 @@ export default function TodayInvoicesRoute() {
   }
 
   async function reprint(invoice: PosInvoiceRow) {
-    const detail = await window.api.sales.get(invoice.id);
-    if (!detail) return;
-    void window.api.printer.print({
-      business_name: tenant?.business_name ?? "POS",
-      branch_name: "(reprint)",
-      ntn: tenant?.ntn ?? "",
-      invoice: detail.invoice as never,
-      items: detail.items as never,
-      payments: detail.payments as never,
-      width: 48,
-    });
+    const res = await printInvoiceById(invoice.id);
+    if (res.notFound) {
+      toast.show({
+        message: t("print.not_found", "Receipt data is no longer available."),
+        variant: "warning",
+      });
+    } else if (!res.success) {
+      toast.show({
+        message: res.fallbackPath
+          ? t("print.fallback",
+              "No printer configured — receipt saved to disk: {{path}}",
+              { path: res.fallbackPath })
+          : t("print.error", "Printer error: {{reason}}",
+              { reason: res.reason ?? "unknown" }),
+        variant: "warning",
+      });
+    } else {
+      toast.show({
+        message: t("print.sent", "Receipt sent to the printer."),
+        variant: "success",
+      });
+    }
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex h-12 items-center justify-between border-b px-4">
+    // h-full + min-h-0 (instead of min-h-screen) so the inner panes
+    // can scroll independently. Without this, the page body grows to
+    // fit the detail panel's content and the WHOLE PAGE scrolls
+    // (cutting off the right rail). Same pattern as routes/sale.tsx.
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <button
           onClick={() => navigate("/sale", { replace: true })}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -91,8 +107,11 @@ export default function TodayInvoicesRoute() {
         </div>
       </header>
 
-      <main className="flex flex-1 overflow-hidden">
-        <section className="flex w-2/5 flex-col border-r">
+      {/* min-h-0 is critical on a flex child whose parent uses flex-col:
+          without it, flex-1 won't shrink below the intrinsic content
+          height and the inner overflow-y-auto becomes a no-op. */}
+      <main className="flex min-h-0 flex-1 overflow-hidden">
+        <section className="flex w-2/5 min-h-0 flex-col border-r">
           <div className="border-b p-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -130,7 +149,7 @@ export default function TodayInvoicesRoute() {
                       </div>
                       <div className="flex items-baseline justify-between text-xs text-muted-foreground">
                         <span>{(r.created_at ?? "").slice(11, 16)}</span>
-                        <span className={r.fbr_invoice_number ? "text-green-700" : "text-amber-700"}>
+                        <span className={r.fbr_invoice_number ? "text-success-soft-foreground" : "text-warning-soft-foreground"}>
                           {r.fbr_invoice_number ? `FBR ${r.fbr_invoice_number.slice(0, 12)}…` : t("success.fbr_pending")}
                         </span>
                       </div>
@@ -142,7 +161,10 @@ export default function TodayInvoicesRoute() {
           </div>
         </section>
 
-        <section className="flex-1 overflow-y-auto p-4">
+        {/* Detail pane — gets its own scroll. min-h-0 here lets the
+            overflow-y-auto actually clip (same flex/flexbox rule as
+            the list pane above). */}
+        <section className="min-h-0 flex-1 overflow-y-auto p-4">
           {!picked ? (
             <p className="text-sm text-muted-foreground">
               {t("today_invoices.pick_invoice", "Pick an invoice to view details.")}
@@ -206,7 +228,7 @@ export default function TodayInvoicesRoute() {
               </div>
 
               {picked.invoice.fbr_invoice_number && (
-                <div className="rounded-md bg-green-50 p-2 text-xs text-green-900">
+                <div className="rounded-md bg-success-soft p-2 text-xs text-success-soft-foreground">
                   FBR Invoice: <span className="font-mono">{picked.invoice.fbr_invoice_number}</span>
                 </div>
               )}

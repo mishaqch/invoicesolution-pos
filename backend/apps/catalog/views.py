@@ -69,6 +69,21 @@ class HsCodeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
     filter_backends = [filters.SearchFilter]
     search_fields = ["code", "description"]
 
+    @action(detail=False, methods=["get"], url_path="meta")
+    def meta(self, request):
+        """Summary metadata for the HS-code catalog.
+
+        Returns the total count + the last `sync_pral_reference` run
+        timestamp so the catalog page can show users 'X codes, last
+        synced Y ago' instead of stale placeholder copy.
+        """
+        from django.core.cache import cache
+        synced_at = cache.get("catalog:pral_reference_synced_at")
+        return Response({
+            "count": HsCode.objects.count(),
+            "last_synced_at": synced_at,
+        })
+
 
 # ---------------------------------------------------------------------------
 # Tenant-scoped

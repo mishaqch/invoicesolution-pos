@@ -46,11 +46,24 @@ class PaymentSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     items = SaleItemSerializer(many=True, read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
+    # Public share URL for the FBR-validated PDF. Returned only when
+    # the invoice has been validated by FBR (i.e. has an FBR invoice
+    # number). The URL is HMAC-signed and TTL-limited via
+    # apps.sales.services.share_links; anyone with the link can fetch
+    # the PDF without auth. Used by SendToBuyer for WhatsApp + email.
+    share_url = serializers.SerializerMethodField()
+    # The branch's FBR POS ID. Present => this is a POS/SDC tenant, so the UI
+    # shows the "Fiscalize with FBR (SDC)" button and hides the DI-API
+    # Validate/Submit buttons (which need a tenant token SDC tenants don't have).
+    branch_fbr_pos_id = serializers.CharField(
+        source="branch.fbr_pos_id", read_only=True, allow_null=True,
+    )
 
     class Meta:
         model = Invoice
         fields = (
-            "id", "branch", "terminal", "cashier", "cash_session", "customer",
+            "id", "branch", "branch_fbr_pos_id", "terminal", "cashier",
+            "cash_session", "customer",
             "local_invoice_number",
             "fbr_invoice_number", "fbr_qr_payload",
             "fbr_submitted_at", "fbr_validated_at",
@@ -63,6 +76,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "status", "edit_deadline_at",
             "client_uuid", "notes", "is_held", "held_label",
             "items", "payments",
+            "share_url",
             "created_at", "updated_at",
         )
         read_only_fields = (
@@ -71,8 +85,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "fbr_submitted_at", "fbr_validated_at",
             "subtotal", "discount_total", "tax_total", "grand_total",
             "paid_total", "change_given", "edit_deadline_at",
-            "items", "payments", "created_at", "updated_at",
+            "items", "payments", "share_url", "created_at", "updated_at",
         )
+
+    def get_share_url(self, obj):
+        from apps.sales.services.share_links import build_share_url
+        request = self.context.get("request")
+        return build_share_url(obj, request=request)
 
 
 class CheckoutLineSerializer(serializers.Serializer):
@@ -140,6 +159,22 @@ class CheckoutSerializer(serializers.Serializer):
         required=False, default="sale",
     )
     reference_invoice = serializers.UUIDField(required=False, allow_null=True)
+    # Debit-note reason. PRAL DI manual FAQ (page 37): when "others"
+    # is the chosen reason, the user must supply free-text remarks
+    # explaining the adjustment so the audit trail is meaningful.
+    # Accepted reasons mirror PRAL's debit-note reason taxonomy plus
+    # an "others" escape hatch.
+    DEBIT_NOTE_REASONS = (
+        "rate_correction", "quantity_correction", "additional_charges",
+        "missed_items", "others",
+    )
+    reason = serializers.ChoiceField(
+        choices=DEBIT_NOTE_REASONS, required=False, allow_null=True,
+        allow_blank=True,
+    )
+    reason_notes = serializers.CharField(
+        required=False, allow_null=True, allow_blank=True, max_length=500,
+    )
 
     def validate(self, attrs):
         itype = attrs.get("invoice_type", "sale")
@@ -152,6 +187,17 @@ class CheckoutSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"invoice_type": "Sale invoices cannot reference another invoice."},
             )
+        # PRAL FAQ: "others" reason requires explanatory remarks.
+        if itype == "debit_note" and attrs.get("reason") == "others":
+            notes = (attrs.get("reason_notes") or "").strip()
+            if not notes:
+                raise serializers.ValidationError({
+                    "reason_notes": (
+                        "When the debit-note reason is 'others', please "
+                        "explain the adjustment in the notes field "
+                        "(required by FBR)."
+                    ),
+                })
         return attrs
 
 

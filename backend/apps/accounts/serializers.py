@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -10,11 +12,13 @@ from apps.tenants.models import Tenant, TenantMembership
 
 from .models import User
 
+logger = logging.getLogger(__name__)
+
 
 class TenantBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
-        fields = ("id", "business_name", "ntn", "subscription_status")
+        fields = ("id", "business_name", "ntn", "subscription_status", "logo_url")
 
 
 class UserBriefSerializer(serializers.ModelSerializer):
@@ -80,7 +84,15 @@ class PinLoginSerializer(serializers.Serializer):
 
     Inputs:
       - email: identifies the cashier (a terminal-side cache makes this fast).
-      - pin: 4-6 digit PIN, hashed-checked against User.pin_hash.
+      - pin: exactly 6 digit PIN, hashed-checked against User.pin_hash.
+
+    Why exactly 6 (and not the older 4-6 range): the terminal UI shows
+    a 6-dot indicator and auto-submits when the PIN field reaches the
+    minimum length. A 4-6 range meant typing a 6-digit PIN caused the
+    terminal to auto-submit at digit 4 with the partial value, fail
+    auth, clear the PIN field, then route digits 5+6 into an empty
+    field — making 6-digit PINs effectively un-loggable. Standardising
+    on 6 digits removes the auto-submit ambiguity entirely.
 
     Phase 0 simplification: we trust email + PIN. In Phase 3 we'll add
     terminal_id (device fingerprint) so a stolen PIN can't be used away from
@@ -88,17 +100,36 @@ class PinLoginSerializer(serializers.Serializer):
     """
 
     email = serializers.EmailField()
-    pin = serializers.RegexField(regex=r"^\d{4,6}$")
+    pin = serializers.RegexField(regex=r"^\d{6}$")
 
     def validate(self, attrs):
-        email = attrs["email"].lower()
+        # Normalize defensively: trim whitespace and lowercase. The
+        # terminal also normalizes client-side, but we mirror it here
+        # so PIN-login over the raw API (curl, integration tests) is
+        # equally forgiving.
+        raw_email = attrs["email"] or ""
+        email = raw_email.strip().lower()
         pin = attrs["pin"]
+        # Dev-mode diagnostic: helps trace "the PIN works in curl but
+        # not from the terminal" mysteries. Logs the *shape* of the
+        # inputs, never the PIN itself.
+        logger.info(
+            "pin-login attempt: raw_email_len=%d clean_email=%r pin_len=%d",
+            len(raw_email), email, len(pin),
+        )
         try:
-            user = User.objects.get(email=email, is_active=True)
+            # iexact = case-insensitive exact match. Belt-and-braces:
+            # `email` is already lowercased above, but the column
+            # collation in some Postgres setups is case-sensitive and
+            # users may have been saved with mixed case before this
+            # serializer started normalizing.
+            user = User.objects.get(email__iexact=email, is_active=True)
         except User.DoesNotExist as exc:
+            logger.info("pin-login: user not found for email=%r", email)
             raise serializers.ValidationError("Invalid email or PIN.") from exc
 
         if not user.check_pin(pin):
+            logger.info("pin-login: bad PIN for user=%s", user.email)
             raise serializers.ValidationError("Invalid email or PIN.")
 
         membership = _resolve_membership(user)

@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository status
 
-This repo is currently **specification-only** — no code, no `package.json`, no `manage.py`, no git repo. Just four design documents that together define a planned product. When you start writing code, the structure described in `PROJECT_PLAN.md` § 5 ("Project structure (monorepo)") is the contract.
+**This repo is well past the spec-only stage.** It now holds a full Django backend (`backend/apps/*` — accounts, catalog, sales, fbr, sync, tenants, …), a built admin web (`admin-web/`), an Electron offline-first POS terminal (`pos-terminal/`), and a customer display (`customer-display/`). Digital Invoicing (admin-web → FBR) works end to end; the POS terminal (sale → local SQLite → sync → FBR) is largely working with barcode scanning, thermal + A4 printing, and FBR logo/QR. Treat the four design docs below as **intent**, not current state — read the code for ground truth, and update the docs when scope shifts.
+
+Build/run gotcha: the POS terminal needs Node 20 (`.nvmrc`), and `better-sqlite3` is compiled against Electron's ABI — running its DB code under plain `node` fails with `NODE_MODULE_VERSION`. Use the app/electron-vite, or the `sqlite3` CLI, to poke the DB.
+
+The structure described in `PROJECT_PLAN.md` § 5 ("Project structure (monorepo)") is the contract for where new code goes.
 
 The four documents are mutually load-bearing — when answering a non-trivial question, read the relevant ones together rather than guessing from one:
 

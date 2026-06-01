@@ -3,6 +3,7 @@ import {
   BarChart3,
   Boxes,
   Building2,
+  Monitor,
   ClipboardList,
   FileText,
   HelpCircle,
@@ -14,10 +15,13 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
+import { useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { useModules, type ModuleKey } from "@/features/modules/hooks";
+import { useTenantSetup } from "@/lib/queries";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth";
 
 interface Item {
   to: string;
@@ -39,17 +43,25 @@ const TOP: Item[] = [
   // invoices, so we name the nav item after the artifact.
   { to: "/sales", label: "Invoices", icon: Receipt, end: true, module: "sales" },
   { to: "/sales/new", label: "New invoice", icon: ShoppingCart, module: "sales" },
-  { to: "/sales/held", label: "Held invoices", icon: ShoppingCart, module: "sales" },
+  // Held invoices are a counter-side concept (cashier parks a half-rung
+  // sale, recalls it later). Digital-invoicing tenants compose invoices
+  // at a desk and never "park" them, so gate on `terminals`.
+  { to: "/sales/held", label: "Held invoices", icon: ShoppingCart, module: "terminals" },
   { to: "/returns", label: "Returns", icon: ShoppingCart, end: true, module: "returns" },
 ];
 
-// Products / categories / tax rates / HS codes are catalog primitives —
-// they don't have a dedicated module in V1. They stay always-visible so
-// even sales-only tenants can manage their SKUs.
+// Catalog primitives. DI tenants (service providers, wholesalers) also
+// need products — every FBR invoice line carries an HS code, even for
+// services (typically 9802.9000). What differs:
+//   - "Tax rates" is a POS-only concept (per-SKU rate overrides). DI
+//     tenants pick a single sector-wide rate during setup and stick to
+//     it. Hidden via `terminals` module.
+//   - "Products" is renamed to "Items" in DI mode — services aren't
+//     "products" in the usual sense.
 const CATALOG: Item[] = [
   { to: "/catalog/products", label: "Products", icon: Package },
   { to: "/catalog/categories", label: "Categories", icon: Boxes },
-  { to: "/catalog/tax-rates", label: "Tax rates", icon: FileText },
+  { to: "/catalog/tax-rates", label: "Tax rates", icon: FileText, module: "terminals" },
   { to: "/catalog/hs-codes", label: "HS codes", icon: FileText },
 ];
 
@@ -63,7 +75,11 @@ const INVENTORY: Item[] = [
 
 const ADMIN: Item[] = [
   { to: "/branches", label: "Branches", icon: Building2, module: "branches" },
-  { to: "/sync", label: "Sync health", icon: Activity, end: true },
+  { to: "/terminals", label: "Terminals", icon: Monitor, module: "terminals" },
+  // Sync health is a terminal-fleet dashboard. DI tenants don't run
+  // terminals, so hide the panel — the green/amber/red traffic light
+  // they'd see would always read green-with-no-data and just be noise.
+  { to: "/sync", label: "Sync health", icon: Activity, end: true, module: "terminals" },
   { to: "/payments/settings", label: "Payment methods", icon: FileText },
   { to: "/payments/cheques", label: "Cheques", icon: FileText, module: "payments_advanced" },
   { to: "/customers", label: "Customers", icon: Users, end: true, module: "customers" },
@@ -79,33 +95,35 @@ export function Sidebar() {
   // flight we show everything (the hook returns true on isLoading) so
   // operators don't see the menu pop in.
   const { data: modules } = useModules();
+  const { data: setup } = useTenantSetup();
   const enabled = modules?.enabled;
+  const isDigitalOnly = setup?.business_mode === "digital_invoicing";
 
   function visible(items: Item[]): Item[] {
     if (!enabled) return items;
     return items.filter((it) => !it.module || enabled.includes(it.module));
   }
 
+  // Service-providers / wholesalers / marriage halls don't think of
+  // their offerings as "products" — they sell services, hall hours, or
+  // packages. Relabel the catalog row to "Items" so the language fits.
+  // The underlying data model and URLs stay the same.
+  function withDiLabels(items: Item[]): Item[] {
+    if (!isDigitalOnly) return items;
+    return items.map((it) =>
+      it.to === "/catalog/products" ? { ...it, label: "Items" } : it,
+    );
+  }
+
   const top = visible(TOP);
-  const catalog = visible(CATALOG);
+  const catalog = withDiLabels(visible(CATALOG));
   const inventory = visible(INVENTORY);
   const adminItems = visible(ADMIN);
 
   return (
     <aside className="hidden border-r bg-card md:block md:w-60">
       <div className="flex h-full flex-col">
-        {/* Brand strip — emerald square logo + product name */}
-        <div className="flex items-center gap-2.5 border-b px-4 py-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm">
-            <Receipt className="h-4 w-4" aria-hidden />
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold tracking-tight">POS System</span>
-            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Admin
-            </span>
-          </div>
-        </div>
+        <BrandStrip />
         <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
           {top.length > 0 && <Group items={top} />}
           {catalog.length > 0 && <Section title="Catalog" items={catalog} />}
@@ -120,6 +138,51 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+  );
+}
+
+function BrandStrip() {
+  // Pull tenant from the auth store so the chrome reflects the logged-in
+  // tenant's identity (their store name + uploaded logo) instead of the
+  // hardcoded product name. Falls back to "POS System" / Receipt icon
+  // before /auth/me has resolved or for users without a tenant.
+  const tenant = useAuthStore((s) => s.tenant);
+  const [logoBroken, setLogoBroken] = useState(false);
+
+  const hasLogo = Boolean(tenant?.logo_url) && !logoBroken;
+  const initial = (tenant?.business_name ?? "P").charAt(0).toUpperCase();
+  const label = tenant?.business_name ?? "POS System";
+
+  return (
+    <div className="flex items-center gap-2.5 border-b px-4 py-4">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary text-primary-foreground shadow-sm">
+        {hasLogo ? (
+          <img
+            src={tenant!.logo_url!}
+            alt=""
+            className="h-full w-full object-cover"
+            // If the URL 404s or the host blocks hotlinking, drop back
+            // to the monogram so we don't render a broken-image icon.
+            onError={() => setLogoBroken(true)}
+          />
+        ) : tenant ? (
+          <span className="text-xs font-bold leading-none">{initial}</span>
+        ) : (
+          <Receipt className="h-4 w-4" aria-hidden />
+        )}
+      </div>
+      <div className="flex min-w-0 flex-col leading-tight">
+        <span
+          className="truncate text-sm font-semibold tracking-tight"
+          title={label}
+        >
+          {label}
+        </span>
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          Admin
+        </span>
+      </div>
+    </div>
   );
 }
 

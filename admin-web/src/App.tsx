@@ -2,9 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { AdminShell } from "@/components/layout/AdminShell";
+import { ToastProvider } from "@/components/feedback/Toast";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { RequireModule } from "@/features/modules/RequireModule";
 import BranchesList from "@/routes/branches/branches";
+import TerminalsList from "@/routes/terminals/terminals";
 import CategoriesList from "@/routes/catalog/categories";
 import CsvImport from "@/routes/catalog/csv-import";
 import HsCodesBrowser from "@/routes/catalog/hs-codes";
@@ -33,8 +35,10 @@ import SubmissionsPage from "@/routes/fbr/submissions";
 import ChequesPage from "@/routes/payments/cheques";
 import PaymentSettingsPage from "@/routes/payments/settings";
 import CustomerDetail from "@/routes/customers/detail";
+import CustomerImportRoute from "@/routes/customers/import";
 import CustomersList from "@/routes/customers/list";
 import HelpCenter from "@/routes/help";
+import BusinessProfileRoute from "@/routes/settings/business-profile";
 import HardwareChecklist from "@/routes/settings/hardware";
 import SettingsIndex from "@/routes/settings";
 import ReportDetail from "@/routes/reports/detail";
@@ -42,11 +46,34 @@ import ReportsIndex from "@/routes/reports";
 import ReturnDetail from "@/routes/returns/detail";
 import ReturnsList from "@/routes/returns/list";
 
-const queryClient = new QueryClient();
+// QueryClient defaults tuned to avoid post-logout retry storms.
+//
+// React Query defaults to `retry: 3` with exponential back-off, which
+// means a single 401 (e.g. expired session) becomes 4 console errors
+// per query before the failure sticks — and with several polling
+// hooks active simultaneously, that's dozens of red lines per minute.
+// We instead:
+//   - never retry 401 (Unauthorized) or 403 (Forbidden); they're
+//     "you can't do this" answers, not transient failures
+//   - keep the default 3 retries for everything else (network blips,
+//     5xx). That preserves resilience without weaponising the retry
+//     mechanism against auth/permission failures.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        const status = (error as { status?: number })?.status;
+        if (status === 401 || status === 403) return false;
+        return failureCount < 3;
+      },
+    },
+  },
+});
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ToastProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
@@ -66,6 +93,10 @@ export default function App() {
             <Route
               path="branches"
               element={<RequireModule module="branches"><BranchesList /></RequireModule>}
+            />
+            <Route
+              path="terminals"
+              element={<RequireModule module="terminals"><TerminalsList /></RequireModule>}
             />
 
             <Route path="catalog">
@@ -132,6 +163,7 @@ export default function App() {
             >
               <Route index element={<CustomersList />} />
               <Route path="new" element={<CustomerDetail />} />
+              <Route path="import" element={<CustomerImportRoute />} />
               <Route path=":id" element={<CustomerDetail />} />
             </Route>
 
@@ -150,6 +182,7 @@ export default function App() {
 
             <Route path="settings">
               <Route index element={<SettingsIndex />} />
+              <Route path="business-profile" element={<BusinessProfileRoute />} />
               <Route
                 path="hardware"
                 element={<RequireModule module="hardware"><HardwareChecklist /></RequireModule>}
@@ -160,6 +193,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+      </ToastProvider>
     </QueryClientProvider>
   );
 }

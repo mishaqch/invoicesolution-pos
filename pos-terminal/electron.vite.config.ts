@@ -14,6 +14,14 @@ export default defineConfig({
           "customer-display-preload": path.resolve(
             __dirname, "electron/customer-display-preload.ts",
           ),
+          // Sync worker runs as a utilityProcess.fork() — electron-vite
+          // must produce its own .cjs bundle, otherwise main.ts's
+          // `existsSync(workerPath)` returns false for every candidate
+          // and the manager bails with "worker entry not found",
+          // leaving the outbound queue forever pending. The candidates
+          // in sync/manager.ts look for `sync/worker.cjs`, so we emit
+          // exactly that path.
+          "sync/worker": path.resolve(__dirname, "electron/sync/worker.ts"),
         },
         output: { format: "cjs", entryFileNames: "[name].cjs" },
       },

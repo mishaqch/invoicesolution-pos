@@ -181,6 +181,13 @@ CREATE TABLE IF NOT EXISTS invoices (
   is_held                  INTEGER NOT NULL DEFAULT 0,
   held_label               TEXT,
 
+  -- Populated once the central server reports PRAL validation back to us.
+  -- These are the source of truth for printing an FBR-compliant receipt
+  -- (number + scannable QR) even when reprinting offline. NULL until valid.
+  fbr_invoice_number       TEXT,
+  fbr_qr_payload           TEXT,
+  fbr_validated_at         TEXT,
+
   notes                    TEXT,
   created_at               TEXT NOT NULL,
   updated_at               TEXT NOT NULL

@@ -158,6 +158,25 @@ export function searchProducts(query: string, limit = 50): PosProductRow[] {
     .all(ftsTerm, limit) as PosProductRow[];
 }
 
+/**
+ * Exact barcode lookup for the hardware scanner path. A USB scanner emits the
+ * full code then Enter, so we want a deterministic single-row match, not the
+ * fuzzy FTS search used for manual typing. Uses idx_products_barcode. Returns
+ * null when nothing matches so the caller can beep/toast "unknown barcode".
+ */
+export function productByBarcode(barcode: string): PosProductRow | null {
+  const code = barcode.trim();
+  if (!code) return null;
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM products
+       WHERE barcode = ? AND deleted_at IS NULL AND is_active = 1
+       LIMIT 1`,
+    )
+    .get(code) as PosProductRow | undefined;
+  return row ?? null;
+}
+
 export function listProducts(limit = 100): PosProductRow[] {
   return getDb()
     .prepare(

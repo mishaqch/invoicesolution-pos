@@ -69,6 +69,61 @@ class FbrToken(TenantScopedModel):
         return f"{self.tenant_id} {self.environment}"
 
 
+class BranchFbrToken(TenantScopedModel):
+    """Per-branch FBR token for POS.
+
+    Unlike `FbrToken` (one bearer per tenant, used by Digital Invoicing),
+    each registered POS outlet has its OWN FBR credentials: POS ID + Code
+    (stored on Branch) and a distinct bearer token (here). A tenant with
+    several POS branches therefore has several tokens — one per branch —
+    and each branch's sales must be submitted with its own bearer.
+
+    POS registration on FBR issues the production token directly (no sandbox /
+    scenario testing for POS), so these are production tokens. The submission
+    path prefers a branch token when the invoice's branch has an active one,
+    and falls back to the tenant-level FbrToken otherwise (the Digital
+    Invoicing path — left untouched).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    branch = models.ForeignKey(
+        "tenants.Branch", on_delete=models.CASCADE,
+        related_name="fbr_tokens",
+    )
+    environment = models.CharField(
+        max_length=20, choices=ENVIRONMENTS, default="production",
+    )
+    licensed_integrator = models.CharField(max_length=50, default="PRAL")
+    token_encrypted = models.TextField(db_column="token_encrypted")
+    api_endpoint = models.TextField(default="https://gw.fbr.gov.pk")
+    is_active = models.BooleanField(default=True)
+    activated_at = models.DateTimeField(blank=True, null=True)
+    expires_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = "branch_fbr_tokens"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "environment"],
+                name="uniq_branch_fbr_token_branch_env",
+            ),
+        ]
+
+    @property
+    def token(self) -> str:
+        return decrypt(self.token_encrypted)
+
+    @token.setter
+    def token(self, value: str) -> None:
+        self.token_encrypted = encrypt(value)
+
+    def set_token(self, raw: str) -> None:
+        self.token = raw
+
+    def __str__(self) -> str:
+        return f"branch={self.branch_id} {self.environment}"
+
+
 SUBMISSION_ENDPOINTS = (
     ("postinvoicedata", "postinvoicedata"),
     ("validateinvoicedata", "validateinvoicedata"),
@@ -129,6 +184,10 @@ SCENARIO_STATUSES = (
     ("submitting", "Submitting"),
     ("success", "Success"),
     ("failed", "Failed"),
+    # IRIS assigned this scenario to the tenant but our platform
+    # doesn't ship a payload-builder for it yet. The runner skips
+    # without contacting PRAL; the UI shows "Not yet supported".
+    ("not_implemented", "Not yet supported"),
 )
 
 
@@ -236,3 +295,82 @@ class FbrIpWhitelist(models.Model):
 
     class Meta:
         db_table = "fbr_ip_whitelist"
+
+
+# ---------------------------------------------------------------------------
+# Scenario payload templates (platform-level, not tenant-scoped)
+# ---------------------------------------------------------------------------
+#
+# When a super-admin gets a scenario working for one tenant (after the
+# typical 2–5 round PRAL iteration), they save the working payload as
+# a TEMPLATE. The next time a tenant of the same business type is
+# onboarded, they apply the template pack — all scenario payloads
+# are pre-seeded with PRAL-verified field values.
+#
+# Templates store the seller-specific fields (NTN, province, address)
+# as placeholder tokens so applying the template to a new tenant
+# substitutes the new tenant's seller values automatically. The
+# operator-facing "{{seller.ntn}}", "{{seller.business_name}}",
+# "{{seller.province}}", "{{seller.address}}" tokens get replaced at
+# apply-time; everything else (saleType, sroScheduleNo, rate, amounts)
+# is reused verbatim.
+#
+# Templates are platform-level: only super-admin can create or edit;
+# any tenant in the catalog can apply them.
+
+
+class ScenarioPayloadTemplate(models.Model):
+    """Reusable PRAL payload template for a single scenarioId.
+
+    Lifecycle:
+      1. Super-admin gets scenario SN001 working for tenant A.
+      2. They click "Save as template" on the card → row created here
+         with the payload (placeholders substituted).
+      3. Onboarding tenant B (same business type), super-admin clicks
+         "Apply template pack" → for each template matching tenant B's
+         assigned scenarios, payload is materialised against tenant B's
+         seller block and stored in a per-tenant override field.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+
+    # Free-text identifier shown in dropdowns. Recommended convention:
+    # "Wholesaler/Retailer — SN001" so super-admin can scan templates
+    # by business type + scenario.
+    name = models.CharField(max_length=255)
+
+    scenario_code = models.CharField(max_length=10)  # e.g. "SN001"
+
+    # JSON payload with seller-specific fields tokenised. Stored as-is;
+    # tokenisation is performed at template-save time, substitution at
+    # apply-time. See apps/fbr/services.py:apply_template.
+    payload = models.JSONField()
+
+    # Free-form text for super-admin notes — typically "what PRAL
+    # rejected / what the fix was" so future operators know the
+    # rationale behind each field choice.
+    notes = models.TextField(blank=True, default="")
+
+    # Bookkeeping
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL,
+        blank=True, null=True, related_name="created_scenario_templates",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "fbr_scenario_payload_templates"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", "scenario_code"],
+                name="uniq_scenario_template_name_code",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["scenario_code"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} · {self.scenario_code}"
+

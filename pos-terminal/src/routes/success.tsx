@@ -4,8 +4,10 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/feedback/Toast";
 import { useFbrConfirmation } from "@/features/sale/useFbrConfirmation";
-import { useSessionStore } from "@/stores/session";
+import { useTerminalFiscalize } from "@/features/sale/useTerminalFiscalize";
+import { printInvoiceById } from "@/features/printing/printInvoice";
 
 interface State {
   invoice_id?: string;
@@ -22,32 +24,45 @@ export default function SuccessRoute() {
   const s = (state as State) ?? {};
 
   const [fbrNo, setFbrNo] = useState<string | null>(null);
-  const tenant = useSessionStore((st) => st.tenant);
+  const toast = useToast();
 
+  // Persist the FBR number locally, then reprint with the QR. Shared by both
+  // the active SDC path and the passive cloud-confirmation fallback.
+  const persistAndReprint = (
+    fbrInvoiceNumber: string,
+    qrPayload: string | null,
+  ) => {
+    setFbrNo(fbrInvoiceNumber);
+    if (!s.invoice_id) return;
+    void window.api.sales
+      .setFbrFields({
+        invoice_id: s.invoice_id,
+        fbr_invoice_number: fbrInvoiceNumber,
+        fbr_qr_payload: qrPayload,
+        fbr_validated_at: new Date().toISOString(),
+      })
+      .catch(() => {})
+      .then(() => printInvoiceById(s.invoice_id!).catch(() => {}));
+  };
+
+  // PRIMARY path: the terminal drives fiscalization through its local FBR SDC
+  // (localhost:8524) as soon as the invoice reaches the server — fast, since
+  // the SDC is on the LAN. The receipt reprints with the QR once verified.
+  useTerminalFiscalize({
+    invoiceId: s.invoice_id,
+    onFiscalized: (num) => persistAndReprint(num, null),
+    // onDeferred: no-op — the fallback poll below covers offline/SDC-down.
+  });
+
+  // FALLBACK path: if the terminal couldn't fiscalize (offline, SDC down, or a
+  // DI-API/non-SDC tenant), keep polling the cloud, which fiscalizes its own
+  // way. Slower interval; reprints with QR when the number eventually arrives.
   useFbrConfirmation({
     invoiceId: s.invoice_id,
     onValid: (inv) => {
-      setFbrNo(inv.fbr_invoice_number);
-      // Best-effort QR re-print. Never blocks the cashier.
-      void window.api.printer.print({
-        business_name: tenant?.business_name ?? "POS",
-        branch_name: "(reprint)",
-        ntn: tenant?.ntn ?? "",
-        invoice: {
-          id: inv.id,
-          local_invoice_number: inv.local_invoice_number,
-          invoice_date: inv.invoice_date,
-          subtotal: "0", discount_total: "0", tax_total: "0",
-          grand_total: inv.grand_total,
-          paid_total: inv.paid_total,
-          change_given: inv.change_given,
-          fbr_invoice_number: inv.fbr_invoice_number,
-          fbr_qr_payload: inv.fbr_qr_payload,
-        } as never,
-        items: [],
-        payments: [],
-        width: 48,
-      });
+      if (inv.fbr_invoice_number) {
+        persistAndReprint(inv.fbr_invoice_number, inv.fbr_qr_payload);
+      }
     },
   });
 
@@ -59,10 +74,10 @@ export default function SuccessRoute() {
   }, [navigate, fbrNo]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-green-50 p-8">
+    <div className="flex h-full items-center justify-center bg-success-soft p-8">
       <div className="w-full max-w-md rounded-2xl border bg-background p-8 text-center shadow-sm">
-        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
-          <Check className="h-10 w-10 text-green-700" strokeWidth={3} />
+        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-success text-success-foreground">
+          <Check className="h-10 w-10" strokeWidth={3} aria-hidden />
         </div>
         <h1 className="mt-6 text-2xl font-semibold tracking-tight">{t("success.title")}</h1>
         <div className="mt-2 font-mono text-sm text-muted-foreground">{s.local}</div>
@@ -78,7 +93,9 @@ export default function SuccessRoute() {
 
         <div
           className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs ${
-            fbrNo ? "bg-green-100 text-green-900" : "bg-amber-100 text-amber-900"
+            fbrNo
+              ? "bg-success-soft text-success-soft-foreground"
+              : "bg-warning-soft text-warning-soft-foreground"
           }`}
         >
           {fbrNo ? `FBR #${fbrNo.slice(0, 16)}…` : t("success.fbr_pending")}
@@ -87,16 +104,36 @@ export default function SuccessRoute() {
         <div className="mt-6 grid grid-cols-2 gap-2">
           <Button
             variant="outline"
-            onClick={() => {
-              if (s.invoice_id) {
-                void window.api.printer.print({
-                  business_name: tenant?.business_name ?? "(reprint)",
-                  branch_name: "(reprint)",
-                  ntn: tenant?.ntn ?? "",
-                  invoice: { id: s.invoice_id } as never,
-                  items: [],
-                  payments: [],
-                  width: 48,
+            onClick={async () => {
+              if (!s.invoice_id) return;
+              const res = await printInvoiceById(s.invoice_id);
+              if (res.notFound) {
+                toast.show({
+                  message: t(
+                    "print.not_found",
+                    "Receipt data is no longer available.",
+                  ),
+                  variant: "warning",
+                });
+              } else if (!res.success) {
+                toast.show({
+                  message: res.fallbackPath
+                    ? t(
+                        "print.fallback",
+                        "No printer configured — receipt saved to disk: {{path}}",
+                        { path: res.fallbackPath },
+                      )
+                    : t(
+                        "print.error",
+                        "Printer error: {{reason}}",
+                        { reason: res.reason ?? "unknown" },
+                      ),
+                  variant: "warning",
+                });
+              } else {
+                toast.show({
+                  message: t("print.sent", "Receipt sent to the printer."),
+                  variant: "success",
                 });
               }
             }}

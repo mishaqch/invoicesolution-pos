@@ -110,7 +110,12 @@ export default function TerminalSyncDetail() {
                     <TableCell className="font-mono text-xs">{row.entity_type}</TableCell>
                     <TableCell className="font-mono text-xs">{row.action}</TableCell>
                     <TableCell>
-                      <Badge variant={statusVariant(row.status)}>{row.status}</Badge>
+                      <Badge
+                        variant={syncStatusVariant(row.status)}
+                        title={SYNC_STATUS_HINT[row.status]}
+                      >
+                        {SYNC_STATUS_LABEL[row.status] ?? row.status}
+                      </Badge>
                     </TableCell>
                     <TableCell className="max-w-md text-xs text-muted-foreground">
                       {row.error_message ?? ""}
@@ -138,9 +143,29 @@ export default function TerminalSyncDetail() {
   );
 }
 
-function statusVariant(s: string): "default" | "secondary" | "destructive" | "outline" {
-  if (s === "processed") return "default";
+// Sync-row status mapping. Distinct enum from invoice status — these
+// describe whether a row in the outbound terminal-sync queue has been
+// accepted, replayed (duplicate), or rejected. Kept inline because
+// sync is the only surface that renders it.
+const SYNC_STATUS_LABEL: Record<string, string> = {
+  processed: "Processed",
+  pending: "Pending",
+  duplicate: "Duplicate",
+  failed: "Failed",
+};
+const SYNC_STATUS_HINT: Record<string, string> = {
+  processed: "Row accepted by the server.",
+  pending: "Awaiting upload.",
+  duplicate: "Server already saw this client_uuid; treated as a replay.",
+  failed: "Upload rejected by the server. Click Retry to re-queue.",
+};
+
+function syncStatusVariant(
+  s: string,
+): "success" | "info" | "warning" | "destructive" | "outline" {
+  if (s === "processed") return "success";
+  if (s === "duplicate") return "info";
+  if (s === "pending") return "warning";
   if (s === "failed") return "destructive";
-  if (s === "duplicate") return "secondary";
   return "outline";
 }

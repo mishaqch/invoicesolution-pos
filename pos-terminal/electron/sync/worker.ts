@@ -66,12 +66,24 @@ let kickPromise: { resolve: () => void } | null = null;
 let lastProcessedAt: string | null = null;
 let lastError: string | null = null;
 
-const port = (globalThis as unknown as { parentPort: { postMessage: (m: unknown) => void; on: (event: string, cb: (m: unknown) => void) => void } }).parentPort;
-
-if (!port) {
-  // Should never happen — utilityProcess always provides parentPort.
-  throw new Error("worker requires parentPort");
+// Electron's utilityProcess.fork() exposes the parent-port on
+// `process.parentPort` (NOT on globalThis — that's a Worker-thread
+// convention, not utilityProcess). Using the wrong path causes the
+// child to crash at module-load with "worker requires parentPort".
+interface ParentPort {
+  postMessage: (m: unknown) => void;
+  on: (event: string, cb: (m: unknown) => void) => void;
 }
+const maybePort = (process as unknown as {
+  parentPort?: ParentPort;
+}).parentPort;
+
+if (!maybePort) {
+  // Should never happen — utilityProcess always provides parentPort.
+  throw new Error("worker requires process.parentPort (utilityProcess child)");
+}
+// Narrowed reference; downstream code uses the non-nullable binding.
+const port: ParentPort = maybePort;
 
 port.on("message", (raw: unknown) => {
   const m = raw as MsgIn;
@@ -97,6 +109,20 @@ function init(m: InitMessage) {
 
   if (existsSync(m.schemaPath)) {
     db.exec(readFileSync(m.schemaPath, "utf-8"));
+  }
+
+  // Idempotent column adds for DBs created before these columns existed.
+  // schema.sql uses CREATE TABLE IF NOT EXISTS so a pre-existing terminal
+  // never gets new columns from the file alone. Mirror of client.ts migrate().
+  for (const [col, type] of [
+    ["fbr_invoice_number", "TEXT"],
+    ["fbr_qr_payload", "TEXT"],
+    ["fbr_validated_at", "TEXT"],
+  ] as const) {
+    const cols = db.prepare(`PRAGMA table_info(invoices)`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE invoices ADD COLUMN ${col} ${type}`);
+    }
   }
 
   // Crash recovery: 'sent' rows mean we POSTed but never recorded the ack.

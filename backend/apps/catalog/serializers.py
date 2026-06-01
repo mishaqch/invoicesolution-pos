@@ -80,6 +80,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "hs_code", "uom", "tax_rate", "is_taxable",
             "cost_price", "sale_price", "retail_price",
             "min_sale_price", "max_discount_pct",
+            "is_third_schedule",
             "reorder_level", "reorder_quantity",
             "is_serialized", "is_batch_tracked", "is_weighable", "has_variants",
             "image_url", "is_active",
@@ -95,6 +96,40 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"sale_price": "sale_price cannot be below min_sale_price."}
             )
+        # 3rd-Schedule items must have a retail_price set — PRAL
+        # rejects the invoice line otherwise (errorCode 0122).
+        is_third = attrs.get(
+            "is_third_schedule",
+            instance.is_third_schedule if instance else False,
+        )
+        retail = attrs.get(
+            "retail_price",
+            instance.retail_price if instance else None,
+        )
+        if is_third and (retail is None or retail <= 0):
+            raise serializers.ValidationError({
+                "retail_price":
+                    "retail_price is required and must be > 0 when "
+                    "is_third_schedule is on. PRAL charges tax on the "
+                    "printed retail price for 3rd-Schedule goods (sugar, "
+                    "biscuits, etc.); without it, the invoice line is "
+                    "rejected with errorCode 0122."
+            })
+        # HS code is required: every invoice line submitted to PRAL
+        # carries the hsCode field, and our SaleItem snapshots it from
+        # the parent Product at sale time. A product without an HS code
+        # would produce an invoice PRAL rejects with errorCode 0052.
+        # The Product.hs_code FK is `null=True` at the DB level for
+        # backwards compatibility with old rows; enforce at the API
+        # boundary instead.
+        hs_code = attrs.get("hs_code", instance.hs_code if instance else None)
+        if hs_code is None:
+            raise serializers.ValidationError({
+                "hs_code":
+                    "HS code is required. Every product line submitted "
+                    "to FBR must carry a valid HS code from PRAL's "
+                    "catalog. Pick one from /catalog/hs-codes."
+            })
         return attrs
 
 
@@ -108,6 +143,7 @@ class ProductPosSerializer(serializers.ModelSerializer):
             "name", "name_ur", "sku", "barcode",
             "uom", "tax_rate", "is_taxable",
             "sale_price", "retail_price", "min_sale_price", "max_discount_pct",
+            "is_third_schedule",
             "is_weighable", "image_url", "is_active",
             "updated_at", "deleted_at",
         )

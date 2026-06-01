@@ -8,12 +8,28 @@ export default function SplashRoute() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   useEffect(() => {
-    const timeout = window.setTimeout(() => navigate("/login", { replace: true }), 600);
-    return () => window.clearTimeout(timeout);
+    let cancelled = false;
+    const timeout = window.setTimeout(async () => {
+      // Route to pairing on first launch (no branch/terminal bound yet),
+      // otherwise straight to cashier login.
+      let dest = "/pairing";
+      try {
+        const status = await window.api.pairing.status();
+        if (status.paired) dest = "/login";
+      } catch {
+        // If the bridge isn't ready, fall through to pairing — it's the safe
+        // default for an unconfigured terminal.
+      }
+      if (!cancelled) navigate(dest, { replace: true });
+    }, 600);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
   }, [navigate]);
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center">
+    <div className="relative flex h-full items-center justify-center">
       <div className="absolute right-4 top-4">
         <LanguageToggle />
       </div>

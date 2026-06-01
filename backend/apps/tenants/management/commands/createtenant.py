@@ -67,11 +67,34 @@ class Command(BaseCommand):
             "--full-name", default="",
             help="Owner's display name (optional).",
         )
+        parser.add_argument(
+            "--business-mode",
+            choices=["pos", "digital_invoicing", "both"],
+            default="digital_invoicing",
+            help=(
+                "Which product the tenant signed up for. "
+                "'pos' = counter-side till + inventory + hardware "
+                "(required for Tier-1 retailers under FBRIMS). "
+                "'digital_invoicing' = back-office invoice tool only "
+                "(default — fits service providers, wholesalers, "
+                "marriage halls). 'both' = unusual; only when the "
+                "customer needs both surfaces. The matching default "
+                "module set is applied automatically."
+            ),
+        )
 
     @transaction.atomic
     def handle(self, *args, **opts):
         from apps.accounts.models import User
+        from apps.tenants.business_mode import default_modules_for_mode
         from apps.tenants.models import Tenant, TenantMembership
+        from apps.tenants.modules import normalise as normalise_modules
+
+        mode = opts["business_mode"]
+        # Default modules for the chosen product. Tier-1 retailers
+        # (pos) need the full counter set; service providers et al.
+        # (digital_invoicing) get a slim back-office set.
+        default_modules = normalise_modules(default_modules_for_mode(mode))
 
         tenant, t_created = Tenant.objects.get_or_create(
             ntn=opts["ntn"],
@@ -79,14 +102,19 @@ class Command(BaseCommand):
                 "business_name": opts["business_name"],
                 "business_type": opts["business_type"],
                 "province": opts["province"],
+                "business_mode": mode,
+                "modules_enabled": default_modules,
             },
         )
         if not t_created:
-            # Keep the existing tenant's NTN but update the cosmetic fields
-            # in case the operator re-ran with a tweak.
+            # Existing tenant: refresh business_mode + modules to match
+            # the supplied flag so re-running this command can be used
+            # to flip a tenant from POS to DI (or vice versa) cleanly.
             tenant.business_name = opts["business_name"]
             tenant.business_type = opts["business_type"]
             tenant.province = opts["province"]
+            tenant.business_mode = mode
+            tenant.modules_enabled = default_modules
             tenant.save()
 
         if t_created:
@@ -148,6 +176,7 @@ class Command(BaseCommand):
         self.stdout.write("=" * 60)
         self.stdout.write(f"  Business:  {tenant.business_name}")
         self.stdout.write(f"  NTN:       {tenant.ntn}")
+        self.stdout.write(f"  Mode:      {tenant.business_mode}")
         self.stdout.write(f"  Email:     {user.email}")
         if u_created:
             self.stdout.write(f"  Password:  {opts['owner_password']}")

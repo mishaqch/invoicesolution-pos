@@ -26,9 +26,9 @@
 # .exe — but unsigned. Windows Smartscreen will warn users on first
 # run. Do NOT ship unsigned builds to customers.
 
-appId: pk.pakistanpos.terminal
-productName: Pakistan POS
-copyright: Copyright (c) 2026 Pakistan POS
+appId: pk.invoicesolution.terminal
+productName: InvoiceSolution
+copyright: Copyright (c) 2026 InvoiceSolution
 
 directories:
   output: release/${version}
@@ -38,6 +38,11 @@ files:
   - "out/**/*"
   - "dist/**/*"
   - "dist-electron/**/*"
+  # Runtime assets read by the main process via __dirname-relative candidate
+  # paths: the SQLite schema and the FBR thermal-receipt logo. electron-vite
+  # doesn't bundle non-imported files, so they're packaged from source.
+  - "electron/db/schema.sql"
+  - "electron/assets/**/*"
   - "package.json"
   - "!**/*.{md,markdown,test.js,spec.js}"
   - "!**/.eslintrc*"
@@ -55,8 +60,11 @@ win:
   target:
     - target: nsis
       arch: [x64]
+  # Fixed installer filename so the public download link is stable:
+  #   https://client.invoicesolution.pk/download/terminal/  ->  invoiceSolution.exe
+  artifactName: invoiceSolution.exe
   signingHashAlgorithms: [sha256]
-  publisherName: Pakistan POS
+  publisherName: InvoiceSolution
   # Cert resolved from CSC_LINK + CSC_KEY_PASSWORD env. Override here
   # if you have an installed cert by subject name instead.
   # certificateSubjectName: "Your Company Name"

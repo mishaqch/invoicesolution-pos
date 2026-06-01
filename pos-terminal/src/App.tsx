@@ -1,5 +1,6 @@
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 
+import { ToastProvider } from "@/components/feedback/Toast";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import DayCloseRoute from "@/routes/day-close";
 import DayOpenRoute from "@/routes/day-open";
@@ -7,6 +8,7 @@ import HardwareRoute from "@/routes/hardware";
 import HeldSalesRoute from "@/routes/held-sales";
 import TodayInvoicesRoute from "@/routes/today-invoices";
 import LoginRoute from "@/routes/login";
+import PairingRoute from "@/routes/pairing";
 import PaymentRoute from "@/routes/payment";
 import ReturnRoute from "@/routes/return";
 import SaleRoute from "@/routes/sale";
@@ -20,8 +22,10 @@ const protectedRoute = (el: React.ReactNode) => (
 export default function App() {
   return (
     <HashRouter>
+      <ToastProvider>
       <Routes>
         <Route path="/" element={<SplashRoute />} />
+        <Route path="/pairing" element={<PairingRoute />} />
         <Route path="/login" element={<LoginRoute />} />
         <Route path="/day-open" element={protectedRoute(<DayOpenRoute />)} />
         <Route path="/sale" element={protectedRoute(<SaleRoute />)} />
@@ -34,6 +38,7 @@ export default function App() {
         <Route path="/hardware" element={protectedRoute(<HardwareRoute />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </ToastProvider>
     </HashRouter>
   );
 }

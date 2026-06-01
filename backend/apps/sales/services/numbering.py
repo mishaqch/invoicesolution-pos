@@ -38,19 +38,29 @@ def next_invoice_number(*, terminal: Terminal) -> str:
     # Use the existing invoices count for this terminal in this year as the
     # source of truth — no separate counter table needed at our scale, and
     # it's self-healing if anything ever drifts.
+    #
+    # Exclude credit-note / return-reference rows (suffix like '-CN' or
+    # an 'R' prefix on the sequence). They share the terminal+year scope
+    # but use their own numbering namespace ('R0000001-CN'), which would
+    # otherwise confuse the trailing-digit parse and cause sequence
+    # collisions.
     last = (
         Invoice.objects.filter(
             terminal=locked_terminal, invoice_date__year=year,
         )
+        .exclude(invoice_type__in=("credit_note", "debit_note"))
         .order_by("-local_invoice_number")
         .values_list("local_invoice_number", flat=True)
         .first()
     )
     seq = _parse_seq(last) + 1 if last else 1
 
-    # Terminal index inferred from the terminal's name (e.g., "Counter 1" -> 1).
-    # Falls back to 1 if not parseable; admin should set names like "T1", "T2".
-    t_index = _terminal_index(locked_terminal.name)
+    # Terminal index: the STABLE per-branch ordinal assigned at creation
+    # (terminal_index). This guarantees two terminals in the same branch get
+    # distinct number namespaces (…-T1-… vs …-T2-…) and never collide on the
+    # (tenant, local_invoice_number) unique constraint. Fall back to a
+    # name-derived digit only for any legacy row that somehow lacks an index.
+    t_index = locked_terminal.terminal_index or _terminal_index(locked_terminal.name)
     return f"{branch.code}-T{t_index}-{year}-{seq:07d}"
 
 

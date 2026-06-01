@@ -49,7 +49,7 @@ export function LoginForm() {
       if (!resp.tenant) {
         if (resp.user?.is_platform_staff) {
           setSubmitError(
-            "This account is a platform / super-admin account — it cannot sign in to the tenant admin. Use the super-admin at http://localhost:8000/admin/ instead.",
+            "This account is a platform / super-admin account — it cannot sign in to the tenant admin. Use the Super Admin portal (the /admin/ site on your admin subdomain) instead.",
           );
         } else {
           setSubmitError(

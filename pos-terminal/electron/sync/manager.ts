@@ -37,9 +37,21 @@ export function startSyncWorker(opts: { dbPath: string; apiBase: string }) {
   ];
   const workerPath = candidates.find((p) => existsSync(p));
   if (!workerPath) {
+    // Fail loudly — a missing worker means EVERY sale will pile up in
+    // the local outbound queue and never reach the backend. The build
+    // config (electron.vite.config.ts) must include
+    //   "sync/worker": "electron/sync/worker.ts"
+    // in the main entry inputs so electron-vite produces worker.cjs.
+    // We used to console.error here and continue silently — that hid
+    // the bug for weeks. Throwing surfaces the issue at app startup.
+    const msg =
+      "[sync] worker entry not found in any of:\n  " +
+      candidates.join("\n  ") +
+      "\n\nElectron-vite must bundle electron/sync/worker.ts as sync/worker.cjs.\n" +
+      "If you just rebuilt: rerun `npm run build` or restart `npm run dev`.";
     // eslint-disable-next-line no-console
-    console.error("[sync] worker entry not found in any of:", candidates);
-    return;
+    console.error(msg);
+    throw new Error(msg);
   }
 
   // The worker reapplies the schema on init in case of a fresh DB; the main

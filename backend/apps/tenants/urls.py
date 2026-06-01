@@ -5,6 +5,7 @@ from .views import (
     BranchViewSet,
     OnboardingStateView,
     TenantModulesView,
+    TenantSetupView,
     TerminalViewSet,
 )
 
@@ -15,5 +16,6 @@ router.register("terminals", TerminalViewSet, basename="terminal")
 urlpatterns = [
     path("onboarding/", OnboardingStateView.as_view(), name="onboarding-state"),
     path("me/modules/", TenantModulesView.as_view(), name="me-modules"),
+    path("tenants/me/setup/", TenantSetupView.as_view(), name="tenant-setup"),
     *router.urls,
 ]

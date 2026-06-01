@@ -1,7 +1,9 @@
-import { ArrowLeft, Check, Printer, X } from "lucide-react";
+import { ArrowLeft, Check, Printer, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+
+import type { PosPairedIdentity } from "../../electron/preload";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,9 +33,39 @@ export default function HardwareRoute() {
   const [saving, setSaving] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
+  // FBR SDC (Fiscalization service) — base URL + paired identity.
+  const [sdcUrl, setSdcUrl] = useState("");
+  const [sdcSaving, setSdcSaving] = useState(false);
+  const [sdcStatus, setSdcStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [identity, setIdentity] = useState<PosPairedIdentity | null>(null);
+
   useEffect(() => {
     void window.api.meta.get("printer.interface").then((v) => setPrinterUrl(v ?? ""));
+    void window.api.sdc.getUrl().then((v) => setSdcUrl(v ?? ""));
+    void window.api.pairing.status().then((s) => setIdentity(s.identity));
   }, []);
+
+  async function saveSdc() {
+    setSdcSaving(true);
+    try {
+      await window.api.sdc.setUrl(sdcUrl.trim());
+    } finally {
+      setSdcSaving(false);
+    }
+  }
+
+  async function testSdc() {
+    const r = await window.api.sdc.health();
+    setSdcStatus({ ok: r.ok, msg: r.message });
+  }
+
+  async function unpairTerminal() {
+    if (!window.confirm(
+      "Unpair this terminal? It will need a new pairing code to ring sales again.",
+    )) return;
+    await window.api.pairing.unpair();
+    navigate("/", { replace: true });
+  }
 
   async function save() {
     setSaving(true);
@@ -63,8 +95,8 @@ export default function HardwareRoute() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex h-12 items-center justify-between border-b px-4">
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <button
           onClick={() => navigate("/sale", { replace: true })}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -75,7 +107,7 @@ export default function HardwareRoute() {
         <div />
       </header>
 
-      <main className="mx-auto w-full max-w-2xl space-y-4 p-6">
+      <main className="mx-auto min-h-0 w-full max-w-2xl flex-1 space-y-4 overflow-y-auto p-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
@@ -114,12 +146,73 @@ export default function HardwareRoute() {
               <div
                 className={`flex items-start gap-2 rounded-md border p-2 text-xs ${
                   testStatus.ok
-                    ? "border-green-300 bg-green-50 text-green-900"
-                    : "border-amber-300 bg-amber-50 text-amber-900"
+                    ? "bg-success-soft text-success-soft-foreground"
+                    : "bg-warning-soft text-warning-soft-foreground"
                 }`}
               >
                 {testStatus.ok ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
                 <span>{testStatus.msg}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <ShieldCheck className="h-4 w-4" /> FBR Fiscalization (SDC)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {identity && (
+              <div className="rounded-md border bg-muted/40 p-3 text-xs">
+                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                  <span className="text-muted-foreground">Branch</span>
+                  <span className="font-medium">{identity.branchName} ({identity.branchCode})</span>
+                  <span className="text-muted-foreground">Terminal</span>
+                  <span className="font-medium">{identity.terminalName} · T{identity.terminalIndex}</span>
+                  <span className="text-muted-foreground">FBR POS ID</span>
+                  <span className="font-mono">{identity.branchFbrPosId ?? "—"}</span>
+                </div>
+              </div>
+            )}
+            <div>
+              <Label>SDC service URL</Label>
+              <Input
+                value={sdcUrl}
+                onChange={(e) => setSdcUrl(e.target.value)}
+                placeholder="http://localhost:8524"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                The FBR Fiscalization service runs on this machine — leave as{" "}
+                <span className="font-mono">http://localhost:8524</span>. If the
+                branch shares one fiscal machine, point this at that machine,
+                e.g. <span className="font-mono">http://192.168.1.10:8524</span>.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={saveSdc} disabled={sdcSaving} size="sm">
+                {sdcSaving ? "Saving…" : "Save"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={testSdc}>
+                Test SDC connection
+              </Button>
+              {identity && (
+                <Button variant="outline" size="sm" onClick={unpairTerminal}>
+                  Unpair terminal
+                </Button>
+              )}
+            </div>
+            {sdcStatus && (
+              <div
+                className={`flex items-start gap-2 rounded-md border p-2 text-xs ${
+                  sdcStatus.ok
+                    ? "bg-success-soft text-success-soft-foreground"
+                    : "bg-warning-soft text-warning-soft-foreground"
+                }`}
+              >
+                {sdcStatus.ok ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                <span className="break-all">{sdcStatus.msg}</span>
               </div>
             )}
           </CardContent>

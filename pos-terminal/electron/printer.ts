@@ -77,6 +77,27 @@ function resolveCharset(): string {
   return process.env["POS_PRINTER_CHARSET"] || "PC437_USA";
 }
 
+/**
+ * Resolve the FBR Digital Invoicing logo bundled for the thermal receipt.
+ * Mirrors the schema.sql candidate-path approach in db/client.ts: works from
+ * the source tree in dev and from the asar/out layout in prod. Returns null if
+ * the asset is missing so printing degrades to QR-only rather than failing.
+ */
+function resolveFbrLogoPath(): string | null {
+  const rel = "fbr-logo-thermal.png";
+  const candidates = [
+    // dev: cwd is the pos-terminal package root
+    path.resolve(process.cwd(), "electron/assets", rel),
+    // bundled next to main.cjs (if a copy step ever places it there)
+    path.resolve(__dirname, "assets", rel),
+    // prod asar: __dirname is out/main; the source-packaged asset sits at
+    // <app.asar>/electron/assets — two levels up from out/main.
+    path.resolve(__dirname, "../../electron/assets", rel),
+    path.resolve(__dirname, "../electron/assets", rel),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? null;
+}
+
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -155,18 +176,35 @@ async function realPrint(
     return { success: false, reason: `printer unreachable at ${printerUrl}` };
   }
 
+  // FBR Digital Invoicing logo at the top — the mandatory compliance mark on
+  // printed invoices. printImage rasterizes the PNG to the printer's width.
+  // Best-effort: a missing asset or unsupported model degrades to QR-only.
+  const logoPath = resolveFbrLogoPath();
+  if (logoPath) {
+    try {
+      printer.alignCenter();
+      await printer.printImage(logoPath);
+      printer.alignLeft();
+    } catch (e) {
+      console.warn("[printer] FBR logo render failed:", e);
+      printer.alignLeft();
+    }
+  }
+
   for (const line of text.split("\n")) {
     printer.println(line);
   }
 
-  // Optional FBR QR: if the invoice carries an FBR QR payload, embed it.
-  // Falls back silently when payload is absent.
-  const qrPayload = (input.invoice as { fbr_qr_payload?: string | null }).fbr_qr_payload;
-  if (qrPayload) {
+  // FBR QR: encode EXACTLY the FBR fiscal invoice number string — that's what
+  // the FBR Tax Asaan app verifies (scanning the QR == entering the number).
+  // Encoding a JSON blob makes Tax Asaan report "invalid". Only print once the
+  // invoice actually has an FBR number.
+  const fbrNo = (input.invoice as { fbr_invoice_number?: string | null }).fbr_invoice_number;
+  if (fbrNo) {
     printer.alignCenter();
     try {
-      await printer.printQR(qrPayload, { cellSize: 6 });
-      printer.println("Scan to verify on FBR");
+      await printer.printQR(fbrNo, { cellSize: 6 });
+      printer.println("Scan to verify on FBR Tax Asaan");
     } catch (e) {
       console.warn("[printer] QR render failed:", e);
     }

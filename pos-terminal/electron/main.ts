@@ -34,7 +34,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 720,
     autoHideMenuBar: true,
-    title: "Pakistan POS — Terminal",
+    title: "InvoiceSolution — Terminal",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
@@ -55,9 +55,10 @@ function createWindow() {
 
 void app.whenReady().then(() => {
   const dbPath = resolveDbPath();
+  const apiBase = resolveApiBase();
   openDb(dbPath);
-  registerIpcHandlers();
-  startSyncWorker({ dbPath, apiBase: resolveApiBase() });
+  registerIpcHandlers({ apiBase });
+  startSyncWorker({ dbPath, apiBase });
   createWindow();
   // Open customer-facing display on a secondary monitor when present;
   // re-attempts on display hot-plug. No-op for single-display setups.

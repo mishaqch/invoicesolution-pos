@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { NumberInput } from "@/components/ui/number-input";
 import { ApiError, api } from "@/lib/api";
 import { Money } from "@/lib/money";
 import { useSessionStore } from "@/stores/session";
@@ -68,7 +69,7 @@ export default function DayCloseRoute() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted/30 p-4">
+    <div className="h-full overflow-y-auto bg-muted/30 p-4">
       <button
         onClick={() => navigate(-1)}
         className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
@@ -90,13 +91,13 @@ export default function DayCloseRoute() {
           <div className="rounded-md border bg-background p-4">
             <div className="text-sm font-semibold">Count cash</div>
             <label className="mt-2 block text-sm">Declared cash in drawer</label>
-            <input
-              type="text"
-              inputMode="decimal"
+            <NumberInput
+              mode="decimal"
               value={declared}
-              onChange={(e) => setDeclared(e.target.value)}
-              className="mt-1 h-10 w-full rounded-md border bg-background px-3 font-mono text-base"
+              onChange={setDeclared}
+              className="mt-1 h-10 font-mono text-base"
               placeholder={expected.display()}
+              aria-label="Declared cash in drawer"
             />
             <Row
               label="Variance"
@@ -119,23 +120,34 @@ export default function DayCloseRoute() {
           </div>
         )}
 
+        {/* Step-driven action bar. Each step shows exactly ONE primary
+            button so the cashier can't fire two intents at once.
+              summary → "Count cash"
+              count   → "Close day"   (variance == 0)
+                      → "Add reason"  (variance != 0)
+              reason  → "Close day"
+            Prior implementation had two overlapping branches that
+            BOTH rendered on step="count" when variance was zero,
+            producing duplicate "Close day" buttons. */}
         <div className="flex justify-end gap-2">
           {step === "summary" && (
             <Button onClick={() => setStep("count")}>Count cash</Button>
           )}
-          {step === "count" && (
-            <Button
-              onClick={() => setStep(variance.isZero() ? "count" : "reason")}
-              disabled={!declared}
-            >
-              {variance.isZero() ? "Close day" : "Add reason"}
-            </Button>
-          )}
-          {(step === "count" && variance.isZero()) || step === "reason" ? (
+          {step === "count" && variance.isZero() && (
             <Button onClick={close} disabled={busy || !declared}>
               {busy ? "Closing…" : "Close day"}
             </Button>
-          ) : null}
+          )}
+          {step === "count" && !variance.isZero() && (
+            <Button onClick={() => setStep("reason")} disabled={!declared}>
+              Add reason
+            </Button>
+          )}
+          {step === "reason" && (
+            <Button onClick={close} disabled={busy || !declared || !reason.trim()}>
+              {busy ? "Closing…" : "Close day"}
+            </Button>
+          )}
         </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
@@ -148,7 +160,7 @@ function Row({ label, value, muted }: { label: string; value: string; muted?: bo
   return (
     <div className="mt-1 flex items-center justify-between text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`font-mono ${muted ? "text-amber-700" : ""}`}>{value}</span>
+      <span className={`font-mono ${muted ? "text-warning-soft-foreground" : ""}`}>{value}</span>
     </div>
   );
 }
@@ -161,7 +173,7 @@ function Splash({
   variant?: "info" | "error";
 }) {
   return (
-    <div className="flex min-h-screen items-center justify-center p-8 text-sm">
+    <div className="flex h-full items-center justify-center p-8 text-sm">
       <div className={variant === "error" ? "text-destructive" : "text-muted-foreground"}>
         {msg}
       </div>

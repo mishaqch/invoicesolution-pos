@@ -54,10 +54,13 @@ export function SyncStatusDot() {
 
   const color = colorFor(status);
 
+  // Semantic tokens — these track WCAG-tuned contrast values defined
+  // in src/index.css. Matches admin-web's invoice-status palette so
+  // operators see the same green/amber/red across surfaces.
   const colorClass: Record<Color, string> = {
-    green: "bg-green-500",
-    amber: "bg-amber-500",
-    red: "bg-red-500",
+    green: "bg-success",
+    amber: "bg-warning",
+    red: "bg-destructive",
     idle: "bg-muted-foreground/40",
   };
 
@@ -75,7 +78,7 @@ export function SyncStatusDot() {
           <span className="text-xs text-muted-foreground">{status.counts.pending}</span>
         )}
         {status.counts.failed > 0 && (
-          <span className="rounded-full bg-red-100 px-1.5 text-xs text-red-700">
+          <span className="rounded-full bg-destructive-soft px-1.5 text-xs text-destructive-soft-foreground">
             {status.counts.failed}
           </span>
         )}
@@ -107,7 +110,7 @@ export function SyncStatusDot() {
               </span>
             </div>
             {status.last_error && (
-              <div className="mt-2 rounded bg-red-50 p-2 text-xs text-red-900">
+              <div className="mt-2 rounded bg-destructive-soft p-2 text-xs text-destructive-soft-foreground">
                 {status.last_error}
               </div>
             )}
@@ -135,7 +138,7 @@ export function SyncStatusDot() {
                   await window.api.sync.retryFailed();
                   setBusy(false);
                 }}
-                className="flex-1 rounded-md border px-2 py-1 text-xs text-amber-700 hover:bg-muted"
+                className="flex-1 rounded-md border px-2 py-1 text-xs text-warning-soft-foreground hover:bg-muted"
               >
                 Retry failed
               </button>

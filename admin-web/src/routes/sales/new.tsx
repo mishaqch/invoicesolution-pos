@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
+import { InvoicePreview } from "@/features/invoices/InvoicePreview";
 import { useModules } from "@/features/modules/hooks";
 import { ApiError } from "@/lib/api";
 import {
@@ -15,10 +17,17 @@ import {
   useCreateManualInvoice,
   useCustomers,
   useProducts,
+  useTaxRates,
   useTerminals,
   type ManualInvoiceLine,
   type ManualInvoicePayment,
 } from "@/lib/queries";
+
+// UUID v4 shape. Used to detect when `product.tax_rate` is the FK row
+// id (current backend serializer behaviour) instead of the numeric
+// percentage. When it matches, we look the rate up via useTaxRates.
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface DraftLine {
   product_id: string;
@@ -79,7 +88,29 @@ export default function NewInvoiceRoute() {
   const branches = useBranches();
   const terminals = useTerminals();
   const customers = useCustomers();
+  const taxRates = useTaxRates();
   const create = useCreateManualInvoice();
+
+  // The product API returns `tax_rate` as the TaxRate row's UUID (FK),
+  // but the invoice serializer expects a numeric percentage like "18".
+  // Maintain a lookup so we can swap UUID → percentage whenever we
+  // build a cart line. Falls back to "0" when no rate is selected
+  // (non-taxable products). Wrapped in useMemo so we don't rebuild it
+  // on every render.
+  const taxRateByIdMemo = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of taxRates.data?.results ?? []) m.set(r.id, r.rate);
+    return m;
+  }, [taxRates.data]);
+
+  function resolveTaxRate(raw: string | null | undefined): string {
+    // Non-taxable / blank → 0 (DRF DecimalField accepts "0").
+    if (!raw) return "0";
+    // Already numeric (legacy / future shape)?  Pass through.
+    if (!UUID_RE.test(raw)) return raw;
+    // It's a UUID; look up the row's `rate` and use that.
+    return taxRateByIdMemo.get(raw) ?? "0";
+  }
 
   // Two tenant shapes for invoice creation:
   //   A) Multi-branch / multi-terminal tenants — pickers show, user
@@ -110,6 +141,17 @@ export default function NewInvoiceRoute() {
   const [terminalId, setTerminalId] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [notes, setNotes] = useState("");
+  // Cart-level discount — applies on top of any per-line discounts.
+  // `cartDiscountMode` controls how the input is interpreted:
+  //   - "pct"  → operator types e.g. "10" → 10% off the (post-line-discount)
+  //               subtotal. Stored verbatim and sent as cart_discount_pct.
+  //   - "rs"   → operator types a flat Rs amount; we convert to the
+  //               equivalent percent at submit time, because the server
+  //               accepts cart_discount_pct only (max 5 digits, 2 dp).
+  //               Conversion = (rs / pre-discount-subtotal) * 100, capped
+  //               to 100 to avoid negative grand totals.
+  const [cartDiscountInput, setCartDiscountInput] = useState("0");
+  const [cartDiscountMode, setCartDiscountMode] = useState<"pct" | "rs">("pct");
   const [productSearch, setProductSearch] = useState("");
   const [showProductPicker, setShowProductPicker] = useState(false);
   const products = useProducts(productSearch.trim() ? { search: productSearch.trim() } : {});
@@ -139,36 +181,69 @@ export default function NewInvoiceRoute() {
   // sync stops — multiple payments need manual amounts.
   const [paymentAutoFilled, setPaymentAutoFilled] = useState(true);
 
-  // Live totals — recompute on every cart edit. Mirrors the POS
-  // pricing engine's logic at the line-level (qty * unit_price -
-  // discount, tax = (line_net) * rate%).
-  const totals = useMemo(() => {
-    let subtotal = 0;
-    let tax = 0;
-    let discount = 0;
-    const byRate: Record<string, { taxable: number; tax: number }> = {};
+  // The cart-level discount as a percent (0–100). Derived in one spot
+  // so the totals memo + the submit() payload + the InvoicePreview all
+  // agree on the same number.
+  const cartDiscountPct = useMemo(() => {
+    const raw = Number(cartDiscountInput) || 0;
+    if (raw <= 0) return 0;
+    if (cartDiscountMode === "pct") {
+      return Math.min(100, raw);
+    }
+    // "rs" mode: convert flat Rs → percent of post-line-discount subtotal.
+    // We need the line-level subtotal here, so compute it inline.
+    let sub = 0;
     for (const line of lines) {
       const qty = Number(line.quantity) || 0;
       const price = Number(line.unit_price) || 0;
       const lineDiscount = Number(line.discount_amount) || 0;
+      sub += Math.max(0, qty * price - lineDiscount);
+    }
+    if (sub <= 0) return 0;
+    return Math.min(100, (raw / sub) * 100);
+  }, [cartDiscountInput, cartDiscountMode, lines]);
+
+  // Live totals — recompute on every cart edit. Mirrors the POS
+  // pricing engine's logic at the line-level (qty * unit_price -
+  // discount, tax = (line_net) * rate%), then applies the cart-level
+  // discount on top — prorated across lines (each line's net shrinks
+  // by `cartDiscountPct`), which keeps the per-line tax band breakdown
+  // mathematically consistent with what the server computes.
+  const totals = useMemo(() => {
+    let subtotal = 0;
+    let tax = 0;
+    let lineDiscount = 0;
+    let cartDiscount = 0;
+    const byRate: Record<string, { taxable: number; tax: number }> = {};
+    const factor = 1 - cartDiscountPct / 100;
+    for (const line of lines) {
+      const qty = Number(line.quantity) || 0;
+      const price = Number(line.unit_price) || 0;
+      const lineDisc = Number(line.discount_amount) || 0;
       const gross = qty * price;
-      const net = Math.max(0, gross - lineDiscount);
+      const netBeforeCart = Math.max(0, gross - lineDisc);
+      const net = netBeforeCart * factor;            // post-cart-discount taxable
       const rate = line.is_taxable ? (Number(line.tax_rate) || 0) : 0;
       const lineTax = (net * rate) / 100;
       subtotal += net;
       tax += lineTax;
-      discount += lineDiscount;
+      lineDiscount += lineDisc;
+      cartDiscount += netBeforeCart - net;
       const key = `${rate}`;
       if (!byRate[key]) byRate[key] = { taxable: 0, tax: 0 };
       byRate[key].taxable += net;
       byRate[key].tax += lineTax;
     }
     return {
-      subtotal, tax, discount,
+      subtotal,
+      tax,
+      lineDiscount,
+      cartDiscount,
+      discount: lineDiscount + cartDiscount,
       grand: subtotal + tax,
       byRate,
     };
-  }, [lines]);
+  }, [lines, cartDiscountPct]);
 
   const totalTendered = useMemo(
     () => payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0),
@@ -187,20 +262,43 @@ export default function NewInvoiceRoute() {
   }, [totals.grand, payments, paymentAutoFilled]);
 
   function addProduct(p: any) {
-    setLines((curr) => [...curr, {
-      product_id: p.id,
-      product_name: p.name,
-      product_sku: p.sku,
-      hs_code: p.hs_code ?? "",
-      uom_code: p.uom ?? "PCS",
-      quantity: "1",
-      unit_price: p.sale_price ?? "0",
-      tax_rate: p.tax_rate ?? "18",
-      is_taxable: !!p.is_taxable,
-      discount_amount: "0",
-    }]);
-    setShowProductPicker(false);
-    setProductSearch("");
+    // Coerce `p.tax_rate` from FK UUID to the numeric percentage the
+    // backend invoice serializer expects. Without this, the POST to
+    // /api/sales/invoices/manual/ rejects with
+    //   "cart_lines.tax_rate: A valid number is required."
+    // because DRF tries to parse the UUID as a Decimal.
+    //
+    // UX: clicking the same product twice in the picker should INCREMENT
+    // the line's quantity rather than add a duplicate row. The picker
+    // stays open after each click so the operator can rapid-tap several
+    // products in a row. This matches POS-terminal cart behaviour and
+    // halves the click count when invoicing multiple items.
+    setLines((curr) => {
+      const existingIdx = curr.findIndex((l) => l.product_id === p.id);
+      if (existingIdx >= 0) {
+        const existing = curr[existingIdx];
+        const nextQty = (Number(existing.quantity) || 0) + 1;
+        return curr.map((l, i) =>
+          i === existingIdx ? { ...l, quantity: String(nextQty) } : l,
+        );
+      }
+      return [...curr, {
+        product_id: p.id,
+        product_name: p.name,
+        product_sku: p.sku,
+        hs_code: p.hs_code ?? "",
+        uom_code: p.uom ?? "PCS",
+        quantity: "1",
+        unit_price: p.sale_price ?? "0",
+        tax_rate: resolveTaxRate(p.tax_rate),
+        is_taxable: !!p.is_taxable,
+        discount_amount: "0",
+      }];
+    });
+    // Deliberately DO NOT close the picker or clear the search string
+    // here — keeping both lets the operator add several items from the
+    // same search filter in quick succession. The "Done" button + ESC
+    // key both close the picker explicitly.
   }
 
   function updateLine(idx: number, patch: Partial<DraftLine>) {
@@ -251,11 +349,15 @@ export default function NewInvoiceRoute() {
       return;
     }
     try {
+      // Defensive coerce again at submit time: even if `addProduct`
+      // already resolved the UUID, the operator may have typed a blank
+      // / non-numeric value into the per-line tax-rate input. Whatever
+      // we send must parse as a Decimal on the server.
       const apiLines: ManualInvoiceLine[] = lines.map((l) => ({
         product: l.product_id,
         quantity: l.quantity,
         unit_price: l.unit_price,
-        tax_rate: l.tax_rate,
+        tax_rate: resolveTaxRate(l.tax_rate),
         is_taxable: l.is_taxable,
         discount_amount: l.discount_amount,
         hs_code: l.hs_code || undefined,
@@ -270,6 +372,14 @@ export default function NewInvoiceRoute() {
         // so the server copies the buyer block from reference_invoice.
         customer: debitContext ? null : (customerId || null),
         cart_lines: apiLines,
+        // Cart-level discount as percent (0–100). Even when the operator
+        // typed an Rs amount, we converted it to percent in the
+        // `cartDiscountPct` memo so the wire format matches the server's
+        // `cart_discount_pct` DecimalField(max_digits=5, dp=2). Omit
+        // when zero so we don't pollute the audit log with no-op fields.
+        ...(cartDiscountPct > 0
+          ? { cart_discount_pct: cartDiscountPct.toFixed(2) }
+          : {}),
         payments: payments.map((p) => ({
           ...p, amount: String(p.amount),
         })),
@@ -309,8 +419,34 @@ export default function NewInvoiceRoute() {
   }
 
   const filteredProducts = products.data?.results ?? [];
-  const customerName =
-    customers.data?.results?.find((c) => c.id === customerId)?.name ?? "Walk-in";
+  const selectedCustomer = customers.data?.results?.find((c) => c.id === customerId) ?? null;
+  const customerName = selectedCustomer?.name ?? "Walk-in";
+
+  // Buyer block for the live preview. Walk-in flows pass null
+  // everywhere so the preview shows "Unregistered / —". When a buyer
+  // is picked we mirror the same Registered/Unregistered logic the
+  // backend uses when computing buyerRegistrationType.
+  const previewBuyer = {
+    name: selectedCustomer?.name ?? null,
+    ntn: selectedCustomer?.ntn ?? selectedCustomer?.cnic ?? null,
+    province: selectedCustomer?.province ?? null,
+    registrationType: (
+      selectedCustomer?.registration_type === "registered"
+        ? "Registered" : "Unregistered"
+    ) as "Registered" | "Unregistered",
+  };
+  const previewLines = lines.map((l) => ({
+    product_name: l.product_name,
+    product_sku: l.product_sku,
+    hs_code: l.hs_code || undefined,
+    uom_code: l.uom_code || undefined,
+    quantity: l.quantity,
+    unit_price: l.unit_price,
+    discount_pct: "0",            // line-level pct lives in cart_discount; per-line is fixed amount
+    discount_amount: l.discount_amount,
+    tax_rate: l.tax_rate,
+    is_taxable: l.is_taxable,
+  }));
 
   return (
     <div className="space-y-4">
@@ -433,10 +569,63 @@ export default function NewInvoiceRoute() {
               <span className="text-muted-foreground">Subtotal</span>
               <span className="font-mono">{rs(totals.subtotal)}</span>
             </div>
-            {totals.discount > 0 && (
+
+            {/* Cart-level discount input.
+                Two-mode toggle: % off OR Rs amount. The state for the
+                actual percent applied lives in `cartDiscountPct` (memo
+                above); both modes feed into it. We show the *effective*
+                cart discount amount inline next to the input so the
+                operator can see "10% = Rs 45" while typing. */}
+            <div className="border-t pt-2 mt-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-muted-foreground text-xs">Invoice discount</span>
+                {totals.cartDiscount > 0 && (
+                  <span className="text-xs font-mono text-emerald-700">
+                    −{rs(totals.cartDiscount)}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]*\.?[0-9]*"
+                  value={cartDiscountInput}
+                  onChange={(e) => setCartDiscountInput(e.target.value)}
+                  className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-right text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Invoice discount value"
+                />
+                <button
+                  type="button"
+                  onClick={() => setCartDiscountMode("pct")}
+                  aria-pressed={cartDiscountMode === "pct"}
+                  className={`h-8 w-10 rounded-md border text-xs font-medium transition-colors ${
+                    cartDiscountMode === "pct"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  %
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCartDiscountMode("rs")}
+                  aria-pressed={cartDiscountMode === "rs"}
+                  className={`h-8 w-10 rounded-md border text-xs font-medium transition-colors ${
+                    cartDiscountMode === "rs"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-background text-muted-foreground hover:bg-accent"
+                  }`}
+                >
+                  Rs
+                </button>
+              </div>
+            </div>
+
+            {totals.lineDiscount > 0 && (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Discount</span>
-                <span className="font-mono">−{rs(totals.discount)}</span>
+                <span className="text-muted-foreground">Line discounts</span>
+                <span className="font-mono">−{rs(totals.lineDiscount)}</span>
               </div>
             )}
             <div className="flex justify-between">
@@ -474,39 +663,105 @@ export default function NewInvoiceRoute() {
         </CardHeader>
         <CardContent className="p-0">
           {showProductPicker && (
-            <div className="border-b p-3">
-              <div className="relative max-w-md">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  className="pl-9"
-                  placeholder="Search by SKU, barcode, name…"
-                  value={productSearch}
-                  autoFocus
-                  onChange={(e) => setProductSearch(e.target.value)}
-                />
+            <div className="border-b p-3 bg-muted/20">
+              {/* Header strip: search + running count + Done button.
+                  Layout: search input on the left grows, item-count
+                  pill + Done button anchored on the right so the
+                  operator always knows how many items they've added
+                  in this picker session and can close in one click. */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Search by SKU, barcode, name…"
+                    value={productSearch}
+                    autoFocus
+                    onChange={(e) => setProductSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setShowProductPicker(false);
+                        setProductSearch("");
+                      }
+                      // Enter on a search with exactly one result =
+                      // add that one product. Convenient for barcode-
+                      // scanner workflows where the scanner appends
+                      // a CR/LF after the SKU.
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (filteredProducts.length === 1) {
+                          addProduct(filteredProducts[0]);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                {lines.length > 0 && (
+                  <Badge variant="secondary" className="font-mono">
+                    {lines.length} item{lines.length === 1 ? "" : "s"} added
+                  </Badge>
+                )}
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setShowProductPicker(false);
+                    setProductSearch("");
+                  }}
+                >
+                  Done
+                </Button>
               </div>
-              <div className="mt-2 max-h-56 overflow-y-auto rounded-md border bg-background">
+
+              {/* Helper line so the operator knows the new behaviour
+                  without needing docs. */}
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Click a product to add it. Click again to add another
+                of the same item. Press <kbd className="rounded border border-muted-foreground/30 bg-background px-1 font-mono text-[10px]">Esc</kbd> or "Done" when finished.
+              </p>
+
+              <div className="mt-2 max-h-72 overflow-y-auto rounded-md border bg-background">
                 {filteredProducts.length === 0 ? (
                   <p className="p-3 text-xs text-muted-foreground">
                     {productSearch ? "No matches." : "Start typing to find a product."}
                   </p>
                 ) : (
                   <ul className="divide-y">
-                    {filteredProducts.slice(0, 20).map((p: any) => (
-                      <li key={p.id}>
-                        <button
-                          type="button"
-                          onClick={() => addProduct(p)}
-                          className="flex w-full items-baseline justify-between p-2 text-left text-sm hover:bg-muted"
-                        >
-                          <span>
-                            <span className="font-mono text-xs text-muted-foreground">{p.sku}</span>{" "}
-                            {p.name}
-                          </span>
-                          <span className="font-mono">{rs(p.sale_price)}</span>
-                        </button>
-                      </li>
-                    ))}
+                    {filteredProducts.slice(0, 20).map((p: any) => {
+                      // Show the operator at a glance which items they've
+                      // already added, and how many. Encourages the click-
+                      // again-to-bump-quantity pattern.
+                      const inCart = lines.find((l) => l.product_id === p.id);
+                      const addedQty = inCart ? Number(inCart.quantity) || 0 : 0;
+                      return (
+                        <li key={p.id}>
+                          <button
+                            type="button"
+                            onClick={() => addProduct(p)}
+                            className={`flex w-full items-center justify-between gap-3 p-2 text-left text-sm transition-colors ${
+                              inCart
+                                ? "bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50"
+                                : "hover:bg-muted"
+                            }`}
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {p.sku}
+                              </span>{" "}
+                              {p.name}
+                            </span>
+                            {inCart && (
+                              <span className="shrink-0 rounded-full bg-emerald-600/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                ✓ Added · qty {addedQty}
+                              </span>
+                            )}
+                            <span className="shrink-0 font-mono text-muted-foreground">
+                              {rs(p.sale_price)}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>
@@ -562,36 +817,40 @@ export default function NewInvoiceRoute() {
                         />
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Input
+                        <NumberInput
+                          mode="decimal"
                           value={line.quantity}
-                          onChange={(e) => updateLine(idx, { quantity: e.target.value })}
+                          onChange={(v) => updateLine(idx, { quantity: v })}
                           className="h-8 w-20 text-right text-xs"
-                          inputMode="decimal"
+                          aria-label="Quantity"
                         />
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Input
+                        <NumberInput
+                          mode="decimal"
                           value={line.unit_price}
-                          onChange={(e) => updateLine(idx, { unit_price: e.target.value })}
+                          onChange={(v) => updateLine(idx, { unit_price: v })}
                           className="h-8 w-24 text-right text-xs"
-                          inputMode="decimal"
+                          aria-label="Unit price"
                         />
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Input
+                        <NumberInput
+                          mode="decimal"
                           value={line.tax_rate}
-                          onChange={(e) => updateLine(idx, { tax_rate: e.target.value })}
+                          onChange={(v) => updateLine(idx, { tax_rate: v })}
                           className="h-8 w-16 text-right text-xs"
-                          inputMode="decimal"
                           disabled={!line.is_taxable}
+                          aria-label="Tax rate"
                         />
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Input
+                        <NumberInput
+                          mode="decimal"
                           value={line.discount_amount}
-                          onChange={(e) => updateLine(idx, { discount_amount: e.target.value })}
+                          onChange={(v) => updateLine(idx, { discount_amount: v })}
                           className="h-8 w-20 text-right text-xs"
-                          inputMode="decimal"
+                          aria-label="Discount amount"
                         />
                       </td>
                       <td className="px-3 py-2 text-right font-mono">{rs(lineTotal)}</td>
@@ -636,15 +895,16 @@ export default function NewInvoiceRoute() {
                       <option key={m} value={m}>{m.replace(/_/g, " ")}</option>
                     ))}
                   </Select>
-                  <Input
+                  <NumberInput
+                    mode="decimal"
                     value={p.amount}
-                    onChange={(e) => {
+                    onChange={(v) => {
                       setPaymentAutoFilled(false);
-                      setPaymentField(idx, { amount: e.target.value });
+                      setPaymentField(idx, { amount: v });
                     }}
                     className="col-span-5 text-right font-mono"
-                    inputMode="decimal"
                     placeholder="0.00"
+                    aria-label="Payment amount"
                   />
                   <button
                     onClick={() => removePayment(idx)}
@@ -703,10 +963,9 @@ export default function NewInvoiceRoute() {
               <Badge variant="outline">{customerName}</Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              On submit, the invoice is created and queued for FBR
-              submission. The FBR invoice number appears on the detail
-              page once PRAL responds (usually within seconds in sandbox,
-              up to a few seconds in production).
+              Saved as a draft locally. On the next screen you can
+              "Validate with FBR" (free dry-run) and then "Submit to FBR"
+              when ready — that's when PRAL issues the FBR Invoice Number.
             </p>
           </CardContent>
         </Card>
@@ -718,11 +977,40 @@ export default function NewInvoiceRoute() {
         </div>
       )}
 
-      <div className="flex justify-end gap-2">
-        <Button variant="outline" onClick={() => navigate("/sales")}>Cancel</Button>
-        <Button onClick={submit} disabled={create.isPending}>
-          {create.isPending ? "Submitting…" : "Create invoice & submit to FBR"}
-        </Button>
+      {/* Live A4-ish preview so the operator can sanity-check the
+          buyer + totals before committing. The server still generates
+          the canonical PDF (with FBR seal + QR) after save. */}
+      <InvoicePreview
+        buyer={previewBuyer}
+        lines={previewLines}
+        // Per-line discounts are already folded into previewLines.
+        // The cart-level percent is layered on top by InvoicePreview's
+        // own math. We pass our derived cartDiscountPct verbatim (it's
+        // already capped to 100 and converted from Rs → pct when the
+        // operator typed an Rs amount).
+        cartDiscountPct={cartDiscountPct.toFixed(2)}
+        invoiceType={debitContext?.invoiceType ?? "sale"}
+      />
+
+      {/* Action footer.
+          Manual invoices are NOT auto-submitted to FBR — the operator
+          clicks "Create invoice" to save locally, then runs "Validate
+          with FBR" + "Submit to FBR" from the invoice detail page when
+          they're confident the data is correct. Splitting saves +
+          submission lets the operator review the saved invoice (line
+          totals, buyer, tax breakdown) before committing to PRAL,
+          which is irrevocable once an FBR Invoice Number is issued. */}
+      <div className="flex flex-col items-end gap-2">
+        <p className="text-xs text-muted-foreground">
+          The invoice will be saved locally as a draft. You can validate
+          + submit it to FBR from the invoice detail page.
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate("/sales")}>Cancel</Button>
+          <Button onClick={submit} disabled={create.isPending}>
+            {create.isPending ? "Saving…" : "Create invoice"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -753,20 +1041,22 @@ function PaymentExtraFields({
   if (m === "card_credit" || m === "card_debit") {
     return (
       <div className="grid grid-cols-3 gap-2">
-        <Input
-          value={payment.card_last4 ?? ""}
-          onChange={(e) => onChange({ card_last4: e.target.value })}
-          placeholder="Last 4 digits"
+        <NumberInput
+          mode="integer"
           maxLength={4}
-          inputMode="numeric"
+          value={payment.card_last4 ?? ""}
+          onChange={(v) => onChange({ card_last4: v })}
+          placeholder="Last 4 digits"
+          aria-label="Card last 4 digits"
           className="text-xs"
         />
-        <Input
-          value={payment.card_auth_code ?? ""}
-          onChange={(e) => onChange({ card_auth_code: e.target.value })}
-          placeholder="Auth code (6 digits)"
+        <NumberInput
+          mode="integer"
           maxLength={6}
-          inputMode="numeric"
+          value={payment.card_auth_code ?? ""}
+          onChange={(v) => onChange({ card_auth_code: v })}
+          placeholder="Auth code (6 digits)"
+          aria-label="Card auth code"
           className="text-xs"
         />
         <Input

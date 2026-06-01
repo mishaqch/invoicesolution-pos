@@ -22,7 +22,7 @@
     "pin": "PIN",
     "password": "Password",
     "submit": "Sign in",
-    "invalid_credentials": "Email or password is incorrect.",
+    "invalid_credentials": "Email or PIN is incorrect.",
     "too_many_attempts": "Too many attempts. Try again in a few minutes.",
     "network_error": "Could not sign in. Check the network."
   },
@@ -63,7 +63,9 @@
     "hold_prompt": "Hold sale — enter a label (e.g., customer name):",
     "hold_confirm": "Sale held.",
     "loading_catalog": "Loading catalog…",
-    "network_error": "Could not reach the server: {{error}}"
+    "network_error": "Could not reach the server: {{error}}",
+    "barcode_unknown": "No product for barcode {{code}}.",
+    "barcode_error": "Could not look up the scanned barcode."
   },
   "payment": {
     "title": "Payment",

@@ -68,6 +68,13 @@ export interface PosInvoiceRow {
   is_held: number;
   held_label: string | null;
   notes: string | null;
+  // FBR submission state — populated by the sync worker after the
+  // backend echoes back the PRAL response (Phase 4). Nullable because
+  // unsynced / pending invoices haven't been to PRAL yet.
+  fbr_invoice_number: string | null;
+  fbr_qr_payload: string | null;
+  fbr_submitted_at: string | null;
+  fbr_validated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -100,10 +107,43 @@ export interface PosPaymentRow {
   created_at: string;
 }
 
+export interface PosPairedIdentity {
+  terminalId: string;
+  terminalName: string;
+  terminalIndex: number;
+  branchId: string;
+  branchName: string;
+  branchCode: string;
+  branchFbrPosId: string | null;
+  tenantId: string;
+  tenantName: string;
+  sdcUrl: string;
+}
+
 const api = {
   meta: {
     get: (key: string): Promise<string | null> => ipcRenderer.invoke("meta:get", key),
     set: (key: string, value: string): Promise<void> => ipcRenderer.invoke("meta:set", key, value),
+  },
+  pairing: {
+    status: (): Promise<{ paired: boolean; identity: PosPairedIdentity | null }> =>
+      ipcRenderer.invoke("pairing:status"),
+    pair: (code: string): Promise<{ ok: boolean; identity?: PosPairedIdentity; error?: string }> =>
+      ipcRenderer.invoke("pairing:pair", code),
+    unpair: (): Promise<{ ok: true }> => ipcRenderer.invoke("pairing:unpair"),
+  },
+  sdc: {
+    getUrl: (): Promise<string> => ipcRenderer.invoke("sdc:get-url"),
+    setUrl: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("sdc:set-url", url),
+    health: (): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke("sdc:health"),
+  },
+  fiscalize: {
+    invoice: (invoiceId: string): Promise<{
+      ok: boolean;
+      fbrInvoiceNumber?: string;
+      alreadyFiscalized?: boolean;
+      reason?: string;
+    }> => ipcRenderer.invoke("fiscalize:invoice", invoiceId),
   },
   queue: {
     enqueue: (entry: {
@@ -124,6 +164,8 @@ const api = {
       ipcRenderer.invoke("catalog:search", query, limit),
     list: (limit?: number): Promise<PosProductSqliteRow[]> =>
       ipcRenderer.invoke("catalog:list", limit),
+    byBarcode: (barcode: string): Promise<PosProductSqliteRow | null> =>
+      ipcRenderer.invoke("catalog:by-barcode", barcode),
     count: (): Promise<number> => ipcRenderer.invoke("catalog:count"),
   },
   sales: {
@@ -140,6 +182,15 @@ const api = {
       ipcRenderer.invoke("sales:hold", invoice_id, label),
     recall: (invoice_id: string): Promise<{ ok: true }> =>
       ipcRenderer.invoke("sales:recall", invoice_id),
+    deleteHeld: (invoice_id: string): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("sales:delete-held", invoice_id),
+    setFbrFields: (args: {
+      invoice_id: string;
+      fbr_invoice_number: string;
+      fbr_qr_payload: string | null;
+      fbr_validated_at: string | null;
+    }): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("sales:set-fbr-fields", args),
   },
   session: {
     open: (payload: PosCashSessionRow): Promise<{ ok: true }> =>

@@ -21,8 +21,14 @@ from ..models import Invoice
 def cancel_invoice(
     invoice: Invoice, *, reason: str, user=None, request=None,
 ) -> Invoice:
-    if invoice.status in ("cancelled", "finalized"):
-        raise ValidationError({"status": f"Cannot cancel a {invoice.status} invoice."})
+    # PRAL DI manual v1.6 §"Conditions for Invoice Cancellation":
+    # only FBR-accepted invoices are eligible for amendment.
+    # `can_cancel_invoice` encodes the full matrix (FBR-accepted,
+    # within 72h, no edited items, not annexure-C-linked).
+    from apps.fbr.rules import can_cancel_invoice
+    allowed, why = can_cancel_invoice(invoice)
+    if not allowed:
+        raise ValidationError({"status": why})
 
     # Reverse the sale movements (positive return movement per line).
     for item in invoice.items.select_related("product", "variant"):

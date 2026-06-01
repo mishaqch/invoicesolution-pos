@@ -32,7 +32,7 @@ from .client import (
     PralTransientError,
     PralValidationError,
 )
-from .models import FbrSubmission, FbrToken
+from .models import BranchFbrToken, FbrSubmission, FbrToken
 from .qr import build_qr_payload, render_png_b64
 
 logger = logging.getLogger(__name__)
@@ -56,11 +56,71 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
         return {"skipped": True, "status": invoice.status}
 
     tenant: Tenant = invoice.tenant
-    token = (
-        FbrToken.objects.filter(tenant=tenant, environment="production", is_active=True)
-        .first()
-        or FbrToken.objects.filter(tenant=tenant, environment="sandbox", is_active=True).first()
-    )
+
+    # --- SDC (Fiscalization Service) path — evaluated FIRST ---------------
+    # POS/IMS-type registrations fiscalize through the SDC (a central Windows
+    # service holding the POS ID + Code), NOT via our DI-API tokens. So if the
+    # SDC is configured AND this branch has an FBR POS ID, route here BEFORE any
+    # token logic — these tenants have no DI-API Bearer token at all. One SDC
+    # serves many POS IDs (POSID is per-request). DI-API tenants (no SDC
+    # configured, or branch without a POS ID) fall through to the token path.
+    from apps.fbr import sdc_client
+
+    branch_pos_id = getattr(invoice.branch, "fbr_pos_id", None)
+    if sdc_client.sdc_configured() and branch_pos_id:
+        return _submit_via_sdc(self, invoice=invoice, tenant=tenant, pos_id=branch_pos_id)
+
+    # --- Token selection -------------------------------------------------
+    # POS: each branch is its own registered POS with its OWN bearer token
+    # (BranchFbrToken). If the invoice's branch has an FBR token configured,
+    # that branch token is authoritative — its sales MUST go out under it,
+    # never under a different branch's or the tenant's token. If the branch
+    # token exists but is inactive, defer (don't silently fall back to the
+    # tenant token and mis-attribute the sale to the wrong POS registration).
+    #
+    # Digital Invoicing: a DI tenant has no per-branch POS registration, so
+    # there's no BranchFbrToken and we fall through to the tenant-level token
+    # logic below — unchanged.
+    # `token` ends up being either a BranchFbrToken (POS) or a tenant
+    # FbrToken (Digital Invoicing). Both expose `.token`, `.environment` and
+    # `.api_endpoint`, so everything downstream is identical.
+    branch_token_qs = BranchFbrToken.objects.filter(branch_id=invoice.branch_id)
+    if branch_token_qs.exists():
+        token = branch_token_qs.filter(is_active=True).first()
+        if token is None:
+            logger.warning(
+                "Branch %s has an FBR token but it's inactive — deferring "
+                "(refusing to submit a POS sale under a different token)",
+                invoice.branch_id,
+            )
+            return {"deferred": "branch_token_inactive"}
+    else:
+        # Tenant-level token (Digital Invoicing). Production-only once
+        # production exists. If the tenant has ANY production token row, we use
+        # the active production token and NEVER fall back to sandbox — even if
+        # production is temporarily inactive (e.g. revoked by a PralAuthError).
+        # Falling back would route live sales to the sandbox endpoint, which
+        # must never happen. Sandbox is only eligible for tenants that never
+        # went to production. activate_production_token() also deactivates the
+        # sandbox token; this is the belt-and-braces guard.
+        has_production = FbrToken.objects.filter(
+            tenant=tenant, environment="production",
+        ).exists()
+        if has_production:
+            token = FbrToken.objects.filter(
+                tenant=tenant, environment="production", is_active=True,
+            ).first()
+            if token is None:
+                logger.warning(
+                    "Production token for tenant %s is inactive — deferring "
+                    "(refusing sandbox fallback for a production tenant)",
+                    tenant.id,
+                )
+                return {"deferred": "production_inactive"}
+        else:
+            token = FbrToken.objects.filter(
+                tenant=tenant, environment="sandbox", is_active=True,
+            ).first()
     if token is None:
         # No token — leave the invoice in pending_sync. Onboarding will
         # set the token; nothing to retry meanwhile.
@@ -68,18 +128,96 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
         return {"deferred": "no_token"}
 
     environment = token.environment
+    # Sandbox always needs a scenarioId; production ignores it (PRAL classifies
+    # per-line via saleType in production). We pick the most specific scenario
+    # the invoice matches, preferring retail/end-consumer scenarios when the
+    # tenant is assigned them — see the detailed selection block below.
+    #   - 3rd-Schedule lines (retail-price-fixed) → SN008 (or retail SN027)
+    #     (PRAL rejects SN001/SN002 for 3rd-Schedule lines with errorCode
+    #     0122 — "Value of Sales Excl. ST and Retail Price must be > 0".)
+    #   - Reduced-rate lines (8th Schedule)       → SN005 (or retail SN028)
+    #   - Standard, registered buyer (NTN on file) → SN001
+    #   - Standard, walk-in / unregistered         → SN002 (or retail SN026)
+    # Hard-coding SN001 was a sandbox-only bug — PRAL rejects SN001 with
+    # errorCode 0205 when the buyer NTN isn't in PRAL's registered-buyer
+    # table. See feedback_pral_sandbox_quirks.md.
+    if environment == "sandbox":
+        # PRAL's scenarioId applies to the WHOLE invoice — every line's
+        # saleType must be compatible with the chosen scenarioId. A scenario
+        # like SN008 ("3rd Schedule Goods") expects EVERY line to be a
+        # 3rd-Schedule item; a mixed invoice (sugar + rice) gets errorCode
+        # 0204 ("Sale type not match with provided scenario").
+        #
+        # We pick the scenarioId from (a) the line mix and (b) the buyer,
+        # preferring the RETAIL/end-consumer scenarios (SN026/SN027/SN028)
+        # when the tenant is actually assigned them — a POS selling to walk-in
+        # shoppers reports under the retailer-end-consumer rules, not the
+        # generic B2B SN001/SN002. We only emit a retail scenarioId if it's in
+        # the tenant's assigned set, so we never send PRAL a scenario it didn't
+        # assign (which it would reject in sandbox).
+        #
+        # Selection (all-lines-of-a-kind → that scenario; mixed → standard):
+        #   3rd-Schedule lines:   retail SN027  else SN008
+        #   Reduced-rate lines:   retail SN028  else SN005
+        #   Standard lines:       retail SN026  else (registered SN001 / walk-in SN002)
+        #
+        # Production ignores scenarioId entirely (PRAL classifies per-line via
+        # saleType), so this matters for sandbox testing accuracy; production
+        # sends scenario_id=None below.
+        from apps.fbr.scenarios import assigned_scenario_codes
+
+        assigned = set(assigned_scenario_codes(invoice.tenant))
+        items = list(invoice.items.all())
+
+        def _is_third_schedule(i):
+            return i.fixed_notified_value is not None and i.fixed_notified_value > 0
+
+        def _is_reduced_rate(i):
+            st = (i.sale_type or "")
+            sro = (i.sro_schedule_no or "").upper()
+            return "reduced rate" in st.lower() or "EIGHTH SCHEDULE" in sro
+
+        has_any_third_schedule = any(_is_third_schedule(i) for i in items)
+        all_third_schedule = bool(items) and all(_is_third_schedule(i) for i in items)
+        all_reduced_rate = bool(items) and all(_is_reduced_rate(i) for i in items)
+        is_registered = (invoice.buyer_registration_type or "").lower() == "registered"
+
+        def _pick(retail_code: str, fallback_code: str) -> str:
+            # Retail end-consumer sales are unregistered by definition; only
+            # use the retail scenario for walk-ins AND when it's assigned.
+            if not is_registered and retail_code in assigned:
+                return retail_code
+            return fallback_code
+
+        if all_third_schedule:
+            scenario_id = _pick("SN027", "SN008")
+        elif all_reduced_rate:
+            scenario_id = _pick("SN028", "SN005")
+        elif is_registered:
+            scenario_id = "SN001"
+        else:
+            scenario_id = _pick("SN026", "SN002")
+
+        # If the invoice mixes line types, PRAL's sandbox may reject the
+        # chosen scenario for the odd line. Log so we can spot it in support.
+        if has_any_third_schedule and not all_third_schedule:
+            logger.info(
+                "Mixed-content invoice %s: submitting under %s; "
+                "sandbox may reject the 3rd-Schedule lines if PRAL "
+                "enforces per-line scenario-saleType matching.",
+                invoice_id, scenario_id,
+            )
+    else:
+        scenario_id = None
     payload = build_invoice_payload(
-        invoice,
-        environment=environment,
-        # Sandbox always needs a scenarioId; pick SN001 by default for
-        # real (non-test) sandbox traffic so the request is well-formed.
-        scenario_id="SN001" if environment == "sandbox" else None,
+        invoice, environment=environment, scenario_id=scenario_id,
     )
 
     invoice.status = "submitted"
     invoice.fbr_submitted_at = timezone.now()
     invoice.save(update_fields=["status", "fbr_submitted_at", "updated_at"])
 
+    # --- DI-API path (direct to PRAL gateway) -----------------------------
     client = FbrClient(
         environment=environment,
         token=token.token,
@@ -111,7 +249,9 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
             endpoint="postinvoicedata", request_payload=payload,
             attempt_number=attempt_number, exc=exc,
         )
-        FbrToken.objects.filter(pk=token.pk).update(is_active=False)
+        # Deactivate whichever token failed — branch token (POS) or tenant
+        # token (DI). type(token) resolves to the right model/table.
+        type(token).objects.filter(pk=token.pk).update(is_active=False)
         notify(
             tenant_id=tenant.id,
             notification_type="fbr.auth_error",
@@ -161,15 +301,82 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
         duration_ms=result.duration_ms,
     )
 
-    validated_at = timezone.now()
     fbr_no = result.fbr_invoice_number or ""
     qr_payload = build_qr_payload(
         fbr_invoice_number=fbr_no,
-        validated_at=validated_at,
+        validated_at=timezone.now(),
         amount=invoice.grand_total,
         seller_ntn=tenant.ntn,
     )
+    _persist_fbr_success(invoice, tenant, fbr_no, qr_payload)
+    return {"ok": True, "fbr_invoice_number": fbr_no}
 
+
+def _submit_via_sdc(self, *, invoice, tenant, pos_id: str) -> dict:
+    """Fiscalize an invoice through the SDC (Fiscalization Service) for the
+    given branch POS ID. Persists the fiscal number + QR on success. Mirrors
+    the DI-API retry/fail semantics. Used for POS/IMS-type registrations."""
+    from apps.fbr import sdc_client
+
+    invoice.status = "submitted"
+    invoice.fbr_submitted_at = timezone.now()
+    invoice.save(update_fields=["status", "fbr_submitted_at", "updated_at"])
+
+    attempt = self.request.retries + 1
+
+    def _log_failure(exc):
+        # SDC errors aren't PralError; write a row directly using valid
+        # field choices (environment/endpoint).
+        FbrSubmission.objects.create(
+            tenant_id=tenant.id, invoice=invoice, environment="production",
+            endpoint="postinvoicedata",
+            request_payload={"POSID": pos_id, "via": "SDC"},
+            response_payload=None, http_status=None, status_code="01",
+            attempt_number=attempt, error_message=str(exc)[:1000],
+        )
+
+    try:
+        sdc_res = sdc_client.submit_invoice(invoice=invoice, pos_id=pos_id)
+    except sdc_client.SdcTransientError as exc:
+        _log_failure(exc)
+        attempt_idx = self.request.retries
+        if attempt_idx >= len(_BACKOFF_S):
+            _mark_invoice_failed(invoice, str(exc))
+            return {"failed": "max_retries", "error": str(exc)}
+        logger.warning("Transient SDC error for %s; retry in %ss: %s",
+                       invoice.id, _BACKOFF_S[attempt_idx], exc)
+        raise self.retry(exc=exc, countdown=_BACKOFF_S[attempt_idx])
+    except sdc_client.SdcRejectedError as exc:
+        _log_failure(exc)
+        _mark_invoice_failed(invoice, str(exc))
+        notify(
+            tenant_id=tenant.id, notification_type="fbr.submission_failed",
+            title=f"FBR (SDC) submission failed: {invoice.local_invoice_number}",
+            message=str(exc)[:500], severity="warning",
+            data={"invoice_id": str(invoice.id)},
+        )
+        return {"failed": "sdc_rejected", "error": str(exc)}
+
+    fbr_no = sdc_res.fbr_invoice_number
+    qr_payload = sdc_res.qr_payload or build_qr_payload(
+        fbr_invoice_number=fbr_no, validated_at=timezone.now(),
+        amount=invoice.grand_total, seller_ntn=tenant.ntn,
+    )
+    FbrSubmission.objects.create(
+        tenant_id=tenant.id, invoice=invoice, environment="production",
+        endpoint="postinvoicedata",
+        request_payload={"POSID": pos_id, "via": "SDC"},
+        response_payload=sdc_res.raw, http_status=200, status_code="00",
+        fbr_invoice_number=fbr_no, attempt_number=attempt,
+    )
+    _persist_fbr_success(invoice, tenant, fbr_no, qr_payload)
+    return {"ok": True, "fbr_invoice_number": fbr_no, "via": "sdc"}
+
+
+def _persist_fbr_success(invoice, tenant, fbr_no: str, qr_payload: str) -> None:
+    """Shared success persistence for both the DI-API and SDC paths: stamp the
+    FBR number + QR, set the edit deadline, flip status to valid, audit-log."""
+    validated_at = timezone.now()
     invoice.fbr_invoice_number = fbr_no
     invoice.fbr_qr_payload = qr_payload
     invoice.fbr_validated_at = validated_at
@@ -179,7 +386,6 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
         "fbr_invoice_number", "fbr_qr_payload", "fbr_validated_at",
         "edit_deadline_at", "status", "updated_at",
     ])
-
     audit_log(
         tenant_id=tenant.id,
         entity_type="invoice",
@@ -187,7 +393,6 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
         action="fbr_validated",
         after={"fbr_invoice_number": fbr_no},
     )
-    return {"ok": True, "fbr_invoice_number": fbr_no}
 
 
 @shared_task(name="fbr.finalize_aged_invoices")

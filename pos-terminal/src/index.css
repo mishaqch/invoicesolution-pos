@@ -4,17 +4,69 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /*
+     * POS Terminal palette — mirrors admin-web so both surfaces read
+     * as one product. Emerald brand, soft semantic status colors
+     * (success/warning/info/destructive) sized for WCAG 2.2 AA contrast.
+     *
+     * All values are HSL "<h> <s>% <l>%" (no commas) so Tailwind's
+     * hsl(var(--token)) wrapper works.
+     */
+
+    /* Surfaces */
+    --background: 0 0% 100%;                 /* white */
+    --foreground: 222 47% 11%;               /* near-black ink */
+
+    /* Brand — emerald */
+    --primary: 142 71% 36%;                  /* emerald-600 */
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 142 76% 96%;             /* emerald-50 */
+    --primary-soft-foreground: 142 71% 24%;  /* emerald-800 */
+
+    /* Neutrals */
+    --muted: 210 20% 96%;                    /* slate-50 */
+    --muted-foreground: 215 16% 47%;         /* slate-500 */
+
+    /* Destructive */
+    --destructive: 0 84% 60%;                /* red-500 */
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 0 86% 97%;           /* red-50 */
+    --destructive-soft-foreground: 0 70% 35%;/* red-700 */
+
+    /* Success — same green as brand */
+    --success: 142 71% 36%;
+    --success-foreground: 0 0% 100%;
+    --success-soft: 142 76% 96%;
+    --success-soft-foreground: 142 71% 24%;
+
+    /* Warning — amber.  -soft-foreground is amber-800 to clear 4.5:1
+       on the amber-50 background.  WCAG 2.2 SC 1.4.3. */
+    --warning: 38 92% 50%;                   /* amber-500 */
+    --warning-foreground: 0 0% 100%;
+    --warning-soft: 48 100% 96%;             /* amber-50 */
+    --warning-soft-foreground: 32 81% 29%;   /* amber-800 */
+
+    /* Info — blue */
+    --info: 217 91% 60%;                     /* blue-500 */
+    --info-foreground: 0 0% 100%;
+    --info-soft: 214 100% 97%;               /* blue-50 */
+    --info-soft-foreground: 224 76% 33%;     /* blue-800 */
+
+    /* Strokes + inputs + ring (focus ring uses brand) */
+    --border: 214 32% 91%;                   /* slate-200 */
+    --input: 214 32% 91%;
+    --ring: 142 71% 36%;                     /* emerald-600 */
+  }
+  html,
+  body,
+  #root {
+    /* Lock the renderer to the viewport so flex-1 inside route
+       components actually CAPS — otherwise the page can grow taller
+       than the screen and the "pinned" right-rail (totals) scrolls
+       with the left product list. Electron always wants the renderer
+       to fill the window anyway. */
+    height: 100%;
+    overflow: hidden;
   }
   body {
     @apply bg-background text-foreground;

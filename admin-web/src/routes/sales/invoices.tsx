@@ -13,7 +13,6 @@
 
 import {
   AlertOctagon,
-  Ban,
   CheckCircle2,
   CircleDashed,
   Clock,
@@ -24,6 +23,11 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+// Named import (not default) — react-qr-code v2 ships CJS with both
+// `exports.default` and `exports.QRCode`. Under Vite's ESM interop the
+// default import sometimes resolves to the module namespace object
+// instead of the component, producing "Element type is invalid".
+import { QRCode } from "react-qr-code";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +37,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  invoiceStatusHint,
+  invoiceStatusLabel,
+  invoiceStatusVariant,
+} from "@/features/invoices/status";
 import { useBranches, useInvoices, useInvoiceSummary } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +63,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: "finalized", label: "Finalized (>72h)" },
   { value: "submitted", label: "Submitted" },
   { value: "failed", label: "Failed" },
-  { value: "pending_sync", label: "Pending sync" },
+  { value: "pending_sync", label: "Draft (not yet submitted)" },
   { value: "edited", label: "Edited" },
   { value: "partially_edited", label: "Partially edited" },
   { value: "cancelled", label: "Cancelled" },
@@ -109,7 +118,7 @@ const TILES: KpiTile[] = [
   },
   {
     key: "pending",
-    label: "Pending sync",
+    label: "Drafts (not submitted)",
     icon: CircleDashed,
     statuses: ["pending_sync"],
     filterValue: "pending_sync",
@@ -149,21 +158,30 @@ const TONE_ICON: Record<KpiTile["tone"], string> = {
   muted: "text-muted-foreground",
 };
 
-function statusBadgeVariant(
-  status: string,
-): "default" | "secondary" | "outline" | "destructive" {
-  if (status === "valid" || status === "finalized") return "default";
-  if (status === "failed") return "destructive";
-  if (status === "cancelled" || status === "partially_cancelled"
-      || status === "partially_edited_and_cancelled") return "secondary";
-  return "outline";
-}
-
-function prettyStatus(status: string): string {
-  return status.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
-}
+// Badge variant + label + hover-hint live in
+// features/invoices/status.ts (single source of truth across every
+// invoice surface). Keep the column rendering thin.
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Render the unique tail of a PRAL-issued FBR invoice number.
+ *
+ * PRAL formats the number as `<seller-NTN(13)><unique-tail(14)>` — so
+ * every invoice for the same tenant starts with the same 13-character
+ * NTN prefix. Showing the prefix in a per-row list cell wastes space
+ * and (confusingly) makes every invoice look identical at a glance.
+ *
+ * Returns the last 14 chars when the input looks like the standard
+ * 27-char PRAL format, otherwise returns the whole string unchanged
+ * (defensive — keeps the renderer safe if PRAL ever issues a
+ * different shape).
+ */
+function fbrInvoiceTail(fbrNumber: string | null | undefined): string {
+  if (!fbrNumber) return "";
+  if (fbrNumber.length === 27) return fbrNumber.slice(13);
+  return fbrNumber;
+}
 
 export default function InvoicesList() {
   const [status, setStatus] = useState("");
@@ -405,7 +423,45 @@ export default function InvoicesList() {
                     </Link>
                   </TableCell>
                   <TableCell className="font-mono text-xs">
-                    {i.fbr_invoice_number ?? <span className="text-muted-foreground">—</span>}
+                    {i.fbr_invoice_number ? (
+                      // Tiny QR + the UNIQUE TAIL of the FBR number so
+                      // the row stays compact. PRAL's invoice number
+                      // is <seller-NTN (13 chars)><unique-tail (14 chars)>;
+                      // every row in this tenant's list has the same
+                      // NTN prefix, so showing the prefix wastes space
+                      // and looks (confusingly) like every invoice has
+                      // the same FBR number. Show the unique tail
+                      // instead, with the full string in the tooltip.
+                      // Full number lives on the detail page.
+                      // QR encodes EXACTLY the bare FBR invoice number —
+                      // that's what Tax Asaan verifies; a JSON blob reads
+                      // as "invalid". Mirrors the detail page + PDF.
+                      <div
+                        className="flex items-center gap-2"
+                        title={i.fbr_invoice_number ?? undefined}
+                      >
+                        <div className="rounded-sm bg-white p-0.5">
+                          <QRCode
+                            value={i.fbr_invoice_number}
+                            size={28}
+                            level="L"
+                            aria-label="FBR receipt QR"
+                          />
+                        </div>
+                        <span className="font-mono text-[11px]">
+                          {fbrInvoiceTail(i.fbr_invoice_number)}
+                        </span>
+                      </div>
+                    ) : i.fbr_invoice_number ? (
+                      <span
+                        className="font-mono text-[11px]"
+                        title={i.fbr_invoice_number}
+                      >
+                        {fbrInvoiceTail(i.fbr_invoice_number)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground tabular-nums">
                     {i.invoice_date}
@@ -420,8 +476,11 @@ export default function InvoicesList() {
                     Rs {Number(i.grand_total).toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={statusBadgeVariant(i.status)} className="capitalize">
-                      {prettyStatus(i.status)}
+                    <Badge
+                      variant={invoiceStatusVariant(i.status)}
+                      title={invoiceStatusHint(i.status)}
+                    >
+                      {invoiceStatusLabel(i.status)}
                     </Badge>
                   </TableCell>
                 </TableRow>

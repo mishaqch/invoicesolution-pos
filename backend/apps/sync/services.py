@@ -82,12 +82,48 @@ def ingest_invoice(*, tenant_id, terminal_id, payload: dict, request=None) -> In
                 status="received",
             )
     except IntegrityError:
+        # A SyncLog already exists for this client_uuid. Three sub-cases:
         existing = SyncLog.objects.get(client_uuid=client_uuid)
-        return IngestResult(
-            entity_id=existing.entity_id,
-            sync_log=existing,
-            was_duplicate=True,
-        )
+        if existing.entity_id is not None:
+            # Previous attempt succeeded — true idempotent replay.
+            # Server is the source of truth; return the existing row id.
+            return IngestResult(
+                entity_id=existing.entity_id,
+                sync_log=existing,
+                was_duplicate=True,
+            )
+        if existing.status == "failed":
+            # Previous attempt failed before creating an Invoice. The
+            # caller has presumably fixed whatever was broken (catalog
+            # drift, missing branch, …). Discard the failed log row
+            # and fall through to a fresh attempt instead of returning
+            # entity_id=None (which used to crash the view with
+            # `Invoice.objects.get(pk=None)`).
+            existing.delete()
+            sync_row = SyncLog.objects.create(
+                tenant_id=tenant_id,
+                terminal_id=terminal_id,
+                client_uuid=client_uuid,
+                entity_type="invoice",
+                action="create",
+                payload=payload,
+                status="received",
+            )
+        else:
+            # 'received' / 'processing' — a parallel POST is mid-flight.
+            # Refuse and let the client retry; we don't want two workers
+            # racing to create the same invoice.
+            return IngestResult(
+                entity_id=None,
+                sync_log=existing,
+                was_duplicate=False,
+                failed=True,
+                error=(
+                    f"Another ingest is already in flight for "
+                    f"client_uuid={client_uuid} (status={existing.status}). "
+                    "Retry shortly."
+                ),
+            )
 
     # Use a savepoint so a failure here doesn't roll back the sync_row.
     sid = transaction.savepoint()

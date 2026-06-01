@@ -12,6 +12,7 @@ export interface Tenant {
   business_name: string;
   ntn: string;
   subscription_status: SubscriptionStatus;
+  logo_url: string | null;
 }
 
 export interface TenantMembership {

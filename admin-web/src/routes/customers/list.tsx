@@ -1,4 +1,4 @@
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Upload } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -27,11 +27,18 @@ export default function CustomersList() {
             {isLoading ? "Loading…" : `${data?.count ?? 0} customers`}
           </p>
         </div>
-        <Button asChild>
-          <Link to="/customers/new">
-            <Plus className="mr-1 h-4 w-4" /> New customer
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link to="/customers/import">
+              <Upload className="mr-1 h-4 w-4" /> Import CSV
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link to="/customers/new">
+              <Plus className="mr-1 h-4 w-4" /> New customer
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="relative max-w-md">
