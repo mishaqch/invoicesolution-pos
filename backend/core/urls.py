@@ -74,6 +74,8 @@ urlpatterns = [
     path("api/", include("apps.tenants.urls")),
     path("api/catalog/", include("apps.catalog.urls")),
     path("api/inventory/", include("apps.inventory.urls")),
+    path("api/suppliers/", include("apps.suppliers.urls")),
+    path("api/purchases/", include("apps.purchases.urls")),
     path("api/customers/", include("apps.customers.urls")),
     path("api/sales/", include("apps.sales.urls")),
     path("api/sync/", include("apps.sync.urls")),

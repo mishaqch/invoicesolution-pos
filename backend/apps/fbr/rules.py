@@ -79,6 +79,31 @@ def _is_fbr_accepted(invoice: Invoice) -> bool:
     )
 
 
+def is_unsubmitted_draft(invoice: Invoice) -> bool:
+    """True when the invoice has NEVER reached FBR — no fbr_invoice_number and
+    still in a pre-validation state (pending_sync / failed). Such an invoice has
+    nothing on PRAL's side, so the FBR amendment rules (72h window, 10% cancel
+    budget, immutability) DON'T apply: it can be freely edited or hard-deleted
+    like a draft. The moment it has an FBR number, the strict rules take over.
+    """
+    return (
+        not invoice.fbr_invoice_number
+        and invoice.status in ("pending_sync", "failed")
+    )
+
+
+def can_delete_draft(invoice: Invoice) -> tuple[bool, str | None]:
+    """Whether this invoice may be hard-deleted as an unsubmitted draft."""
+    if is_unsubmitted_draft(invoice):
+        return True, None
+    if invoice.fbr_invoice_number:
+        return False, (
+            "This invoice has an FBR number and cannot be deleted — "
+            "cancel it through FBR instead (audit + 6-year retention)."
+        )
+    return False, f"Invoice in status '{invoice.status}' cannot be deleted."
+
+
 def _not_yet_validated_reason(invoice: Invoice) -> str | None:
     """Friendly explanation for the not-yet-accepted case. Returns
     None when the invoice IS accepted (so the caller can short-circuit)."""

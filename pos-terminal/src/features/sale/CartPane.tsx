@@ -2,11 +2,13 @@ import { Minus, Plus, Trash2 } from "lucide-react";
 
 import { Money } from "@/lib/money";
 import { quoteCart, useSaleStore } from "@/stores/sale";
+import { useApprovalGate } from "./ApprovalGate";
 
 export function CartPane() {
   const lines = useSaleStore((s) => s.lines);
   const removeLine = useSaleStore((s) => s.removeLine);
   const setQuantity = useSaleStore((s) => s.setQuantity);
+  const { requireApproval } = useApprovalGate();
 
   const totals = quoteCart({
     lines,
@@ -36,9 +38,21 @@ export function CartPane() {
                     type="button"
                     className="flex h-7 w-7 items-center justify-center rounded-md border bg-background hover:bg-muted"
                     onClick={() =>
-                      setQuantity(
-                        line.id,
-                        Money.fromStr(line.quantity).sub(Money.fromStr("1")).toStorageString(),
+                      // Reducing a quantity is a partial void → manager approval.
+                      requireApproval(
+                        {
+                          action: "reduce_qty",
+                          label: `Reduce qty of ${line.product_name}`,
+                          context: {
+                            product: line.product_name, sku: line.product_sku,
+                            from_qty: line.quantity,
+                          },
+                        },
+                        () =>
+                          setQuantity(
+                            line.id,
+                            Money.fromStr(line.quantity).sub(Money.fromStr("1")).toStorageString(),
+                          ),
                       )
                     }
                     disabled={Money.fromStr(line.quantity).le(Money.fromStr("1"))}
@@ -69,7 +83,20 @@ export function CartPane() {
                 <button
                   type="button"
                   className="text-muted-foreground hover:text-destructive"
-                  onClick={() => removeLine(line.id)}
+                  onClick={() =>
+                    // Removing a line is a void → manager approval (logged).
+                    requireApproval(
+                      {
+                        action: "void_line",
+                        label: `Remove ${line.product_name}`,
+                        context: {
+                          product: line.product_name, sku: line.product_sku,
+                          qty: line.quantity, line_total: line.line_total.toStorageString(),
+                        },
+                      },
+                      () => removeLine(line.id),
+                    )
+                  }
                   aria-label="Remove line"
                 >
                   <Trash2 className="h-4 w-4" />

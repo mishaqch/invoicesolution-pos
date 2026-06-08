@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useInvoices } from "@/lib/queries";
+import { money } from "@/lib/utils";
 
 export default function HeldSalesAdminList() {
   const { data, isLoading } = useInvoices({ held: "true" });
@@ -40,7 +41,7 @@ export default function HeldSalesAdminList() {
                     </Link>
                   </TableCell>
                   <TableCell>{i.items.length}</TableCell>
-                  <TableCell className="text-right font-mono">{i.grand_total}</TableCell>
+                  <TableCell className="text-right font-mono">{money(i.grand_total)}</TableCell>
                 </TableRow>
               ))
             )}

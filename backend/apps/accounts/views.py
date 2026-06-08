@@ -15,6 +15,7 @@ from apps.tenants.models import TenantMembership
 from .serializers import (
     PinLoginSerializer,
     PosTokenObtainPairSerializer,
+    SupervisorPinVerifySerializer,
     TenantBriefSerializer,
     UserBriefSerializer,
 )
@@ -41,6 +42,50 @@ class PinLoginView(APIView):
         serializer = PinLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response(serializer.to_representation(serializer.validated_data))
+
+
+class SupervisorPinVerifyView(APIView):
+    """Verify a manager/owner PIN to authorize a till action (void/edit/
+    discount). Requires the CASHIER to be authenticated (so we know the tenant
+    + who requested it), verifies the supervisor PIN server-side, audit-logs the
+    authorization, and returns the supervisor's role — but NO token.
+
+    Body: { email, pin, action, context? }  (action/context for the audit trail)
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "auth"  # share the strict auth throttle (anti-bruteforce)
+
+    def post(self, request):
+        tenant_id = getattr(request, "tenant_id", None)
+        ser = SupervisorPinVerifySerializer(
+            data=request.data, context={"tenant_id": tenant_id},
+        )
+        ser.is_valid(raise_exception=True)
+        supervisor = ser.validated_data["user"]
+        role = ser.validated_data["role"]
+
+        from apps.audit.services import log as audit_log
+        action = (request.data.get("action") or "till_action")[:50]
+        audit_log(
+            tenant_id=tenant_id,
+            user=supervisor,
+            entity_type="approval",
+            action=f"supervisor_authorized:{action}",
+            after={
+                "authorized_by": supervisor.email,
+                "role": role,
+                "requested_by": getattr(request.user, "email", None),
+                "context": (request.data.get("context") or {}),
+            },
+            request=request,
+        )
+        return Response({
+            "valid": True,
+            "role": role,
+            "supervisor_name": supervisor.full_name,
+            "supervisor_email": supervisor.email,
+        })
 
 
 class LogoutView(APIView):

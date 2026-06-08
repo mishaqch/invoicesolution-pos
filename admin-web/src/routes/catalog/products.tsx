@@ -1,17 +1,47 @@
 import { Plus, Search, Trash2, Upload } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDeleteProduct, useProducts, useTenantSetup } from "@/lib/queries";
+import { money } from "@/lib/utils";
+
+// Debounce search so we don't fire a request per keystroke against a
+// 6000-row catalog.
+function useDebounced<T>(value: T, ms = 300): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return v;
+}
 
 export default function ProductsList() {
   const [search, setSearch] = useState("");
-  const { data, isLoading } = useProducts(search ? { search } : {});
+  const debouncedSearch = useDebounced(search.trim());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  // Any change to the search or page size resets to page 1.
+  useEffect(() => { setPage(1); }, [debouncedSearch, pageSize]);
+
+  const params = useMemo(() => {
+    const p: Record<string, string> = {
+      page: String(page),
+      page_size: String(pageSize),
+    };
+    if (debouncedSearch) p.search = debouncedSearch;
+    return p;
+  }, [page, pageSize, debouncedSearch]);
+
+  const { data, isLoading, isFetching } = useProducts(params);
   const del = useDeleteProduct();
+
   // Digital-invoicing tenants (service providers, marriage halls) sell
   // "items" or "services", not "products". Relabel headings + buttons
   // to match their mental model; URLs and API contract are unchanged.
@@ -19,6 +49,10 @@ export default function ProductsList() {
   const di = setup?.business_mode === "digital_invoicing";
   const heading = di ? "Items" : "Products";
   const newLabel = di ? "New item" : "New product";
+
+  const rows = data?.results ?? [];
+  const total = data?.count ?? 0;
+  const COLS = 7;
 
   return (
     <div className="space-y-4">
@@ -53,27 +87,30 @@ export default function ProductsList() {
             <TableRow>
               <TableHead>SKU</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>UoM</TableHead>
+              <TableHead>Barcode</TableHead>
+              <TableHead>HS code</TableHead>
               <TableHead className="text-right">Sale price</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-24" />
+              <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={COLS} className="text-center text-muted-foreground">
                   Loading…
                 </TableCell>
               </TableRow>
-            ) : data?.results.length === 0 ? (
+            ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
-                  No products yet. Create one or import a CSV.
+                <TableCell colSpan={COLS} className="text-center text-muted-foreground">
+                  {debouncedSearch
+                    ? `No products match “${debouncedSearch}”.`
+                    : "No products yet. Create one or import a CSV."}
                 </TableCell>
               </TableRow>
             ) : (
-              data?.results.map((p) => (
+              rows.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-mono text-xs">{p.sku}</TableCell>
                   <TableCell>
@@ -81,8 +118,13 @@ export default function ProductsList() {
                       {p.name}
                     </Link>
                   </TableCell>
-                  <TableCell>{p.uom}</TableCell>
-                  <TableCell className="text-right font-mono">{p.sale_price}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {p.barcode ?? "—"}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">
+                    {p.hs_code ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-right font-mono">{money(p.sale_price)}</TableCell>
                   <TableCell>
                     {p.is_active ? (
                       <Badge variant="secondary">Active</Badge>
@@ -108,11 +150,14 @@ export default function ProductsList() {
         </Table>
       </div>
 
-      {data && data.count > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {data.count} product{data.count !== 1 && "s"} total.
-        </p>
-      )}
+      <Pagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+        loading={isFetching}
+      />
     </div>
   );
 }

@@ -1,7 +1,10 @@
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
+import { buildCartLineFromProduct } from "@/features/sale/addToCart";
+import { ApprovalProvider } from "@/features/sale/ApprovalGate";
 import { CartPane } from "@/features/sale/CartPane";
 import { ProductGrid } from "@/features/sale/ProductGrid";
 import { TotalsPane } from "@/features/sale/TotalsPane";
@@ -48,19 +51,14 @@ export default function SaleRoute() {
         });
         return;
       }
-      addLine({
-        product_id: p.id,
-        product_name: p.name,
-        product_sku: p.sku,
-        uom_code: p.uom_code,
-        hs_code: null,
-        quantity: "1",
-        unit_price: p.sale_price,
-        discount_pct: "0",
-        discount_amount: "0",
-        tax_rate: p.is_taxable ? "18" : "0",
-        is_taxable: !!p.is_taxable,
+      // FEFO: batch-tracked products get the nearest-expiry batch attached.
+      const { line, warning } = await buildCartLineFromProduct(p, {
+        branchId: ctx.branch?.id ?? null,
       });
+      addLine(line);
+      if (warning) {
+        toast.show({ message: warning, variant: "warning" });
+      }
     } catch (err) {
       console.error("Barcode lookup failed:", err);
       toast.show({
@@ -196,6 +194,7 @@ export default function SaleRoute() {
   }
 
   return (
+    <ApprovalProvider>
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <div className="text-xs text-muted-foreground">
@@ -206,6 +205,30 @@ export default function SaleRoute() {
         </div>
         <div className="flex items-center gap-3">
           <SyncStatusDot />
+          <button
+            type="button"
+            onClick={async () => {
+              await sync.resync();
+              toast.show({
+                message: t("sale.sync_done", "Catalog synced — {{n}} products.", {
+                  n: sync.productsLocal,
+                }),
+                variant: "success",
+              });
+            }}
+            disabled={sync.status === "syncing"}
+            title={
+              sync.lastSyncedAt
+                ? `Last synced ${new Date(sync.lastSyncedAt).toLocaleTimeString()} · ${sync.productsLocal} products`
+                : "Pull the latest products from the cloud"
+            }
+            className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${sync.status === "syncing" ? "animate-spin" : ""}`} />
+            {sync.status === "syncing"
+              ? t("sale.syncing", "Syncing…")
+              : t("sale.sync", "Sync")}
+          </button>
           <button
             type="button"
             onClick={() => navigate("/today-invoices")}
@@ -255,7 +278,12 @@ export default function SaleRoute() {
       <main className="grid min-h-0 flex-1 grid-cols-12 gap-3 overflow-hidden p-3">
         {/* Product list — the ONLY pane that scrolls. */}
         <div className="col-span-5 flex min-h-0 flex-col overflow-hidden">
-          <ProductGrid onAdd={addLine} clearSignal={scanSignal} />
+          <ProductGrid
+            onAdd={addLine}
+            branchId={ctx.branch?.id ?? null}
+            onWarn={(message) => toast.show({ message, variant: "warning" })}
+            clearSignal={scanSignal}
+          />
         </div>
         {/* Cart — own scroll if line count grows. */}
         <div className="col-span-4 flex min-h-0 flex-col overflow-hidden rounded-md border bg-background">
@@ -267,6 +295,7 @@ export default function SaleRoute() {
         </div>
       </main>
     </div>
+    </ApprovalProvider>
   );
 }
 

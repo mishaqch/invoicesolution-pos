@@ -30,6 +30,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { getMeta } from "./db/client";
+import { buildFbrStampPng } from "./fbr-stamp";
 import type { PosInvoiceInput, PosSaleItemInput, PosPaymentInput } from "./db/sales";
 
 interface ReceiptInput {
@@ -37,10 +38,25 @@ interface ReceiptInput {
   branch_name: string;
   ntn: string;
   address?: string;
+  contact?: string;   // business phone / contact number (header)
   invoice: PosInvoiceInput;
   items: PosSaleItemInput[];
   payments: PosPaymentInput[];
   width: 48 | 32;   // 80mm or 58mm
+}
+
+// Shared formatters (used by both the styled print + the plain disk fallback).
+function money2(s: string | number | null | undefined): string {
+  const n = Number(s ?? 0);
+  return Number.isFinite(n) ? n.toFixed(2) : "0.00";
+}
+function qtyFmt(s: string | number | null | undefined): string {
+  // Quantities are whole units on a retail receipt — show "2", "20", not
+  // "2.0000". Keep up to 3 decimals only if the item is genuinely fractional
+  // (e.g. 1.5 kg), otherwise integer.
+  const n = Number(s ?? 0);
+  if (!Number.isFinite(n)) return String(s ?? "");
+  return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(3)));
 }
 
 interface PrintResult {
@@ -56,8 +72,20 @@ const TIMEOUT_MS = 5000;
 // Configuration
 // ---------------------------------------------------------------------------
 
+/**
+ * Read a POS_* config var. electron-vite statically replaces
+ * `import.meta.env.POS_*` at BUILD time (from .env/.env.local), but does NOT
+ * populate process.env for the main process — so reading process.env alone
+ * left POS_PRINTER_INTERFACE undefined and the app reported "no printer
+ * configured". Prefer the build-time value, then any runtime process.env.
+ */
+function envVar(name: string): string | undefined {
+  const fromBuild = (import.meta.env as Record<string, string | undefined>)?.[name];
+  return (fromBuild && String(fromBuild)) || process.env[name] || undefined;
+}
+
 function resolvePrinterInterface(): string | null {
-  const env = process.env["POS_PRINTER_INTERFACE"];
+  const env = envVar("POS_PRINTER_INTERFACE");
   if (env && env.trim()) return env.trim();
   try {
     const meta = getMeta("printer.interface");
@@ -69,12 +97,12 @@ function resolvePrinterInterface(): string | null {
 }
 
 function resolveDialect(): "epson" | "star" {
-  const v = (process.env["POS_PRINTER_DIALECT"] || "").toLowerCase();
+  const v = (envVar("POS_PRINTER_DIALECT") || "").toLowerCase();
   return v === "star" ? "star" : "epson";
 }
 
 function resolveCharset(): string {
-  return process.env["POS_PRINTER_CHARSET"] || "PC437_USA";
+  return envVar("POS_PRINTER_CHARSET") || "PC437_USA";
 }
 
 /**
@@ -106,6 +134,7 @@ function resolveFbrLogoPath(): string | null {
 export async function printReceipt(input: ReceiptInput): Promise<PrintResult> {
   const rendered = renderReceiptText(input);
   const printerUrl = resolvePrinterInterface();
+  console.log("[printer] printReceipt — interface:", printerUrl ?? "(none)");
 
   if (!printerUrl) {
     const fallback = writeFallback(input.invoice.id, rendered);
@@ -116,15 +145,30 @@ export async function printReceipt(input: ReceiptInput): Promise<PrintResult> {
     };
   }
 
-  return withTimeout(realPrint(rendered, input, printerUrl), TIMEOUT_MS, () => {
-    // Timeout fallback: still log to disk so the receipt isn't lost.
+  // CUPS printing (rendering the logo+QR composite, then lp piping the bytes to
+  // the spooler) can take longer than the 5s used for direct serial/tcp. Give
+  // it a generous window so a working printer isn't falsely timed out to disk.
+  const timeout = printerUrl.startsWith("cups://") ? 30_000 : TIMEOUT_MS;
+
+  try {
+    return await withTimeout(realPrint(rendered, input, printerUrl), timeout, () => {
+      console.warn("[printer] realPrint timed out after", timeout, "ms");
+      const fallback = writeFallback(input.invoice.id, rendered);
+      return {
+        success: false,
+        reason: `printer timeout (${timeout / 1000}s) — logged to disk`,
+        fallbackPath: fallback,
+      };
+    });
+  } catch (e) {
+    console.error("[printer] realPrint threw:", e);
     const fallback = writeFallback(input.invoice.id, rendered);
     return {
       success: false,
-      reason: "printer timeout (5s) — logged to disk",
+      reason: `print error: ${e instanceof Error ? e.message : String(e)}`,
       fallbackPath: fallback,
     };
-  });
+  }
 }
 
 export async function openCashDrawer(): Promise<{ success: boolean; reason?: string }> {
@@ -145,7 +189,9 @@ export async function openCashDrawer(): Promise<{ success: boolean; reason?: str
 // ---------------------------------------------------------------------------
 
 async function realPrint(
-  text: string,
+  // The plain-text render is still used for the disk fallback (see printReceipt);
+  // realPrint itself renders a STYLED header + the monospace body from `input`.
+  _text: string,
   input: ReceiptInput,
   printerUrl: string,
 ): Promise<PrintResult> {
@@ -160,61 +206,171 @@ async function realPrint(
     return { success: false, reason: "printer driver not installed" };
   }
 
+  // macOS USB-class thermal printers (e.g. Black Copper / RONGTA) aren't a
+  // /dev/serial or tcp interface — they're reachable only via a CUPS queue.
+  // For "cups://<queue>" we build the ESC/POS buffer in memory and pipe it to
+  // `lp -d <queue> -o raw`, bypassing node-thermal-printer's serial/tcp writer
+  // (which can't address a CUPS queue). Everything else uses the native writer.
+  const cupsQueue = printerUrl.startsWith("cups://")
+    ? printerUrl.slice("cups://".length).replace(/\/+$/, "")
+    : null;
+
   const ThermalPrinter = mod.printer;
   const PrinterTypes = mod.types;
   const printer = new ThermalPrinter({
     type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
-    interface: printerUrl,
+    // For CUPS we only use the lib to BUILD the ESC/POS buffer (getBuffer) and
+    // flush it ourselves via `lp` — we never open this interface. The lib's
+    // constructor still demands a valid interface string ("printer:auto" throws
+    // "No driver set!"), so pass a harmless dummy tcp address it never connects
+    // to. Everything else uses the real interface.
+    interface: cupsQueue ? "tcp://127.0.0.1:1" : printerUrl,
     characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
     width: input.width,
     options: { timeout: TIMEOUT_MS },
   });
 
-  const ok = await printer.isPrinterConnected();
-  if (!ok) {
-    console.error("[printer] not reachable at", printerUrl);
-    return { success: false, reason: `printer unreachable at ${printerUrl}` };
-  }
-
-  // FBR Digital Invoicing logo at the top — the mandatory compliance mark on
-  // printed invoices. printImage rasterizes the PNG to the printer's width.
-  // Best-effort: a missing asset or unsupported model degrades to QR-only.
-  const logoPath = resolveFbrLogoPath();
-  if (logoPath) {
-    try {
-      printer.alignCenter();
-      await printer.printImage(logoPath);
-      printer.alignLeft();
-    } catch (e) {
-      console.warn("[printer] FBR logo render failed:", e);
-      printer.alignLeft();
+  // CUPS path skips the live connectivity probe (the lib can't probe a queue).
+  if (!cupsQueue) {
+    const ok = await printer.isPrinterConnected();
+    if (!ok) {
+      console.error("[printer] not reachable at", printerUrl);
+      return { success: false, reason: `printer unreachable at ${printerUrl}` };
     }
   }
 
-  for (const line of text.split("\n")) {
+  // ---- Styled header (matches the wireframe) ------------------------------
+  // node-thermal-printer renders these ESC/POS attributes natively; the plain
+  // `text` render (used for the disk fallback) can't, which is why the printed
+  // receipt and the wireframe used to differ. Order: big bold business name,
+  // address, bold "NTN #", larger+bold "Contact #", large bold "SALES INVOICE".
+  printer.alignCenter();
+  printer.bold(true);
+  printer.setTextDoubleHeight();
+  printer.setTextDoubleWidth();
+  printer.println(input.business_name.toUpperCase());
+  printer.setTextNormal();
+
+  if (input.address) {
+    printer.println(input.address);
+  }
+
+  printer.bold(true);
+  printer.println(`NTN #: ${input.ntn}`);
+  printer.bold(false);
+
+  if (input.contact) {
+    printer.bold(true);
+    printer.setTextSize(1, 1);          // a notch larger than body text
+    printer.println(`Contact #: ${input.contact}`);
+    printer.setTextNormal();
+  }
+
+  printer.bold(true);
+  printer.setTextDoubleHeight();
+  printer.setTextDoubleWidth();
+  printer.println("SALES INVOICE");
+  printer.setTextNormal();
+
+  printer.bold(false);
+  printer.println(input.branch_name);
+  printer.drawLine();
+  printer.alignLeft();
+
+  // ---- Body (meta, items, totals, payments) — monospace for column align --
+  for (const line of renderBodyText(input).split("\n")) {
     printer.println(line);
   }
 
-  // FBR QR: encode EXACTLY the FBR fiscal invoice number string — that's what
-  // the FBR Tax Asaan app verifies (scanning the QR == entering the number).
-  // Encoding a JSON blob makes Tax Asaan report "invalid". Only print once the
-  // invoice actually has an FBR number.
+  // FBR compliance block at the BOTTOM: FBR logo (LEFT) + QR (RIGHT) printed
+  // SIDE-BY-SIDE as one composite bitmap (thermal printers can't natively put a
+  // raster logo and a QR on the same band, so we composite them), then the
+  // FBR-issued invoice number + verify line. The QR encodes EXACTLY the FBR
+  // number (what Tax Asaan verifies). Only when the invoice has an FBR number.
   const fbrNo = (input.invoice as { fbr_invoice_number?: string | null }).fbr_invoice_number;
   if (fbrNo) {
     printer.alignCenter();
+    // 48 cols ≈ 80mm ≈ 576 dots; 32 cols ≈ 58mm ≈ 384 dots.
+    const dotWidth = input.width >= 48 ? 576 : 384;
+    let stamped = false;
     try {
-      await printer.printQR(fbrNo, { cellSize: 6 });
-      printer.println("Scan to verify on FBR Tax Asaan");
+      const png = await buildFbrStampPng(fbrNo, dotWidth);
+      if (png) {
+        await printer.printImageBuffer(png);
+        stamped = true;
+      }
     } catch (e) {
-      console.warn("[printer] QR render failed:", e);
+      console.warn("[printer] FBR stamp composite failed:", e);
     }
+    if (!stamped) {
+      // Fallback: stacked logo + native QR if the composite couldn't be built.
+      const logoPath = resolveFbrLogoPath();
+      if (logoPath) {
+        try { await printer.printImage(logoPath); } catch { /* ignore */ }
+      }
+      try { await printer.printQR(fbrNo, { cellSize: 6 }); } catch { /* ignore */ }
+    }
+    printer.alignCenter();
+    printer.bold(true);
+    printer.println(fbrNo);
+    printer.bold(false);
     printer.alignLeft();
   }
 
   printer.cut();
-  await printer.execute();
 
+  if (cupsQueue) {
+    // Flush the assembled ESC/POS bytes to the CUPS raw queue via `lp`.
+    return printViaCups(printer.getBuffer(), cupsQueue);
+  }
+
+  await printer.execute();
   return { success: true };
+}
+
+/**
+ * Send raw ESC/POS bytes to a macOS/Linux CUPS queue via `lp -d <queue> -o raw`.
+ * Used for USB-class thermal printers on macOS that have no /dev or tcp address.
+ */
+function printViaCups(buffer: Buffer, queue: string): Promise<PrintResult> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { spawn } = require("node:child_process") as typeof import("node:child_process");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { existsSync } = require("node:fs") as typeof import("node:fs");
+  // Electron GUI processes inherit a MINIMAL PATH (often missing /usr/bin), so
+  // bare "lp" can fail to spawn (ENOENT). Use an absolute path to the CUPS lp.
+  const lpBin = ["/usr/bin/lp", "/usr/local/bin/lp", "/opt/homebrew/bin/lp"]
+    .find((p) => existsSync(p)) ?? "lp";
+  console.log(`[printer] CUPS print via ${lpBin} -d ${queue} (${buffer.length} bytes)`);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (r: PrintResult) => {
+      if (!settled) { settled = true; resolve(r); }
+    };
+    let lp;
+    try {
+      lp = spawn(lpBin, ["-d", queue, "-o", "raw"], { stdio: ["pipe", "ignore", "pipe"] });
+    } catch (e) {
+      console.error("[printer] lp spawn threw:", e);
+      return finish({ success: false, reason: `lp spawn failed: ${e}` });
+    }
+    let stderr = "";
+    lp.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+    lp.on("error", (e: Error) => {
+      console.error("[printer] lp error:", e.message);
+      finish({ success: false, reason: `lp error: ${e.message}` });
+    });
+    lp.on("close", (code: number) => {
+      if (code === 0) {
+        console.log("[printer] CUPS job submitted OK");
+        finish({ success: true });
+      } else {
+        console.error(`[printer] lp exited ${code}: ${stderr.trim()}`);
+        finish({ success: false, reason: `lp exited ${code}: ${stderr.trim()}` });
+      }
+    });
+    lp.stdin?.end(buffer);
+  });
 }
 
 async function realOpenDrawer(
@@ -265,47 +421,61 @@ async function withTimeout<T>(
 // Renderer (text-mode receipt body — same for real + fallback paths)
 // ---------------------------------------------------------------------------
 
-function renderReceiptText(input: ReceiptInput): string {
+/**
+ * Plain-text header (centered monospace). Used ONLY by the disk fallback —
+ * the live print path renders a STYLED header (bold/large) in `realPrint`
+ * instead, so the printed receipt matches the wireframe. Keep the two in sync.
+ */
+function renderHeaderText(input: ReceiptInput): string[] {
   const W = input.width;
+  const center = (s: string) =>
+    s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s;
   const lines: string[] = [];
+  lines.push(center(input.business_name.toUpperCase()));
+  if (input.address) lines.push(center(input.address));
+  lines.push(center(`NTN #: ${input.ntn}`));
+  if (input.contact) lines.push(center(`Contact #: ${input.contact}`));
+  lines.push(center("SALES INVOICE"));
+  lines.push(center(input.branch_name));
+  return lines;
+}
+
+/**
+ * Receipt body BELOW the header: meta (invoice/date/buyer), items, totals,
+ * payments, footer. Shared verbatim by the styled-print path and the disk
+ * fallback so columns stay aligned. The FBR number is NOT here — it's printed
+ * once at the bottom under the logo + QR.
+ */
+function renderBodyText(input: ReceiptInput): string {
+  const W = input.width;
   const center = (s: string) =>
     s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s;
   const rule = "-".repeat(W);
-
-  lines.push(center(input.business_name.toUpperCase()));
-  if (input.address) lines.push(center(input.address));
-  lines.push(center(`NTN: ${input.ntn}`));
-  lines.push(center(input.branch_name));
-  lines.push(rule);
+  const lines: string[] = [];
 
   lines.push(`Invoice: ${input.invoice.local_invoice_number}`);
   lines.push(`Date:    ${input.invoice.invoice_date}`);
   if (input.invoice.buyer_name) {
     lines.push(`Buyer:   ${input.invoice.buyer_name}`);
   }
-  const fbrNum = (input.invoice as { fbr_invoice_number?: string | null })
-    .fbr_invoice_number;
-  if (fbrNum) {
-    lines.push(`FBR:     ${fbrNum}`);
-  }
   lines.push(rule);
 
   for (const it of input.items) {
     lines.push(it.product_name.slice(0, W));
-    const left = `  ${it.quantity} x ${it.unit_price}`;
-    const right = it.line_total;
+    const left = `  ${qtyFmt(it.quantity)} x ${money2(it.unit_price)}`;
+    const right = money2(it.line_total);
     const pad = Math.max(1, W - left.length - right.length);
     lines.push(left + " ".repeat(pad) + right);
   }
   lines.push(rule);
 
   const totals: [string, string][] = [
-    ["Subtotal", input.invoice.subtotal],
-    ["Discount", input.invoice.discount_total],
-    ["Tax", input.invoice.tax_total],
-    ["TOTAL", input.invoice.grand_total],
-    ["Tendered", input.invoice.paid_total],
-    ["Change", input.invoice.change_given],
+    ["Subtotal", money2(input.invoice.subtotal)],
+    ["Discount", money2(input.invoice.discount_total)],
+    ["Tax", money2(input.invoice.tax_total)],
+    ["TOTAL", money2(input.invoice.grand_total)],
+    ["Tendered", money2(input.invoice.paid_total)],
+    ["Change", money2(input.invoice.change_given)],
   ];
   for (const [k, v] of totals) {
     const pad = Math.max(1, W - k.length - v.length);
@@ -315,14 +485,21 @@ function renderReceiptText(input: ReceiptInput): string {
 
   for (const p of input.payments) {
     const k = `Paid: ${p.payment_method}`;
-    const pad = Math.max(1, W - k.length - p.amount.length);
-    lines.push(k + " ".repeat(pad) + p.amount);
+    const v = money2(p.amount);
+    const pad = Math.max(1, W - k.length - v.length);
+    lines.push(k + " ".repeat(pad) + v);
   }
   lines.push(rule);
 
   lines.push(center("Thank you!"));
   lines.push("");
   return lines.join("\n");
+}
+
+/** Full plain-text receipt (header + body) — disk fallback only. */
+function renderReceiptText(input: ReceiptInput): string {
+  const rule = "-".repeat(input.width);
+  return [...renderHeaderText(input), rule, renderBodyText(input)].join("\n");
 }
 
 function writeFallback(invoiceId: string, text: string): string {

@@ -24,7 +24,14 @@ function resolveDbPath(): string {
 }
 
 function resolveApiBase(): string {
-  return process.env["VITE_API_URL"] ?? "http://localhost:8000";
+  // electron-vite loads .env/.env.local and statically replaces
+  // `import.meta.env.VITE_*` at BUILD time — including in the MAIN process
+  // bundle. process.env is NOT populated with VITE_* for the main process, so
+  // relying on it alone made pairing/sync silently hit http://localhost:8000
+  // ("Could not reach the server"). Prefer the build-time value, then any
+  // runtime env override, then the local default.
+  const fromBuild = import.meta.env?.VITE_API_URL as string | undefined;
+  return fromBuild || process.env["VITE_API_URL"] || "http://localhost:8000";
 }
 
 function createWindow() {

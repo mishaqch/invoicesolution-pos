@@ -11,7 +11,7 @@ from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
 
 # Every endpoint in this module gates on the "inventory" module.
 _INVENTORY_GATE = HasModule.for_module("inventory")
-from apps.catalog.models import Product, ProductVariant
+from apps.catalog.models import Product, ProductBatch, ProductVariant
 from apps.tenants.models import Branch
 
 from .models import (
@@ -60,6 +60,8 @@ class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Ge
     def get_queryset(self):
         qs = super().get_queryset()
         params = self.request.query_params
+        if (p := params.get("product")):
+            qs = qs.filter(product_id=p)
         if (b := params.get("branch")):
             qs = qs.filter(branch_id=b)
         if (low := params.get("low_stock")) and low.lower() in ("1", "true"):
@@ -71,6 +73,178 @@ class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Ge
 
 # ---------------------------------------------------------------------------
 # Stock movements — read-only ledger
+# ---------------------------------------------------------------------------
+# Restock report — products at/below their reorder level
+# ---------------------------------------------------------------------------
+
+
+class RestockViewSet(_TenantQuerySetMixin, viewsets.ViewSet):
+    """GET /api/inventory/restock/ — products that need reordering.
+
+    A product needs restock when its CURRENT stock (summed across branches, or
+    a single branch via ?branch=) is at or below the PRODUCT's reorder_level
+    (the threshold operators set on the product form). reorder_level=0/null
+    means "don't track" and is excluded. Returns shortfall + a suggested
+    reorder quantity so the owner can act straight from the list.
+
+    Query params: ?branch=<id> (per-branch view), ?q=<text> (name/sku),
+    ?page / ?page_size (paginated).
+    """
+
+    permission_classes = [_INVENTORY_GATE, IsTenantMember]
+
+    def list(self, request):
+        from decimal import Decimal
+
+        from django.db.models import DecimalField, F, Q, Sum, Value
+        from django.db.models.functions import Coalesce
+
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            return Response({"count": 0, "results": []})
+
+        branch = request.query_params.get("branch")
+        q = request.query_params.get("q")
+
+        # Sum current stock per product (optionally scoped to one branch).
+        level_filter = Q(stock_levels__variant__isnull=True)
+        if branch:
+            level_filter &= Q(stock_levels__branch_id=branch)
+
+        products = (
+            Product.objects.filter(
+                tenant_id=tenant_id, deleted_at__isnull=True, is_active=True,
+            )
+            .exclude(reorder_level__isnull=True)
+            .exclude(reorder_level=Decimal("0"))
+            .annotate(
+                on_hand=Coalesce(
+                    Sum("stock_levels__quantity", filter=level_filter),
+                    Value(Decimal("0")),
+                    output_field=DecimalField(max_digits=14, decimal_places=4),
+                ),
+            )
+            .filter(on_hand__lte=F("reorder_level"))
+            .select_related("uom")
+            .order_by("on_hand", "name")
+        )
+        if q:
+            products = products.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+
+        # Simple pagination (mirrors StandardPagination defaults).
+        try:
+            page = max(1, int(request.query_params.get("page", "1")))
+            page_size = min(200, max(1, int(request.query_params.get("page_size", "50"))))
+        except ValueError:
+            page, page_size = 1, 50
+        total = products.count()
+        rows = products[(page - 1) * page_size: page * page_size]
+
+        results = []
+        for p in rows:
+            reorder = p.reorder_level or Decimal("0")
+            on_hand = p.on_hand or Decimal("0")
+            shortfall = max(Decimal("0"), reorder - on_hand)
+            suggested = p.reorder_quantity or shortfall or reorder
+            results.append({
+                "product_id": str(p.id),
+                "name": p.name,
+                "sku": p.sku,
+                "uom": p.uom.code if p.uom_id else None,
+                "on_hand": str(on_hand),
+                "reorder_level": str(reorder),
+                "shortfall": str(shortfall),
+                "suggested_order_qty": str(suggested),
+                "out_of_stock": on_hand <= 0,
+            })
+        return Response({"count": total, "page": page, "page_size": page_size, "results": results})
+
+
+class ExpiryViewSet(viewsets.ViewSet):
+    """GET /api/inventory/expiry/ — batches at/near expiry (pharmacy).
+
+    Returns ProductBatch rows that still hold stock (current_quantity > 0) and
+    whose expiry_date falls on or before today + `within` days (default 90),
+    soonest first, each tagged with a bucket: 'expired', 'soon' (<=30d) or
+    'upcoming' (<=window). Mirrors the Restock list shape so the UI reuses the
+    same paginated-list scaffolding.
+
+    Query params: ?within=<days>, ?branch=<id>, ?q=<name/sku/batch>,
+    ?page / ?page_size.
+    """
+
+    permission_classes = [_INVENTORY_GATE, IsTenantMember]
+
+    def list(self, request):
+        from datetime import timedelta
+
+        from django.db.models import Q
+        from django.utils import timezone
+
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            return Response({"count": 0, "results": []})
+
+        try:
+            within = max(0, int(request.query_params.get("within", "90")))
+        except ValueError:
+            within = 90
+        today = timezone.localdate()
+        cutoff = today + timedelta(days=within)
+
+        qs = (
+            ProductBatch.objects.filter(
+                product__tenant_id=tenant_id,
+                product__deleted_at__isnull=True,
+                current_quantity__gt=0,
+                expiry_date__isnull=False,
+                expiry_date__lte=cutoff,
+            )
+            .select_related("product", "product__uom", "branch")
+            .order_by("expiry_date", "product__name")
+        )
+        if (branch := request.query_params.get("branch")):
+            qs = qs.filter(branch_id=branch)
+        if (q := request.query_params.get("q")):
+            qs = qs.filter(
+                Q(product__name__icontains=q)
+                | Q(product__sku__icontains=q)
+                | Q(batch_number__icontains=q)
+            )
+
+        try:
+            page = max(1, int(request.query_params.get("page", "1")))
+            page_size = min(200, max(1, int(request.query_params.get("page_size", "50"))))
+        except ValueError:
+            page, page_size = 1, 50
+        total = qs.count()
+        rows = qs[(page - 1) * page_size: page * page_size]
+
+        soon_cutoff = today + timedelta(days=30)
+        results = []
+        for b in rows:
+            if b.expiry_date < today:
+                bucket = "expired"
+            elif b.expiry_date <= soon_cutoff:
+                bucket = "soon"
+            else:
+                bucket = "upcoming"
+            results.append({
+                "batch_id": str(b.id),
+                "product_id": str(b.product_id),
+                "name": b.product.name,
+                "sku": b.product.sku,
+                "uom": b.product.uom.code if b.product.uom_id else None,
+                "batch_number": b.batch_number,
+                "expiry_date": b.expiry_date.isoformat(),
+                "days_to_expiry": (b.expiry_date - today).days,
+                "on_hand": str(b.current_quantity),
+                "branch": b.branch.name if b.branch_id else None,
+                "bucket": bucket,
+            })
+        return Response({"count": total, "page": page, "page_size": page_size, "results": results})
+
+
 # ---------------------------------------------------------------------------
 
 

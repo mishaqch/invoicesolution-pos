@@ -124,6 +124,14 @@ function init(m: InitMessage) {
       db.exec(`ALTER TABLE invoices ADD COLUMN ${col} ${type}`);
     }
   }
+  // FEFO: batch_id on sale_items (the worker reads sale_items to build the
+  // checkout sync payload, so it needs the column on a pre-existing DB).
+  {
+    const cols = db.prepare(`PRAGMA table_info(sale_items)`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === "batch_id")) {
+      db.exec(`ALTER TABLE sale_items ADD COLUMN batch_id TEXT`);
+    }
+  }
 
   // Crash recovery: 'sent' rows mean we POSTed but never recorded the ack.
   // Reset them to 'pending' so the loop picks them up. Server idempotency

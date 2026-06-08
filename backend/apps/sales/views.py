@@ -68,7 +68,8 @@ class InvoiceViewSet(
     ordering_fields = ["invoice_date", "grand_total", "created_at"]
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        # Hide soft-deleted drafts from every tenant-facing list/detail.
+        qs = super().get_queryset().filter(deleted_at__isnull=True)
         params = self.request.query_params
         if (b := params.get("branch")):
             qs = qs.filter(branch_id=b)
@@ -426,6 +427,33 @@ class InvoiceViewSet(
             )
         invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["delete"], url_path="draft",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def delete_draft(self, request, pk=None):
+        """Hard-delete an UNSUBMITTED draft invoice (no FBR number).
+
+        Only invoices that never reached FBR (no fbr_invoice_number, status
+        pending_sync/failed) can be deleted — see rules.can_delete_draft. The
+        service reverses stock via append-only return movements, then removes
+        the invoice + its items/payments. Anything fiscalized must go through
+        the FBR cancel flow instead (audit + 6-year retention).
+        """
+        invoice = self.get_object()
+        try:
+            number = cancellation.delete_draft_invoice(
+                invoice, user=request.user, request=request,
+            )
+        except DjValidationError as exc:
+            messages = exc.messages if hasattr(exc, "messages") else [str(exc)]
+            return Response(
+                {"detail": messages[0] if messages else "Cannot delete."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            {"deleted": True, "local_invoice_number": number},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="resubmit",
             permission_classes=[HasRolePerm.with_perm("sales.create")])

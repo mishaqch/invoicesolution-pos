@@ -29,6 +29,13 @@ export interface CartLine {
   tax_rate: string;          // 0–100
   is_taxable: boolean;
   notes?: string;
+  // FEFO (pharmacy / batch-tracked goods): the specific batch this line draws
+  // from, auto-selected nearest-expiry-first when the product is added. Absent
+  // for non-batch-tracked products (the common case). batch_number/expiry_date
+  // are display-only; batch_id is what the checkout payload carries.
+  batch_id?: string | null;
+  batch_number?: string | null;
+  expiry_date?: string | null;
 }
 
 export interface SelectedCustomer {

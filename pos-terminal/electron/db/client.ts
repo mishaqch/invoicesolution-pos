@@ -31,6 +31,16 @@ export function migrate(connection: Database.Database): void {
   addColumnIfMissing(connection, "invoices", "fbr_invoice_number", "TEXT");
   addColumnIfMissing(connection, "invoices", "fbr_qr_payload", "TEXT");
   addColumnIfMissing(connection, "invoices", "fbr_validated_at", "TEXT");
+  // hs_code reaches the terminal so a SCANNED sale carries a valid FBR HS code.
+  // is_third_schedule drives MRP-based tax for 3rd-schedule items (cigarettes).
+  addColumnIfMissing(connection, "products", "hs_code", "TEXT");
+  addColumnIfMissing(connection, "products", "is_third_schedule", "INTEGER NOT NULL DEFAULT 0");
+  // Pharmacy FEFO: which products track stock per batch (so a sale picks the
+  // soonest-expiry batch). The product_batches table itself is created by
+  // schema.sql (CREATE TABLE IF NOT EXISTS runs on every open).
+  addColumnIfMissing(connection, "products", "is_batch_tracked", "INTEGER NOT NULL DEFAULT 0");
+  // FEFO: the batch a sale line drew from (NULL for ordinary products).
+  addColumnIfMissing(connection, "sale_items", "batch_id", "TEXT");
 }
 
 function addColumnIfMissing(

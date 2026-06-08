@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
-  Branch, Category, HsCode, PosProduct, Product,
+  Branch, Category, HsCode, PosProduct, Product, ProductBatch,
   StockAudit, StockLevel, StockMovement, StockTransfer,
   TaxRate, UnitOfMeasure,
 } from "@pos/shared/types";
@@ -67,6 +67,9 @@ export function useProducts(params: Record<string, string> = {}) {
   return useQuery({
     queryKey: ["products", params],
     queryFn: () => api<Page<Product>>(`/catalog/products/${query ? `?${query}` : ""}`),
+    // Keep the previous page visible while the next page loads — no flicker /
+    // empty table when paging through a large catalog.
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -208,6 +211,61 @@ export function useStockLevels(params: Record<string, string> = {}) {
   });
 }
 
+export interface RestockRow {
+  product_id: string;
+  name: string;
+  sku: string;
+  uom: string | null;
+  on_hand: string;
+  reorder_level: string;
+  shortfall: string;
+  suggested_order_qty: string;
+  out_of_stock: boolean;
+}
+
+export function useRestock(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("inventory");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["restock", params],
+    queryFn: () =>
+      api<{ count: number; page: number; page_size: number; results: RestockRow[] }>(
+        `/inventory/restock/${query ? `?${query}` : ""}`,
+      ),
+    enabled,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface ExpiryRow {
+  batch_id: string;
+  product_id: string;
+  name: string;
+  sku: string;
+  uom: string | null;
+  batch_number: string;
+  expiry_date: string;
+  days_to_expiry: number;
+  on_hand: string;
+  branch: string | null;
+  bucket: "expired" | "soon" | "upcoming";
+}
+
+/** Batches at/near expiry (pharmacy). Gated by inventory module. */
+export function useExpiry(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("inventory");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["expiry", params],
+    queryFn: () =>
+      api<{ count: number; page: number; page_size: number; results: ExpiryRow[] }>(
+        `/inventory/expiry/${query ? `?${query}` : ""}`,
+      ),
+    enabled,
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useStockMovements(params: Record<string, string> = {}) {
   const query = new URLSearchParams(params).toString();
   return useQuery({
@@ -234,6 +292,162 @@ export function usePostAdjustment() {
   });
 }
 
+// --- Product batches (pharmacy / date-sensitive goods) --------------------
+
+/** Batches for one product, soonest-expiry first. Gated by inventory module. */
+export function useProductBatches(productId: string | undefined) {
+  const enabled = useModuleEnabled("inventory");
+  return useQuery({
+    queryKey: ["product-batches", productId],
+    queryFn: () =>
+      api<Page<ProductBatch>>(`/catalog/batches/?product=${productId}`),
+    enabled: enabled && Boolean(productId),
+  });
+}
+
+export function useCreateBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      product: string;
+      batch_number: string;
+      expiry_date: string | null;
+      manufactured_date?: string | null;
+      cost_price?: string | null;
+      sale_price?: string | null;
+      initial_quantity: string;
+      branch: string | null;
+    }) =>
+      api<ProductBatch>("/catalog/batches/", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["product-batches", vars.product] });
+      qc.invalidateQueries({ queryKey: ["stock-levels"] });
+      qc.invalidateQueries({ queryKey: ["movements"] });
+    },
+  });
+}
+
+// --- Suppliers + goods receipts (pharmacy / wholesale procurement) --------
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  ntn: string | null;
+  strn: string | null;
+  address: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoodsReceiptItem {
+  id?: string;
+  product: string;
+  product_name?: string;
+  quantity: string;
+  cost_price: string | null;
+  batch_number: string | null;
+  manufactured_date: string | null;
+  expiry_date: string | null;
+  batch?: string | null;
+}
+
+export interface GoodsReceipt {
+  id: string;
+  supplier: string;
+  supplier_name?: string;
+  branch: string;
+  branch_name?: string;
+  reference: string | null;
+  received_date: string;
+  status: "draft" | "posted";
+  notes: string | null;
+  posted_at: string | null;
+  created_at: string;
+  items: GoodsReceiptItem[];
+}
+
+export function useSuppliers(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("inventory");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["suppliers", params],
+    queryFn: () => api<Page<Supplier>>(`/suppliers/${query ? `?${query}` : ""}`),
+    enabled,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useSupplier(id: string | undefined) {
+  return useQuery({
+    queryKey: ["supplier", id],
+    queryFn: () => api<Supplier>(`/suppliers/${id}/`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useSaveSupplier() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Partial<Supplier> & { id?: string }) =>
+      api<Supplier>(`/suppliers/${id ? `${id}/` : ""}`, {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["suppliers"] }),
+  });
+}
+
+export function useGoodsReceipts(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("inventory");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["goods-receipts", params],
+    queryFn: () => api<Page<GoodsReceipt>>(`/purchases/receipts/${query ? `?${query}` : ""}`),
+    enabled,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useCreateGoodsReceipt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      supplier: string;
+      branch: string;
+      reference: string | null;
+      received_date: string;
+      notes?: string | null;
+      items: Omit<GoodsReceiptItem, "id" | "product_name" | "batch">[];
+    }) =>
+      api<GoodsReceipt>("/purchases/receipts/", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["goods-receipts"] }),
+  });
+}
+
+export function usePostGoodsReceipt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<GoodsReceipt>(`/purchases/receipts/${id}/post/`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["goods-receipts"] });
+      qc.invalidateQueries({ queryKey: ["stock-levels"] });
+      qc.invalidateQueries({ queryKey: ["product-batches"] });
+      qc.invalidateQueries({ queryKey: ["expiry"] });
+    },
+  });
+}
+
 export function useTransfers() {
   return useQuery({
     queryKey: ["transfers"],
@@ -248,7 +462,7 @@ export function useAudits() {
   });
 }
 
-export type { Branch, Category, HsCode, PosProduct, Product, TaxRate, UnitOfMeasure };
+export type { Branch, Category, HsCode, PosProduct, Product, ProductBatch, TaxRate, UnitOfMeasure };
 
 // ---------- Sales (Phase 2) ----------
 
@@ -438,6 +652,23 @@ export function useCancelInvoice() {
       // Cancel budget is consumed by this call — refresh the budget
       // tile too so the tenant sees the remaining amount drop.
       qc.invalidateQueries({ queryKey: ["fbr-cancel-budget"] });
+    },
+  });
+}
+
+/** Delete an UNSUBMITTED draft invoice (no FBR number). Soft-deletes
+ *  server-side + reverses stock. Only valid for pending_sync/failed
+ *  invoices with no fbr_invoice_number. */
+export function useDeleteDraftInvoice() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ deleted: boolean; local_invoice_number: string }>(
+        `/sales/invoices/${id}/draft/`, { method: "DELETE" },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-summary"] });
     },
   });
 }

@@ -78,14 +78,18 @@ export function CashSubFlow({ remaining, onAdd }: Props) {
         className="w-full" disabled={!amount || tend.isNegative() || tend.isZero()}
         onClick={() => onAdd({
           payment_method: "cash",
-          amount: tend.gt(remaining) ? remaining.toStorageString() : tend.toStorageString(),
+          // Record the FULL cash the customer handed over (not capped to the
+          // remaining) so paid_total reflects reality and the change due
+          // (paid − total) is computed + printed on the receipt. Capping it
+          // lost the over-tender and made change always show 0.
+          amount: tend.toStorageString(),
         })}
       >
         Add cash tender
       </Button>
       <p className="text-xs text-muted-foreground">
-        If you tender more than the remaining, the difference is treated as
-        change handed back; only the remaining amount is recorded.
+        Enter the cash the customer handed over. If it's more than the total,
+        the difference is shown as change to hand back.
       </p>
     </div>
   );

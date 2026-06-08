@@ -172,7 +172,7 @@ export default function PaymentSettingsPage() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={update.isPending}>
+        <Button type="submit" loading={update.isPending}>
           {update.isPending ? "Saving…" : "Save"}
         </Button>
         {saved && <span className="text-sm text-green-700">Saved.</span>}

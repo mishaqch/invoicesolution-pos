@@ -23,12 +23,50 @@
  * and so it can run headless in the background.
  */
 
-import { getMeta } from "./db/client";
+import { getMeta, setMeta } from "./db/client";
 import { getSdcUrl } from "./pairing";
+import { setInvoiceFbrFields } from "./db/sales";
 
 // Tight cap so a slow/unreachable SDC never holds the customer at the counter.
 const SDC_TIMEOUT_MS = 3500;
 const CLOUD_TIMEOUT_MS = 8000;
+
+/**
+ * TEST MODE (no IMS/SDC available, e.g. dev on macOS). When POS_FBR_TEST_MODE
+ * is on, stamp a clearly-fake FBR number locally so the full sale → print flow
+ * (FBR logo + QR on the receipt) can be tested without a Fiscalization service.
+ * The number is prefixed TEST- so it can NEVER be mistaken for a real fiscal
+ * number, and nothing is sent to FBR.
+ */
+export function isFbrTestMode(): boolean {
+  // Env (build-time via electron-vite) OR a runtime meta flag set from Hardware.
+  const env = (import.meta.env?.POS_FBR_TEST_MODE as string | undefined)
+    ?? (typeof process !== "undefined" ? process.env?.["POS_FBR_TEST_MODE"] : undefined);
+  if (env && /^(1|true|yes|on)$/i.test(env)) return true;
+  return getMeta("fbr.test_mode") === "1";
+}
+
+/**
+ * Stamp a dummy FBR number + QR on a local invoice and return it, for test
+ * printing. QR encodes the bare number (same format as production), so the
+ * printed receipt is identical to a real one apart from the TEST- prefix.
+ */
+export function fiscalizeTestMode(invoiceId: string, localNumber: string): FiscalizeResult {
+  // A stable-ish 16-char tail so it visually matches a real FBR number length.
+  const tail = (localNumber.replace(/[^0-9]/g, "") || "0").slice(-10).padStart(12, "0");
+  const fbrNumber = `TEST${tail}`;
+  setInvoiceFbrFields({
+    invoice_id: invoiceId,
+    fbr_invoice_number: fbrNumber,
+    fbr_qr_payload: fbrNumber, // QR encodes the bare number (prod format)
+    fbr_validated_at: new Date().toISOString(),
+  });
+  return { ok: true, fbrInvoiceNumber: fbrNumber };
+}
+
+export function setFbrTestMode(on: boolean): void {
+  setMeta("fbr.test_mode", on ? "1" : "0");
+}
 
 export interface FiscalizeResult {
   ok: boolean;

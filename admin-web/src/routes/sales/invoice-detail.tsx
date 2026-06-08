@@ -11,6 +11,7 @@ import {
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApiError } from "@/lib/api";
+import { money } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   useCancelInvoice,
   useCancelInvoiceItem,
+  useDeleteDraftInvoice,
   useEditInvoiceItem,
   useFbrSubmissions,
   useInvoice,
@@ -185,6 +187,7 @@ export default function InvoiceDetail() {
   const editItem = useEditInvoiceItem();
   const resubmit = useResubmitInvoice();
   const validate = useValidateInvoice();
+  const deleteDraft = useDeleteDraftInvoice();
   const [validateResult, setValidateResult] = useState<ValidateInvoiceResult | null>(null);
   const [fiscalizing, setFiscalizing] = useState(false);
   const [fiscalMsg, setFiscalMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -227,6 +230,13 @@ export default function InvoiceDetail() {
   const isFbrAccepted =
     FBR_ACCEPTED_STATES.has(invoice.status)
     && !!invoice.fbr_invoice_number;
+
+  // An UNSUBMITTED draft — never reached FBR (no number, pre-validation
+  // status). These can be deleted + re-validated freely; a submitted/
+  // fiscalized invoice can NEVER be edited or deleted (FBR immutability).
+  const isDraft =
+    !invoice.fbr_invoice_number
+    && (invoice.status === "pending_sync" || invoice.status === "failed");
 
   // POS/SDC tenant: branch has an FBR POS ID. These fiscalize via the local
   // SDC, NOT the direct DI-API — so show the SDC button and hide the DI-API
@@ -366,7 +376,7 @@ export default function InvoiceDetail() {
               }
             }
           }}
-          disabled={validate.isPending}
+          loading={validate.isPending}
           title="Dry-run validate this invoice against FBR's PRAL — no submission, just a lint check"
         >
           <CheckCircle2
@@ -422,7 +432,7 @@ export default function InvoiceDetail() {
           <Button
             variant="default"
             onClick={() => void resubmit.mutateAsync(invoice.id)}
-            disabled={resubmit.isPending}
+            loading={resubmit.isPending}
             title={
               invoice.status === "failed"
                 ? "PRAL rejected this invoice. Fix the issue and click to retry."
@@ -482,6 +492,28 @@ export default function InvoiceDetail() {
         {/* Spacer + destructive action at the far right so it's never
             adjacent to a positive action by accident. */}
         <div className="grow" />
+        {/* Draft (never sent to FBR) → can be deleted outright. A submitted/
+            fiscalized invoice is never deletable (use Cancel sale instead). */}
+        {isDraft && (
+          <Button
+            variant="destructive"
+            loading={deleteDraft.isPending}
+            onClick={async () => {
+              if (!id) return;
+              if (!window.confirm(
+                "Delete this draft invoice? It hasn't been sent to FBR. Stock will be restored.",
+              )) return;
+              try {
+                await deleteDraft.mutateAsync(id);
+                navigate("/sales", { replace: true });
+              } catch (e) {
+                window.alert(e instanceof Error ? e.message : "Could not delete the draft.");
+              }
+            }}
+          >
+            Delete draft
+          </Button>
+        )}
         {canCancel && (
           <Button variant="destructive" onClick={() => setShowConfirm(true)}>
             Cancel sale
@@ -604,12 +636,12 @@ export default function InvoiceDetail() {
         <Card>
           <CardHeader><CardTitle className="text-sm">Totals</CardTitle></CardHeader>
           <CardContent className="text-sm">
-            <Row k="Subtotal" v={`Rs ${invoice.subtotal}`} />
-            <Row k="Discount" v={`- Rs ${invoice.discount_total}`} muted />
-            <Row k="Tax" v={`Rs ${invoice.tax_total}`} />
-            <Row k="Grand total" v={`Rs ${invoice.grand_total}`} bold />
-            <Row k="Paid" v={`Rs ${invoice.paid_total}`} />
-            <Row k="Change" v={`Rs ${invoice.change_given}`} />
+            <Row k="Subtotal" v={`Rs ${money(invoice.subtotal)}`} />
+            <Row k="Discount" v={`- Rs ${money(invoice.discount_total)}`} muted />
+            <Row k="Tax" v={`Rs ${money(invoice.tax_total)}`} />
+            <Row k="Grand total" v={`Rs ${money(invoice.grand_total)}`} bold />
+            <Row k="Paid" v={`Rs ${money(invoice.paid_total)}`} />
+            <Row k="Change" v={`Rs ${money(invoice.change_given)}`} />
           </CardContent>
         </Card>
         <Card>
@@ -622,7 +654,7 @@ export default function InvoiceDetail() {
                 {invoice.payments.map((p) => (
                   <li key={p.id} className="flex justify-between font-mono">
                     <span className="capitalize">{p.payment_method.replace("_", " ")}</span>
-                    <span>Rs {p.amount}</span>
+                    <span>Rs {money(p.amount)}</span>
                   </li>
                 ))}
               </ul>
@@ -737,9 +769,9 @@ export default function InvoiceDetail() {
                       )}
                     </TableCell>
                     <TableCell className="text-right font-mono">{it.quantity}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {it.unit_price}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {it.tax_amount}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {it.line_total}</TableCell>
+                    <TableCell className="text-right font-mono">Rs {money(it.unit_price)}</TableCell>
+                    <TableCell className="text-right font-mono">Rs {money(it.tax_amount)}</TableCell>
+                    <TableCell className="text-right font-mono">Rs {money(it.line_total)}</TableCell>
                     <TableCell className="text-right">
                       {!lineGated && (
                         <div className="flex items-center justify-end gap-1">

@@ -36,6 +36,8 @@ export async function printInvoiceById(
     business_name: tenant?.business_name ?? "POS",
     branch_name: "",
     ntn: tenant?.ntn ?? "",
+    address: tenant?.address ?? undefined,
+    contact: tenant?.phone ?? undefined,
     invoice: detail.invoice as never,
     items: detail.items as never,
     payments: detail.payments as never,

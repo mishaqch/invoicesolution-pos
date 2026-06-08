@@ -125,7 +125,7 @@ export default function TerminalSyncDetail() {
                         <Button
                           size="sm"
                           variant="outline"
-                          disabled={retry.isPending}
+                          loading={retry.isPending}
                           onClick={() => retry.mutate(row.id)}
                         >
                           <RotateCw className="mr-1 h-3 w-3" /> Retry

@@ -342,6 +342,15 @@ class ProductBatch(models.Model):
         null=True,
         related_name="batches",
     )
+    # Traceability: which supplier this batch came from (set by a goods
+    # receipt). Nullable — batches added manually have no supplier.
+    supplier = models.ForeignKey(
+        "suppliers.Supplier",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="batches",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

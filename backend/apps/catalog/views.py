@@ -30,6 +30,7 @@ from .models import (
 from .serializers import (
     CategorySerializer,
     HsCodeSerializer,
+    ProductBatchPosSerializer,
     ProductBatchSerializer,
     ProductPosSerializer,
     ProductSerializer,
@@ -190,7 +191,15 @@ class ProductVariantViewSet(viewsets.ModelViewSet):
 
 
 class ProductBatchViewSet(viewsets.ModelViewSet):
-    queryset = ProductBatch.objects.select_related("product").all()
+    """Per-product stock batches (pharmacy + date-sensitive goods).
+
+    `GET /api/catalog/batches/?product=<id>` lists a product's batches, soonest
+    expiry first. Creating a batch is an *opening-stock* event for that batch:
+    we set current_quantity = initial_quantity and append an `opening_balance`
+    StockMovement so the aggregate StockLevel stays consistent (record_movement
+    is the only sanctioned way to move stock).
+    """
+    queryset = ProductBatch.objects.select_related("product", "branch").all()
     serializer_class = ProductBatchSerializer
     permission_classes = [HasRolePerm.with_perm("inventory.adjust")]
 
@@ -199,7 +208,46 @@ class ProductBatchViewSet(viewsets.ModelViewSet):
         tenant_id = getattr(self.request, "tenant_id", None)
         if tenant_id is None:
             return qs.none()
-        return qs.filter(product__tenant_id=tenant_id)
+        qs = qs.filter(product__tenant_id=tenant_id, product__deleted_at__isnull=True)
+        if (product := self.request.query_params.get("product")):
+            qs = qs.filter(product_id=product)
+        # Soonest-expiry first (nulls last) — the order a pharmacist scans for.
+        return qs.order_by("expiry_date", "batch_number")
+
+    def perform_create(self, serializer):
+        from decimal import Decimal
+
+        from apps.inventory.services.movements import record_movement
+
+        tenant_id = self.request.tenant_id
+        qty = Decimal(str(serializer.validated_data["initial_quantity"]))
+        # Start the batch at 0 and let record_movement bring current_quantity up
+        # to the opening qty — record_movement is the single source of truth for
+        # batch quantity (it bumps both the batch counter AND the aggregate
+        # StockLevel). Setting current_quantity here too would double-count.
+        batch = serializer.save(current_quantity=Decimal("0"))
+        if batch.branch_id and qty:
+            record_movement(
+                tenant_id=tenant_id,
+                product=batch.product,
+                branch=batch.branch,
+                batch=batch,
+                movement_type="opening_balance",
+                quantity=qty,
+                unit_cost=batch.cost_price,
+                reference_type="product_batch",
+                reference_id=batch.id,
+                reason=f"Batch {batch.batch_number} opening stock",
+                performed_by=self.request.user,
+            )
+            # record_movement updated a re-fetched row; refresh so the response
+            # serializes the new current_quantity (not the 0 we saved above).
+            batch.refresh_from_db(fields=["current_quantity"])
+        else:
+            # No branch (can't record a movement) — set the counter directly so
+            # the batch still reflects its opening quantity.
+            batch.current_quantity = qty
+            batch.save(update_fields=["current_quantity"])
 
 
 # ---------------------------------------------------------------------------
@@ -225,9 +273,25 @@ class CatalogSyncView(viewsets.ViewSet):
             product_qs = product_qs.filter(updated_at__gte=since)
             category_qs = category_qs.filter(updated_at__gte=since)
 
+        # Batches for FEFO at the terminal. Unlike products/categories these
+        # have no updated_at and their current_quantity changes on every sale,
+        # so an incremental `since` filter would miss depletions — we always
+        # send the FULL current set of in-stock batches for batch-tracked
+        # products (far fewer rows than the product catalog). The terminal
+        # replaces its batch table from this snapshot.
+        batch_qs = ProductBatch.objects.filter(
+            product__tenant_id=request.tenant_id,
+            product__deleted_at__isnull=True,
+            product__is_batch_tracked=True,
+            current_quantity__gt=0,
+        ).order_by("expiry_date")
+
         return Response({
             "products": ProductPosSerializer(product_qs, many=True).data,
             "categories": CategorySerializer(category_qs, many=True).data,
+            "batches": ProductBatchPosSerializer(batch_qs, many=True).data,
+            # Tells the terminal this is the complete batch set (replace, not merge).
+            "batches_full_snapshot": True,
         })
 
 

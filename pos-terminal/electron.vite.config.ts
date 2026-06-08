@@ -2,8 +2,15 @@ import path from "node:path";
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
 
+// Expose POS_* env vars (printer interface, DB path, FBR test mode, …) to
+// import.meta.env in ALL processes — by default Vite only exposes VITE_*.
+// The main process can't read process.env for these (electron-vite doesn't
+// populate it), so they must come through import.meta.env at build time.
+const ENV_PREFIX = ["VITE_", "POS_"];
+
 export default defineConfig({
   main: {
+    envPrefix: ENV_PREFIX,
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
@@ -28,6 +35,7 @@ export default defineConfig({
     },
   },
   preload: {
+    envPrefix: ENV_PREFIX,
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
@@ -37,6 +45,7 @@ export default defineConfig({
     },
   },
   renderer: {
+    envPrefix: ENV_PREFIX,
     root: path.resolve(__dirname),
     plugins: [react()],
     resolve: {

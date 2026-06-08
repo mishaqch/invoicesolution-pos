@@ -1,0 +1,12 @@
+# Compiled JS leaking into the TS source tree.
+#
+# All admin-web source is .ts/.tsx. A stray `tsc` (without --noEmit) or a
+# misconfigured editor can emit sibling .js files next to each .tsx — and
+# because imports are extensionless, Vite/TS resolve the .js OVER the .tsx,
+# silently serving STALE compiled code (the "frozen hash" stale-build bug).
+# Never commit these; never let them shadow source.
+src/**/*.js
+src/**/*.js.map
+
+# Vite build output
+dist/

@@ -18,7 +18,13 @@ logger = logging.getLogger(__name__)
 class TenantBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tenant
-        fields = ("id", "business_name", "ntn", "subscription_status", "logo_url")
+        fields = (
+            "id", "business_name", "ntn", "subscription_status", "logo_url",
+            # address + phone feed the POS thermal-receipt header.
+            "address", "phone",
+            # vertical drives pharmacy-only UI on the terminal (e.g. FEFO).
+            "vertical",
+        )
 
 
 class UserBriefSerializer(serializers.ModelSerializer):
@@ -157,3 +163,55 @@ class PinLoginSerializer(serializers.Serializer):
             "tenant": TenantBriefSerializer(instance["tenant"]).data,
             "role": instance["role"],
         }
+
+
+# Roles allowed to authorize a void/edit/discount at the till.
+SUPERVISOR_ROLES = frozenset({"owner", "manager"})
+
+
+class SupervisorPinVerifySerializer(serializers.Serializer):
+    """Verify a manager/owner PIN to AUTHORIZE a till action (void/edit/
+    discount) — WITHOUT issuing a session token.
+
+    Security:
+      - The PIN must belong to an ACTIVE owner/manager of the SAME tenant the
+        terminal is operating in (tenant_id from the verified request, not the
+        body) — a cashier PIN, or a manager from another tenant, is rejected.
+      - Generic "Invalid email or PIN" so we never reveal which part was wrong
+        or whether an email exists.
+      - No tokens minted; the caller just learns valid + role.
+    """
+
+    email = serializers.EmailField()
+    pin = serializers.RegexField(regex=r"^\d{6}$")
+
+    def validate(self, attrs):
+        tenant_id = self.context.get("tenant_id")
+        if not tenant_id:
+            raise serializers.ValidationError("Tenant context required.")
+
+        email = (attrs["email"] or "").strip().lower()
+        pin = attrs["pin"]
+
+        generic = serializers.ValidationError(
+            "Invalid PIN, or this account can't authorize this action.",
+        )
+        try:
+            user = User.objects.get(email__iexact=email, is_active=True)
+        except User.DoesNotExist as exc:
+            raise generic from exc
+        if not user.check_pin(pin):
+            raise generic
+
+        # Must be an active owner/manager OF THIS tenant.
+        membership = (
+            TenantMembership.objects
+            .filter(user=user, tenant_id=tenant_id, is_active=True)
+            .first()
+        )
+        if not membership or membership.role not in SUPERVISOR_ROLES:
+            raise generic
+
+        attrs["user"] = user
+        attrs["role"] = membership.role
+        return attrs

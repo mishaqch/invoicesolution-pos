@@ -15,7 +15,10 @@ import { app, ipcMain, type IpcMainInvokeEvent, BrowserWindow } from "electron";
 
 import { getDb, getMeta, setMeta } from "./db/client";
 import { nextInvoiceNumber } from "./db/numbering";
-import { checkSdcHealth, fiscalizeInvoice } from "./fiscalize";
+import {
+  checkSdcHealth, fiscalizeInvoice, fiscalizeTestMode,
+  isFbrTestMode, setFbrTestMode,
+} from "./fiscalize";
 import {
   getPairedIdentity, getSdcUrl, isPaired, pairWithCode, setSdcUrl, unpair,
 } from "./pairing";
@@ -39,7 +42,15 @@ import {
   type PosPaymentInput,
   type PosSaleItemInput,
 } from "./db/sales";
-import { listProducts, productByBarcode, productsCount, searchProducts, syncCatalog } from "./db/sync";
+import {
+  batchesForProduct,
+  listProducts,
+  nearestExpiryBatch,
+  productByBarcode,
+  productsCount,
+  searchProducts,
+  syncCatalog,
+} from "./db/sync";
 import { openCashDrawer, printReceipt } from "./printer";
 import { postToCustomerDisplay } from "./customer-display";
 
@@ -77,6 +88,18 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   ipcMain.handle("sdc:health", async () => checkSdcHealth());
   ipcMain.handle("fiscalize:invoice", async (_e, invoiceId: string) =>
     fiscalizeInvoice(apiBase, invoiceId),
+  );
+  // FBR TEST MODE (no SDC, e.g. macOS dev): stamp a dummy FBR number locally so
+  // the sale → print flow (logo + QR) is testable end-to-end.
+  ipcMain.handle("fiscalize:test-mode-on", () => isFbrTestMode());
+  ipcMain.handle("fiscalize:set-test-mode", (_e, on: boolean) => {
+    setFbrTestMode(on);
+    return { ok: true };
+  });
+  ipcMain.handle(
+    "fiscalize:test-stamp",
+    (_e, args: { invoiceId: string; localNumber: string }) =>
+      fiscalizeTestMode(args.invoiceId, args.localNumber),
   );
 
   // Queue
@@ -123,6 +146,17 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   ipcMain.handle("catalog:list", (_e, limit?: number) => listProducts(limit));
   ipcMain.handle("catalog:by-barcode", (_e, barcode: string) => productByBarcode(barcode));
   ipcMain.handle("catalog:count", () => productsCount());
+  // FEFO: nearest-expiry in-stock batch for a batch-tracked product.
+  ipcMain.handle(
+    "catalog:nearest-batch",
+    (_e, productId: string, branchId?: string | null) =>
+      nearestExpiryBatch(productId, branchId),
+  );
+  ipcMain.handle(
+    "catalog:batches",
+    (_e, productId: string, branchId?: string | null) =>
+      batchesForProduct(productId, branchId),
+  );
 
   // Sales — Phase 2
   ipcMain.handle(

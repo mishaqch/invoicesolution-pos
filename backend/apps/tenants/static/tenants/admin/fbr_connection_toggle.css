@@ -1,0 +1,6 @@
+/* Hide the "FBR sandbox scenarios" fieldset for non-DI-API (IMS/SDC) tenants.
+ * !important so it overrides Alpine.js's reactive inline `display` from the
+ * Unfold tab x-show binding. Toggled by fbr_connection_toggle.js. */
+fieldset.ivs-hide-scenarios {
+  display: none !important;
+}

@@ -16,6 +16,24 @@ export type MovementType =
   | "adjustment_in" | "adjustment_out"
   | "damage" | "expiry" | "opening_balance";
 
+/** A stock batch (pharmacy / date-sensitive goods). Money values are 4dp
+ *  decimal strings; quantities are decimal strings. */
+export interface ProductBatch {
+  id: string;
+  product: string;
+  product_name: string;
+  batch_number: string;
+  manufactured_date: string | null;
+  expiry_date: string | null;
+  cost_price: string | null;
+  sale_price: string | null;
+  initial_quantity: string;
+  current_quantity: string;
+  branch: string | null;
+  branch_name: string | null;
+  created_at: string;
+}
+
 export interface StockMovement {
   id: string;
   product: string;

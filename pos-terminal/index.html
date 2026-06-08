@@ -2,10 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Content-Security-Policy. connect-src must list EVERY origin the renderer
+      fetches: the cloud API (prod + dev), the local FBR SDC fiscalization
+      service, and ws: for Vite HMR in dev. The old policy only allowed
+      http://localhost:8000, so pointing the terminal at the production API
+      (https://client.invoicesolution.pk) made every fetch fail with a CSP
+      violation surfaced to the user as "Could not sign in. Check the network."
+    -->
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://localhost:8000;" />
+          content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://localhost:8000 ws://localhost:8000 https://client.invoicesolution.pk https://admin.invoicesolution.pk http://localhost:8524 ws://localhost:5174;" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pakistan POS — Terminal</title>
+    <title>InvoiceSolution — Terminal</title>
   </head>
   <body class="bg-background text-foreground select-none">
     <div id="root"></div>

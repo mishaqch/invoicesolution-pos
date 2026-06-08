@@ -14,16 +14,28 @@ export interface PosProductSqliteRow {
   name_ur: string | null;
   uom_code: string;
   tax_rate_id: string | null;
+  hs_code: string | null;
   is_taxable: number;
   sale_price: string;
   retail_price: string | null;
   min_sale_price: string | null;
   max_discount_pct: string | null;
+  is_third_schedule: number;
   is_weighable: number;
+  is_batch_tracked: number;
   image_url: string | null;
   is_active: number;
   updated_at: string;
   deleted_at: string | null;
+}
+
+export interface PosBatchSqliteRow {
+  id: string;
+  product_id: string;
+  batch_number: string;
+  expiry_date: string | null;
+  current_quantity: string;
+  branch_id: string | null;
 }
 
 export interface PosCashSessionRow {
@@ -144,6 +156,13 @@ const api = {
       alreadyFiscalized?: boolean;
       reason?: string;
     }> => ipcRenderer.invoke("fiscalize:invoice", invoiceId),
+    // FBR test mode (no SDC): is it on, toggle it, and stamp a dummy number.
+    isTestMode: (): Promise<boolean> => ipcRenderer.invoke("fiscalize:test-mode-on"),
+    setTestMode: (on: boolean): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("fiscalize:set-test-mode", on),
+    testStamp: (args: { invoiceId: string; localNumber: string }): Promise<{
+      ok: boolean; fbrInvoiceNumber?: string;
+    }> => ipcRenderer.invoke("fiscalize:test-stamp", args),
   },
   queue: {
     enqueue: (entry: {
@@ -159,6 +178,7 @@ const api = {
     sync: (opts: { apiBase: string; accessToken: string }): Promise<{
       products: number;
       categories: number;
+      batches: number;
     }> => ipcRenderer.invoke("catalog:sync", opts),
     search: (query: string, limit?: number): Promise<PosProductSqliteRow[]> =>
       ipcRenderer.invoke("catalog:search", query, limit),
@@ -167,6 +187,11 @@ const api = {
     byBarcode: (barcode: string): Promise<PosProductSqliteRow | null> =>
       ipcRenderer.invoke("catalog:by-barcode", barcode),
     count: (): Promise<number> => ipcRenderer.invoke("catalog:count"),
+    // FEFO: nearest-expiry in-stock batch for a batch-tracked product.
+    nearestBatch: (productId: string, branchId?: string | null): Promise<PosBatchSqliteRow | null> =>
+      ipcRenderer.invoke("catalog:nearest-batch", productId, branchId),
+    batches: (productId: string, branchId?: string | null): Promise<PosBatchSqliteRow[]> =>
+      ipcRenderer.invoke("catalog:batches", productId, branchId),
   },
   sales: {
     persistInvoice: (args: unknown): Promise<{ ok: true }> =>

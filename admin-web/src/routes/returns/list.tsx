@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useBranches, useReturns } from "@/lib/queries";
+import { money } from "@/lib/utils";
 
 const REFUND_METHODS = ["", "cash", "store_credit", "card_reversal", "wallet_reversal", "bank_transfer"];
 
@@ -83,7 +84,7 @@ export default function ReturnsList() {
                   </TableCell>
                   <TableCell className="text-xs">{r.reason.replace("_", " ")}</TableCell>
                   <TableCell className="text-xs">{r.refund_method.replace("_", " ")}</TableCell>
-                  <TableCell className="text-right font-mono">Rs {r.refund_amount}</TableCell>
+                  <TableCell className="text-right font-mono">Rs {money(r.refund_amount)}</TableCell>
                 </TableRow>
               ))
             )}

@@ -1007,7 +1007,7 @@ export default function NewInvoiceRoute() {
         </p>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => navigate("/sales")}>Cancel</Button>
-          <Button onClick={submit} disabled={create.isPending}>
+          <Button onClick={submit} loading={create.isPending}>
             {create.isPending ? "Saving…" : "Create invoice"}
           </Button>
         </div>

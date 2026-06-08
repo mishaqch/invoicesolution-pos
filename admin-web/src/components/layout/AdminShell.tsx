@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from "react";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 
+import { GlobalLoadingBar } from "./GlobalLoadingBar";
 import { Sidebar } from "./Sidebar";
 import { SyncBanner } from "./SyncBanner";
 import { TopBar } from "./TopBar";
@@ -61,6 +62,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   useTenantRefresh();
   return (
     <div className="flex h-screen w-screen overflow-hidden">
+      <GlobalLoadingBar />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground"

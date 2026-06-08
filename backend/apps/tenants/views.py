@@ -268,7 +268,9 @@ class TenantModulesView(APIView):
         tenant_id = getattr(request, "tenant_id", None)
         if not tenant_id:
             raise PermissionDenied("Tenant context required.")
-        tenant = Tenant.objects.only("modules_enabled").get(pk=tenant_id)
+        tenant = Tenant.objects.only(
+            "modules_enabled", "business_mode", "fbr_connection_type", "vertical",
+        ).get(pk=tenant_id)
 
         return Response({
             "catalog": [
@@ -285,6 +287,14 @@ class TenantModulesView(APIView):
                 m["key"] for m in MODULES
                 if is_module_enabled(tenant, m["key"])
             ],
+            # Drives mode-aware FBR/Branches UI in admin-web:
+            #   di_api  -> show PRAL token setup + sandbox scenarios
+            #   ims_sdc -> hide them; show only FBR POS ID + connection status
+            "business_mode": tenant.business_mode,
+            "fbr_connection_type": tenant.fbr_connection_type,
+            # Presentation vertical (grocery vs pharmacy) — admin-web surfaces
+            # pharmacy-only sections (batch/expiry/suppliers) only for pharmacy.
+            "vertical": tenant.vertical,
         })
 
 

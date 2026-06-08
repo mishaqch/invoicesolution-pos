@@ -85,7 +85,7 @@ export default function Adjustments() {
               <Input id="reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
             </div>
             <div className="col-span-2">
-              <Button type="submit" disabled={post.isPending}>
+              <Button type="submit" loading={post.isPending}>
                 {post.isPending ? "Submitting…" : "Submit"}
               </Button>
               {done && <span className="ml-3 text-sm text-green-700">Submitted.</span>}

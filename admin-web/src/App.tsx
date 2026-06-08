@@ -5,6 +5,8 @@ import { AdminShell } from "@/components/layout/AdminShell";
 import { ToastProvider } from "@/components/feedback/Toast";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { RequireModule } from "@/features/modules/RequireModule";
+import { RequireDiApi } from "@/features/modules/RequireDiApi";
+import { RequireVertical } from "@/features/modules/RequireVertical";
 import BranchesList from "@/routes/branches/branches";
 import TerminalsList from "@/routes/terminals/terminals";
 import CategoriesList from "@/routes/catalog/categories";
@@ -16,7 +18,11 @@ import TaxRatesList from "@/routes/catalog/tax-rates";
 import DashboardRoute from "@/routes/dashboard";
 import Adjustments from "@/routes/inventory/adjustments";
 import StockAuditsList from "@/routes/inventory/audits";
+import ExpiryList from "@/routes/inventory/expiry";
 import Movements from "@/routes/inventory/movements";
+import RestockList from "@/routes/inventory/restock";
+import SuppliersList from "@/routes/suppliers/list";
+import ReceiveStock from "@/routes/purchases/receive";
 import StockByBranch from "@/routes/inventory/stock-by-branch";
 import StockTransfersList from "@/routes/inventory/transfers";
 import LoginRoute from "@/routes/login";
@@ -114,11 +120,35 @@ export default function App() {
               element={<RequireModule module="inventory"><Outlet /></RequireModule>}
             >
               <Route path="stock" element={<StockByBranch />} />
+              <Route path="restock" element={<RestockList />} />
+              <Route
+                path="expiry"
+                element={<RequireVertical vertical="pharmacy"><ExpiryList /></RequireVertical>}
+              />
               <Route path="movements" element={<Movements />} />
               <Route path="adjustments" element={<Adjustments />} />
               <Route path="transfers" element={<StockTransfersList />} />
               <Route path="audits" element={<StockAuditsList />} />
             </Route>
+
+            {/* Procurement — pharmacy/wholesale. Gated by inventory module +
+                pharmacy vertical (the only vertical that surfaces it for now). */}
+            <Route
+              path="suppliers"
+              element={
+                <RequireModule module="inventory">
+                  <RequireVertical vertical="pharmacy"><SuppliersList /></RequireVertical>
+                </RequireModule>
+              }
+            />
+            <Route
+              path="purchases/receive"
+              element={
+                <RequireModule module="inventory">
+                  <RequireVertical vertical="pharmacy"><ReceiveStock /></RequireVertical>
+                </RequireModule>
+              }
+            />
 
             <Route path="sales">
               <Route index element={<InvoicesList />} />
@@ -134,8 +164,10 @@ export default function App() {
 
             <Route path="fbr">
               <Route index element={<FbrDashboard />} />
-              <Route path="setup" element={<FbrSetupWizard />} />
-              <Route path="scenarios" element={<ScenariosPage />} />
+              {/* Setup + Scenarios are DI-API only — IMS/SDC tenants are
+                  redirected to the FBR dashboard. */}
+              <Route path="setup" element={<RequireDiApi><FbrSetupWizard /></RequireDiApi>} />
+              <Route path="scenarios" element={<RequireDiApi><ScenariosPage /></RequireDiApi>} />
               <Route path="submissions" element={<SubmissionsPage />} />
               <Route path="cancel-budget" element={<CancelBudgetPage />} />
               <Route path="manual-amendment" element={<ManualAmendmentPage />} />

@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useProductSearch } from "@/features/catalog/useProducts";
+import { buildCartLineFromProduct } from "@/features/sale/addToCart";
 
 import type { CartLine } from "@/stores/sale";
 
 interface Props {
   onAdd: (line: Omit<CartLine, "id">) => void;
+  /** Branch context for FEFO batch selection on batch-tracked products. */
+  branchId?: string | null;
+  /** Surface a non-blocking warning (e.g. no/expired batch) to the cashier. */
+  onWarn?: (message: string) => void;
   /** Bumped by the parent after a hardware scan so we clear any stray chars
    *  the scanner leaked into the search box and re-focus for the next item. */
   clearSignal?: number;
 }
 
-export function ProductGrid({ onAdd, clearSignal }: Props) {
+export function ProductGrid({ onAdd, branchId, onWarn, clearSignal }: Props) {
   const [query, setQuery] = useState("");
   const { results, loading } = useProductSearch(query);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,21 +63,16 @@ export function ProductGrid({ onAdd, clearSignal }: Props) {
                 key={p.id}
                 type="button"
                 className="rounded-md border bg-background p-3 text-left transition-transform active:scale-95 hover:bg-muted"
-                onClick={() =>
-                  onAdd({
-                    product_id: p.id,
-                    product_name: p.name,
-                    product_sku: p.sku,
-                    uom_code: p.uom_code,
-                    hs_code: null,
-                    quantity: "1",
-                    unit_price: p.sale_price,
-                    discount_pct: "0",
-                    discount_amount: "0",
-                    tax_rate: p.is_taxable ? "18" : "0",
-                    is_taxable: !!p.is_taxable,
-                  })
-                }
+                onClick={() => {
+                  void (async () => {
+                    // Route through the shared helper so the tap path carries
+                    // the real HS code AND a FEFO batch (for batch-tracked
+                    // products), exactly like the barcode-scan path.
+                    const { line, warning } = await buildCartLineFromProduct(p, { branchId });
+                    onAdd(line as Omit<CartLine, "id">);
+                    if (warning) onWarn?.(warning);
+                  })();
+                }}
               >
                 <div className="line-clamp-2 text-sm font-medium">{p.name}</div>
                 <div className="mt-1 text-xs text-muted-foreground">{p.sku}</div>

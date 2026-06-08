@@ -141,7 +141,7 @@ export default function ReportDetail() {
             <Input value={branchId} onChange={(e) => setBranchId(e.target.value)} placeholder="optional" />
           </div>
           <div className="flex items-end">
-            <Button size="sm" onClick={run} disabled={preview.isPending}>
+            <Button size="sm" onClick={run} loading={preview.isPending}>
               {preview.isPending ? "Running…" : "Run"}
             </Button>
           </div>

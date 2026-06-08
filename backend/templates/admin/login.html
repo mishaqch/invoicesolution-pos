@@ -1,0 +1,15 @@
+{% extends "admin/login.html" %}
+{% comment %}
+Override-and-extend: this file (in the project templates DIR) extends the
+admin/login.html provided by the NEXT loader (django-unfold's). Django's
+template engine resolves the parent against loaders *after* the one that found
+this file, so this is the documented way to add to a template you also override.
+We only inject the shared loading bar + submit spinner via Unfold's
+{% block login_after %} hook — everything else (the login form, branding,
+layout) is inherited untouched.
+{% endcomment %}
+
+{% block login_after %}
+{{ block.super }}
+{% include "admin/_ivs_progress.html" %}
+{% endblock %}

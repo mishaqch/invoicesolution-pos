@@ -1,0 +1,31 @@
+{% extends "admin/base.html" %}
+{% load i18n %}
+{% comment %}
+Project override of the admin site template (extends admin/base.html, same as
+Unfold's own base_site.html). We re-declare Unfold's title/branding/nav-global
+blocks VERBATIM so the theme is unchanged, then add a top loading bar + submit
+spinner via the footer block.
+
+Why: on the slow Germany->Pakistan path, clicking a link (e.g. Users list) or a
+submit button gives no feedback until the next page paints, so the admin feels
+dead/broken. This adds instant visual feedback:
+  - a slim progress bar that animates across the top the moment any same-origin
+    link is clicked or any form is submitted, and finishes on page load;
+  - a spinner on the clicked submit button (Log in, Save, …).
+Pure inline CSS/JS, no dependencies, no external requests.
+{% endcomment %}
+
+{# --- preserved from unfold/templates/admin/base_site.html --- #}
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
+{# --- end preserved --- #}
+
+{% block footer %}
+{{ block.super }}
+{% include "admin/_ivs_progress.html" %}
+{% endblock %}

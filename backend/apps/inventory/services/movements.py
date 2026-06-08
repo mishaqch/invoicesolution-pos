@@ -60,4 +60,16 @@ def record_movement(
     )
     level.quantity = (level.quantity or Decimal("0")) + quantity
     level.save(update_fields=["quantity", "updated_at"])
+
+    # Batch-tracked goods (pharmacy): keep the batch's own running quantity in
+    # step with the movement so FEFO picks the next batch once this one is
+    # depleted, and the expiry list shows the true on-hand. The aggregate
+    # StockLevel above is the sum across batches; the batch counter is per-lot.
+    if batch is not None:
+        batch_row = ProductBatch.objects.select_for_update().get(pk=batch.pk)
+        batch_row.current_quantity = (batch_row.current_quantity or Decimal("0")) + quantity
+        if batch_row.current_quantity < Decimal("0"):
+            batch_row.current_quantity = Decimal("0")  # never go negative
+        batch_row.save(update_fields=["current_quantity"])
+
     return movement

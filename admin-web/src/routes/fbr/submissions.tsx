@@ -88,7 +88,7 @@ export default function SubmissionsPage() {
                           size="sm"
                           variant="outline"
                           className="ml-1"
-                          disabled={retry.isPending}
+                          loading={retry.isPending}
                           onClick={() => retry.mutate(row.invoice!)}
                         >
                           Retry

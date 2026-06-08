@@ -1,0 +1,84 @@
+{% comment %}
+Shared loading-feedback snippet for the super-admin: a slim top progress bar
+that animates on any same-origin link click or form submit (and finishes on
+page load), plus a spinner on the clicked submit button. Pure inline CSS/JS, no
+dependencies. Included by both admin/base_site.html (authenticated pages) and
+admin/login.html (the login page uses a different layout chain).
+{% endcomment %}
+<style>
+  #ivs-progress {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0;
+    background: #6366f1; box-shadow: 0 0 8px rgba(99,102,241,.7);
+    z-index: 99999; opacity: 0;
+    transition: width .2s ease, opacity .3s ease; pointer-events: none;
+  }
+  .ivs-btn-spinner {
+    display: inline-block; width: 14px; height: 14px;
+    margin-right: 6px; vertical-align: -2px;
+    border: 2px solid currentColor; border-right-color: transparent;
+    border-radius: 50%; animation: ivs-spin .6s linear infinite;
+  }
+  @keyframes ivs-spin { to { transform: rotate(360deg); } }
+  [aria-busy="true"] { cursor: progress !important; }
+</style>
+
+<div id="ivs-progress" role="progressbar" aria-hidden="true"></div>
+
+<script>
+(function () {
+  if (window.__ivsProgressInit) return;        // guard against double-include
+  window.__ivsProgressInit = true;
+  var bar = document.getElementById("ivs-progress");
+  if (!bar) return;
+  var timer = null, width = 0, active = false;
+
+  function start() {
+    if (active) return;
+    active = true; width = 8;
+    bar.style.opacity = "1"; bar.style.width = width + "%";
+    timer = setInterval(function () {
+      width += (90 - width) * 0.12;
+      bar.style.width = width.toFixed(1) + "%";
+    }, 200);
+  }
+  function done() {
+    if (timer) { clearInterval(timer); timer = null; }
+    bar.style.width = "100%";
+    setTimeout(function () {
+      bar.style.opacity = "0";
+      setTimeout(function () { bar.style.width = "0"; active = false; }, 300);
+    }, 200);
+  }
+  window.addEventListener("pageshow", done);
+
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[href]");
+    if (!a) return;
+    var href = a.getAttribute("href");
+    if (!href || href[0] === "#" || a.target === "_blank") return;
+    if (/^(mailto:|tel:|javascript:)/i.test(href)) return;
+    if (a.hasAttribute("download")) return;
+    if (a.host && a.host !== window.location.host) return;
+    start();
+  }, true);
+
+  document.addEventListener("submit", function (e) {
+    var form = e.target;
+    if (!form || form.getAttribute("target") === "_blank") return;
+    start();
+    document.body.setAttribute("aria-busy", "true");
+    var clicked = document.activeElement;
+    var fallback = form.querySelector('button[type="submit"], input[type="submit"], button:not([type])');
+    var target = (clicked && form.contains(clicked) &&
+      (clicked.type === "submit" || clicked.tagName === "BUTTON")) ? clicked : fallback;
+    if (target && !target.dataset.ivsBusy) {
+      target.dataset.ivsBusy = "1";
+      if (target.tagName === "BUTTON") {
+        target.insertAdjacentHTML("afterbegin", '<span class="ivs-btn-spinner"></span>');
+      } else if (target.tagName === "INPUT") {
+        target.value = "⏳ " + target.value;
+      }
+    }
+  }, true);
+})();
+</script>

@@ -86,6 +86,9 @@ INSTALLED_APPS = [
     "apps.catalog",
     "apps.inventory",
     "apps.notifications",
+    # Procurement (pharmacy / wholesale) — suppliers + goods receipts
+    "apps.suppliers",
+    "apps.purchases",
     # Local — Phase 2
     "apps.customers",
     "apps.sales",
@@ -133,7 +136,11 @@ ASGI_APPLICATION = "core.asgi.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Project-level template overrides (e.g. admin/base_site.html, which
+        # injects a top loading bar + submit spinners into the super-admin so
+        # navigation never feels dead on a slow link). Listed before APP_DIRS
+        # lookups so it wins over the packaged admin/unfold templates.
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -219,7 +226,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    # Custom: same PageNumberPagination but honours ?page_size=N (capped at
+    # max_page_size) so list UIs can offer a rows-per-page control.
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 50,
     "DEFAULT_THROTTLE_CLASSES": (
         "rest_framework.throttling.ScopedRateThrottle",

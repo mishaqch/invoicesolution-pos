@@ -12,8 +12,12 @@ from django.db import models
 from apps.tenants.business_mode import (
     BUSINESS_MODES,
     DEFAULT_BUSINESS_MODE,
+    DEFAULT_FBR_CONNECTION_TYPE,
+    DEFAULT_VERTICAL,
     FBR_BUSINESS_NATURE_CHOICES,
+    FBR_CONNECTION_TYPES,
     FBR_SECTOR_CHOICES,
+    VERTICALS,
 )
 from apps.tenants.managers import TenantScopedManager
 from apps.tenants.modules import default_modules_enabled as _default_modules_enabled
@@ -89,6 +93,26 @@ class Tenant(models.Model):
     # (super-admin owns module config), only the initial wizard does.
     business_mode = models.CharField(
         max_length=20, choices=BUSINESS_MODES, default=DEFAULT_BUSINESS_MODE,
+    )
+
+    # WHAT KIND of shop this is (grocery vs pharmacy). Presentation flag only —
+    # decides which UI sections each app surfaces (pharmacy gets batch/expiry/
+    # supplier tools; grocery doesn't). Does NOT change backend access, which
+    # stays governed by modules_enabled. Existing tenants default to 'grocery'.
+    # See business_mode.VERTICALS.
+    vertical = models.CharField(
+        max_length=20, choices=VERTICALS, default=DEFAULT_VERTICAL,
+    )
+
+    # HOW this tenant connects to FBR (orthogonal to business_mode). Drives
+    # mode-aware UI: di_api tenants get the PRAL token setup + sandbox
+    # scenarios; ims_sdc tenants (FBR IMS Fiscalization service on the shop
+    # machine) get neither — only their per-branch FBR POS ID. See
+    # business_mode.FBR_CONNECTION_TYPES.
+    fbr_connection_type = models.CharField(
+        max_length=10,
+        choices=FBR_CONNECTION_TYPES,
+        default=DEFAULT_FBR_CONNECTION_TYPE,
     )
 
     # FBR-defined taxonomy. Wire values are the exact strings PRAL

@@ -517,19 +517,27 @@ class TenantAdmin(ModelAdmin):
     # edit pages match the Users page visually instead of inheriting the
     # default browser-ugly form styling.
     class Media:
-        css = {"all": ("accounts/admin/admin_forms.css",)}
+        css = {"all": (
+            "accounts/admin/admin_forms.css",
+            "tenants/admin/fbr_connection_toggle.css",
+        )}
+        # Live-toggle the "FBR sandbox scenarios" fieldset based on the chosen
+        # FBR connection type (show only for di_api; hide for ims_sdc) — covers
+        # the create page + dropdown changes before save. The server also drops
+        # it for saved ims_sdc tenants (get_fieldsets).
+        js = ("tenants/admin/fbr_connection_toggle.js",)
 
     warn_unsaved_form = True
     list_fullwidth = True
     form = TenantAdminForm
     list_display = (
         "business_name", "ntn", "owner_summary",
-        "business_mode", "subscription_plan", "subscription_status",
+        "business_mode", "vertical", "subscription_plan", "subscription_status",
         "province", "created_at",
     )
     search_fields = ("business_name", "ntn", "strn",
                      "memberships__user__email")
-    list_filter = ("business_type", "business_mode", "province",
+    list_filter = ("business_type", "business_mode", "vertical", "province",
                    "subscription_plan", "subscription_status", "signup_source")
     readonly_fields = (
         "id", "created_at", "updated_at",
@@ -582,12 +590,22 @@ class TenantAdmin(ModelAdmin):
     _COMMON_FIELDSETS = (
         ("Business identity", {
             "fields": ("business_name", "ntn", "strn", "cnic_owner",
-                       "business_type", "business_mode", "province",
-                       "fbr_business_natures", "fbr_sector"),
+                       "business_type", "business_mode", "vertical",
+                       "fbr_connection_type",
+                       "province", "fbr_business_natures", "fbr_sector"),
             "description": (
                 "Business mode = the product the tenant signed up for. "
                 "POS / IMS = counter terminal + inventory + hardware. "
-                "Digital Invoicing = back-office invoice tool only."
+                "Digital Invoicing = back-office invoice tool only. "
+                "Vertical = the KIND of shop (Grocery vs Pharmacy). It only "
+                "decides which sections the apps show the tenant — a Pharmacy "
+                "sees batch/expiry/supplier tools, a Grocery doesn't. It does "
+                "NOT change what's enabled (that's Modules below). "
+                "FBR connection type = HOW they reach FBR: 'Direct DI-API' "
+                "(PRAL Bearer token + sandbox scenarios) vs 'IMS / SDC' (the "
+                "FBR Fiscalization service on the shop PC — POS ID only, no "
+                "token, no scenarios). This hides the irrelevant FBR controls "
+                "for each tenant."
             ),
         }),
         ("FBR sandbox scenarios", {
@@ -630,7 +648,17 @@ class TenantAdmin(ModelAdmin):
 
     def get_fieldsets(self, request, obj=None):
         is_new = obj is None
-        fieldsets = [self._owner_login_fieldset(is_new), *self._COMMON_FIELDSETS]
+        common = self._COMMON_FIELDSETS
+        # Scenarios + test-buyer NTN are DI-API / sandbox-only. An existing
+        # tenant on the FBR IMS / SDC Fiscalization service has no token and
+        # runs no sandbox scenarios, so hide that fieldset for them to keep the
+        # form clean + relevant. (Kept on CREATE, where the connection type
+        # isn't chosen yet; it drops off once the tenant is saved as ims_sdc.)
+        if obj is not None and getattr(obj, "fbr_connection_type", None) == "ims_sdc":
+            common = tuple(
+                fs for fs in common if fs[0] != "FBR sandbox scenarios"
+            )
+        fieldsets = [self._owner_login_fieldset(is_new), *common]
         if not is_new:
             # Advanced block — read-only diagnostic info collapsed by
             # default. Operator opens it only for support triage or to

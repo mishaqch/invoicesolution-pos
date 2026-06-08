@@ -50,6 +50,52 @@ BUSINESS_MODES = (
 DEFAULT_BUSINESS_MODE = "digital_invoicing"
 
 
+# ---------------------------------------------------------------------------
+# FBR connection type — HOW the tenant reaches FBR (orthogonal to business_mode,
+# which is WHICH product they bought).
+#
+#   di_api  — direct PRAL Digital Invoicing API: tenant holds a Bearer token,
+#             tests sandbox scenarios, then submits straight to gw.fbr.gov.pk.
+#             Needs: token setup, sandbox/production tokens, scenario testing.
+#   ims_sdc — FBR's IMS Fiscalization service (SDC) runs on the shop machine and
+#             relays to FBR. Our server sends the POS ID to localhost:8524; NO
+#             Bearer token is used on this path, and there are NO sandbox
+#             scenarios (the IMS handles activation itself).
+#
+# This flag drives mode-aware UI: ims_sdc tenants must NOT see DI-API token
+# setup or scenarios; di_api tenants must NOT see POS-ID-only / SDC controls.
+# ---------------------------------------------------------------------------
+
+FBR_CONNECTION_TYPES = (
+    ("di_api", "Direct DI-API (PRAL Bearer token + scenarios)"),
+    ("ims_sdc", "IMS / SDC Fiscalization service (POS ID, no token, no scenarios)"),
+)
+
+DEFAULT_FBR_CONNECTION_TYPE = "di_api"
+
+
+# ---------------------------------------------------------------------------
+# Vertical — WHAT KIND of shop this is (grocery vs pharmacy vs …).
+#
+# Orthogonal to business_mode (which surface) and fbr_connection_type (how it
+# reaches FBR). The vertical is a *presentation* flag only: it decides which
+# UI sections each app surfaces (a pharmacy sees batch/expiry/supplier tools; a
+# grocery does not). It does NOT change what the backend allows — access stays
+# governed by `modules_enabled`. Existing tenants default to 'grocery', so
+# nothing changes for them.
+#
+# Restaurant is intentionally deferred (V2); adding it later is one more enum
+# entry plus the vertical-gated screens.
+# ---------------------------------------------------------------------------
+
+VERTICALS = (
+    ("grocery", "Grocery / general retail"),
+    ("pharmacy", "Pharmacy"),
+)
+
+DEFAULT_VERTICAL = "grocery"
+
+
 # Which modules each mode unlocks. Used by the onboarding wizard +
 # whenever business_mode flips. Forced modules (sales/fbr/customers)
 # are always on regardless and are not listed here.

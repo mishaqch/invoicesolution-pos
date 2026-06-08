@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useIsImsSdc } from "@/features/modules/hooks";
 import { useToast } from "@/components/feedback/Toast";
 import { extractApiErrorMessage } from "@/lib/api";
 import {
@@ -33,6 +34,7 @@ const PROVINCES = [
 export default function BranchesList() {
   const { data, isLoading } = useBranches();
   const { data: posStatus } = useFbrPosStatus();
+  const imsSdc = useIsImsSdc();
   const create = useCreateBranch();
   const [v, setV] = useState({
     name: "", code: "", address: "", city: "", province: "PUNJAB" as const,
@@ -79,7 +81,7 @@ export default function BranchesList() {
               </Field>
             </div>
             <div className="col-span-2">
-              <Button type="submit" disabled={create.isPending}>
+              <Button type="submit" loading={create.isPending}>
                 <Plus className="mr-2 h-4 w-4" /> {create.isPending ? "Adding…" : "Add"}
               </Button>
               {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
@@ -97,22 +99,24 @@ export default function BranchesList() {
               <TableHead>City</TableHead>
               <TableHead>Province</TableHead>
               <TableHead>FBR POS</TableHead>
-              <TableHead>Token</TableHead>
+              {/* DI-API per-branch token is irrelevant to IMS/SDC tenants. */}
+              {!imsSdc && <TableHead>Token</TableHead>}
               <TableHead>Active</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={imsSdc ? 7 : 8} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : branches.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No branches yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={imsSdc ? 7 : 8} className="text-center text-muted-foreground">No branches yet.</TableCell></TableRow>
             ) : (
               branches.map((b) => (
                 <BranchRow
                   key={b.id}
                   branch={b}
                   pos={posByBranch.get(b.id)}
+                  imsSdc={imsSdc}
                   expanded={editing === b.id}
                   onToggle={() => setEditing(editing === b.id ? null : b.id)}
                 />
@@ -128,11 +132,13 @@ export default function BranchesList() {
 function BranchRow({
   branch,
   pos,
+  imsSdc,
   expanded,
   onToggle,
 }: {
   branch: Branch;
   pos?: FbrPosBranch;
+  imsSdc: boolean;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -155,15 +161,17 @@ function BranchRow({
             <Badge variant="muted">Not registered</Badge>
           )}
         </TableCell>
-        <TableCell>
-          {!hasToken ? (
-            <Badge variant="muted">No token</Badge>
-          ) : tokenActive ? (
-            <Badge variant="success">Token set</Badge>
-          ) : (
-            <Badge variant="warning">Inactive</Badge>
-          )}
-        </TableCell>
+        {!imsSdc && (
+          <TableCell>
+            {!hasToken ? (
+              <Badge variant="muted">No token</Badge>
+            ) : tokenActive ? (
+              <Badge variant="success">Token set</Badge>
+            ) : (
+              <Badge variant="warning">Inactive</Badge>
+            )}
+          </TableCell>
+        )}
         <TableCell>{branch.is_active ? "Yes" : "No"}</TableCell>
         <TableCell>
           <Button variant="ghost" size="sm" onClick={onToggle}>
@@ -173,7 +181,7 @@ function BranchRow({
       </TableRow>
       {expanded && (
         <TableRow>
-          <TableCell colSpan={8} className="bg-muted/30">
+          <TableCell colSpan={imsSdc ? 7 : 8} className="bg-muted/30">
             <FbrPosEditor branch={branch} pos={pos} onDone={onToggle} />
           </TableCell>
         </TableRow>
@@ -206,6 +214,7 @@ function FbrPosEditor({
   const deactivate = useDeactivateBranchToken();
   const test = useTestFbrToken();
   const toast = useToast();
+  const imsSdc = useIsImsSdc();
 
   const [posId, setPosId] = useState(branch.fbr_pos_id ?? "");
   const [posCode, setPosCode] = useState(branch.fbr_pos_code ?? "");
@@ -267,6 +276,55 @@ function FbrPosEditor({
     } catch (err) {
       setError(extractApiErrorMessage(err));
     }
+  }
+
+  // IMS / SDC tenants: the FBR Fiscalization service on the shop machine holds
+  // the token and does the activation handshake. Our platform only needs this
+  // branch's FBR POS ID (we send it to the local SDC). No POS Code (never sent)
+  // and no Bearer token (the SDC path uses none) — so show a minimal editor.
+  if (imsSdc) {
+    return (
+      <div className="space-y-5 py-2">
+        <div className="flex items-start gap-2 rounded-md border border-info-soft bg-info-soft/40 p-3 text-sm text-info-soft-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="space-y-1">
+            <p className="font-medium">FBR POS ID for this outlet</p>
+            <p className="text-muted-foreground">
+              This outlet fiscalizes through the FBR Fiscalization (IMS) service
+              running on its counter PC. Enter the branch's{" "}
+              <strong>FBR POS ID</strong> (from the FBR portal) — that's all the
+              platform needs; the IMS service handles the token and activation.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <div className="grid max-w-xs gap-3">
+            <Field label="FBR POS ID">
+              <Input value={posId} onChange={(e) => setPosId(e.target.value)}
+                placeholder="e.g. 194444" inputMode="numeric" />
+            </Field>
+          </div>
+          <Button
+            size="sm"
+            onClick={saveIds}
+            loading={update.isPending}
+            disabled={posId.trim() === (branch.fbr_pos_id ?? "")}
+          >
+            Save POS ID
+          </Button>
+          {pos?.connected && (
+            <p className="flex items-center gap-1.5 text-sm text-success-soft-foreground">
+              <CheckCircle2 className="h-4 w-4" /> Connected — last fiscalized{" "}
+              {pos.last_validated_at ? new Date(pos.last_validated_at).toLocaleString() : ""}
+            </p>
+          )}
+        </div>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div><Button variant="outline" size="sm" onClick={onDone}>Close</Button></div>
+      </div>
+    );
   }
 
   return (
@@ -358,7 +416,7 @@ function FbrPosEditor({
             {setToken.isPending ? "Saving…" : hasToken && !token ? "Save (keep token)" : "Save token"}
           </Button>
           {hasToken && tokenActive && (
-            <Button variant="ghost" size="sm" onClick={onDeactivate} disabled={deactivate.isPending}>
+            <Button variant="ghost" size="sm" onClick={onDeactivate} loading={deactivate.isPending}>
               {deactivate.isPending ? "Deactivating…" : "Deactivate token"}
             </Button>
           )}

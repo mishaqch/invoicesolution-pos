@@ -66,6 +66,8 @@ export interface PosSaleItemInput {
   tax_amount: string;
   line_total: string;
   notes: string | null;
+  /** FEFO batch this line drew from (pharmacy). NULL for ordinary products. */
+  batch_id?: string | null;
 }
 
 export interface PosPaymentInput {
@@ -164,12 +166,12 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
       id, invoice_id, line_number,
       product_id, product_name, product_sku, uom_code, hs_code,
       quantity, unit_price, discount_pct, discount_amount,
-      tax_rate, tax_amount, line_total, notes
+      tax_rate, tax_amount, line_total, notes, batch_id
     ) VALUES (
       @id, @invoice_id, @line_number,
       @product_id, @product_name, @product_sku, @uom_code, @hs_code,
       @quantity, @unit_price, @discount_pct, @discount_amount,
-      @tax_rate, @tax_amount, @line_total, @notes
+      @tax_rate, @tax_amount, @line_total, @notes, @batch_id
     )
   `);
   const insertPayment = db.prepare(`
@@ -192,7 +194,9 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
       created_at: now,
       updated_at: now,
     });
-    for (const item of args.items) insertItem.run({ ...item, notes: item.notes ?? null });
+    for (const item of args.items) {
+      insertItem.run({ ...item, notes: item.notes ?? null, batch_id: item.batch_id ?? null });
+    }
     for (const p of args.payments) {
       insertPayment.run({
         status: "completed",

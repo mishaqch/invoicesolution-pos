@@ -113,6 +113,13 @@ class Invoice(TenantScopedModel):
     # Phase 4 — present as nullable.
     edit_deadline_at = models.DateTimeField(blank=True, null=True)
 
+    # Soft-delete for UNSUBMITTED drafts only. A fiscalized invoice (has an FBR
+    # number) is NEVER deletable. We soft-delete (not hard) because a draft that
+    # was "Validated" already has an append-only fbr_submissions lint row whose
+    # FK can't be nulled (UPDATE/DELETE revoked for compliance). Set => hidden
+    # from all tenant-facing lists; row + audit/submission logs survive.
+    deleted_at = models.DateTimeField(blank=True, null=True)
+
     reference_invoice = models.ForeignKey(
         "self", on_delete=models.SET_NULL, blank=True, null=True,
         related_name="referencing_invoices",

@@ -99,6 +99,8 @@ export default function PaymentRoute() {
         tax_amount: q.tax_amount.toStorageString(),
         line_total: q.line_total.toStorageString(),
         notes: null,
+        // FEFO batch (pharmacy) — server records the sale movement against it.
+        batch_id: q.batch_id ?? null,
       }));
 
       const payments = tenders.map((t) => ({
@@ -150,6 +152,9 @@ export default function PaymentRoute() {
         local_invoice_number: localNumber,
         cart_lines: lines.map((l) => ({
           product: l.product_id,
+          // FEFO batch (pharmacy) — server records the sale stock movement
+          // against this batch. Null/absent for ordinary products.
+          batch: l.batch_id ?? null,
           quantity: l.quantity,
           unit_price: l.unit_price,
           discount_pct: l.discount_pct,
@@ -187,11 +192,32 @@ export default function PaymentRoute() {
       const hasCash = tenders.some((t) => t.payment_method === "cash");
       if (hasCash) void window.api.drawer.open();
 
+      // FBR TEST MODE (no IMS/SDC, e.g. macOS dev): stamp a dummy FBR number +
+      // QR onto the local invoice BEFORE printing, so the printed receipt shows
+      // the FBR logo + QR exactly like production. No-op when test mode is off
+      // (the normal flow fiscalizes via SDC on the success screen instead).
+      let printInvoice = localInvoice;
+      try {
+        if (await window.api.fiscalize.isTestMode()) {
+          const r = await window.api.fiscalize.testStamp({
+            invoiceId, localNumber,
+          });
+          if (r.ok && r.fbrInvoiceNumber) {
+            printInvoice = { ...localInvoice, fbr_invoice_number: r.fbrInvoiceNumber };
+          }
+        }
+      } catch {
+        // Test-mode stamping is best-effort; fall back to printing without it.
+      }
+
+      const tenant = useSessionStore.getState().tenant;
       void window.api.printer.print({
-        business_name: useSessionStore.getState().tenant?.business_name ?? "POS",
+        business_name: tenant?.business_name ?? "POS",
         branch_name: ctx.branch.name,
-        ntn: useSessionStore.getState().tenant?.ntn ?? "",
-        invoice: localInvoice,
+        ntn: tenant?.ntn ?? "",
+        address: tenant?.address ?? undefined,
+        contact: tenant?.phone ?? undefined,
+        invoice: printInvoice,
         items,
         payments,
         width: 48,

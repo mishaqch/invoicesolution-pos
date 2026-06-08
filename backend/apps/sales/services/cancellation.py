@@ -65,6 +65,63 @@ def cancel_invoice(
 
 
 @transaction.atomic
+def delete_draft_invoice(invoice: Invoice, *, user=None, request=None) -> str:
+    """SOFT-delete an UNSUBMITTED draft invoice (never accepted by FBR).
+
+    Allowed only when the invoice has no fbr_invoice_number and is in a
+    pre-validation state (pending_sync / failed) — see rules.can_delete_draft.
+
+    Why soft, not hard: a draft the operator clicked "Validate" on already has
+    an append-only fbr_submissions lint row (UPDATE/DELETE revoked at the DB
+    level for 6-year compliance), so its FK can't be nulled and a hard delete is
+    impossible. Soft-delete (set deleted_at) hides it from every tenant-facing
+    list while preserving the audit + submission history — the platform's
+    "audit, don't delete" invariant.
+
+    Stock: stock_movements are append-only too, so we append a reversing
+    `return` movement per line to put the stock back (honest sale → reversal
+    history). Returns the local_invoice_number.
+    """
+    from apps.fbr.rules import can_delete_draft
+
+    allowed, why = can_delete_draft(invoice)
+    if not allowed:
+        raise ValidationError({"status": why})
+
+    number = invoice.local_invoice_number
+
+    # Put stock back via reversing movements (only for lines that moved stock).
+    for item in invoice.items.select_related("product", "variant"):
+        if item.is_cancelled or item.product_id is None:
+            continue
+        record_movement(
+            tenant_id=invoice.tenant_id,
+            product=item.product,
+            variant=item.variant,
+            branch=invoice.branch,
+            movement_type="return",
+            quantity=item.quantity,  # positive: returning to stock
+            unit_cost=item.cost_price,
+            reference_type="invoice",
+            reference_id=invoice.id,
+            performed_by=user,
+            reason=f"Draft invoice {number} deleted before FBR submission",
+        )
+
+    invoice.deleted_at = timezone.now()
+    invoice.status = "cancelled"
+    invoice.save(update_fields=["deleted_at", "status", "updated_at"])
+
+    audit_log(
+        tenant_id=invoice.tenant_id, user=user,
+        entity_type="invoice", entity_id=invoice.id, action="delete_draft",
+        before={"local_invoice_number": number, "grand_total": str(invoice.grand_total)},
+        request=request,
+    )
+    return number
+
+
+@transaction.atomic
 def cancel_sale_item(
     invoice: Invoice, sale_item_id: str, *, reason: str, user=None, request=None,
 ):

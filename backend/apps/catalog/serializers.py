@@ -60,14 +60,22 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 
 
 class ProductBatchSerializer(serializers.ModelSerializer):
+    # Read-only convenience fields for the batch list UI.
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
+
     class Meta:
         model = ProductBatch
         fields = (
-            "id", "product", "batch_number", "manufactured_date", "expiry_date",
+            "id", "product", "product_name", "batch_number",
+            "manufactured_date", "expiry_date",
             "cost_price", "sale_price", "initial_quantity", "current_quantity",
-            "branch", "created_at",
+            "branch", "branch_name", "created_at",
         )
-        read_only_fields = ("id", "created_at")
+        # current_quantity is derived from initial_quantity on create and is
+        # only ever changed afterwards via stock movements — never edited
+        # directly through this serializer.
+        read_only_fields = ("id", "created_at", "current_quantity")
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -141,9 +149,27 @@ class ProductPosSerializer(serializers.ModelSerializer):
         fields = (
             "id", "category",
             "name", "name_ur", "sku", "barcode",
-            "uom", "tax_rate", "is_taxable",
+            # hs_code FK PK IS the code string (e.g. "2402.2000"). The terminal
+            # needs it so a sale rung by SCANNING carries a valid HS code to
+            # FBR — without it, scanned-sale fiscalization is rejected.
+            "uom", "tax_rate", "hs_code", "is_taxable",
             "sale_price", "retail_price", "min_sale_price", "max_discount_pct",
             "is_third_schedule",
+            # is_batch_tracked tells the terminal a sale of this product must be
+            # rung against a specific batch (FEFO) so expiry-sensitive stock is
+            # depleted nearest-expiry-first.
+            "is_batch_tracked",
             "is_weighable", "image_url", "is_active",
             "updated_at", "deleted_at",
+        )
+
+
+class ProductBatchPosSerializer(serializers.ModelSerializer):
+    """Batches shipped to the POS terminal for FEFO selection at sale time."""
+
+    class Meta:
+        model = ProductBatch
+        fields = (
+            "id", "product", "batch_number", "expiry_date",
+            "current_quantity", "branch",
         )

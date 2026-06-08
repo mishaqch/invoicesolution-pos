@@ -1,24 +1,28 @@
 import {
   Activity,
   BarChart3,
+  AlertTriangle,
   Boxes,
   Building2,
+  CalendarClock,
   Monitor,
   ClipboardList,
   FileText,
   HelpCircle,
   LayoutDashboard,
   Package,
+  PackagePlus,
   Receipt,
   Settings,
   ShoppingCart,
+  Truck,
   Users,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 
-import { useModules, type ModuleKey } from "@/features/modules/hooks";
+import { useModules, type ModuleKey, type Vertical } from "@/features/modules/hooks";
 import { useTenantSetup } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
@@ -33,6 +37,10 @@ interface Item {
    *  the tenant. Items without `module` are always visible
    *  (Dashboard, Help, Settings). */
   module?: ModuleKey;
+  /** When set, the item only shows for tenants of this vertical
+   *  (e.g. pharmacy-only Expiry / Suppliers). Items without `vertical`
+   *  show for every vertical. */
+  vertical?: Vertical;
 }
 
 const TOP: Item[] = [
@@ -67,10 +75,16 @@ const CATALOG: Item[] = [
 
 const INVENTORY: Item[] = [
   { to: "/inventory/stock", label: "Stock by branch", icon: Boxes, module: "inventory" },
+  { to: "/inventory/restock", label: "Restock", icon: AlertTriangle, module: "inventory" },
+  // Pharmacy-only: batches at/near expiry. Hidden for grocery tenants.
+  { to: "/inventory/expiry", label: "Expiry", icon: CalendarClock, module: "inventory", vertical: "pharmacy" },
   { to: "/inventory/movements", label: "Movements", icon: ClipboardList, module: "inventory" },
   { to: "/inventory/adjustments", label: "Adjustments", icon: ClipboardList, module: "inventory" },
   { to: "/inventory/transfers", label: "Transfers", icon: ClipboardList, module: "inventory" },
   { to: "/inventory/audits", label: "Audits", icon: ClipboardList, module: "inventory" },
+  // Procurement (pharmacy-only): suppliers + receiving stock via goods receipts.
+  { to: "/purchases/receive", label: "Receive stock", icon: PackagePlus, module: "inventory", vertical: "pharmacy" },
+  { to: "/suppliers", label: "Suppliers", icon: Truck, module: "inventory", vertical: "pharmacy" },
 ];
 
 const ADMIN: Item[] = [
@@ -97,11 +111,19 @@ export function Sidebar() {
   const { data: modules } = useModules();
   const { data: setup } = useTenantSetup();
   const enabled = modules?.enabled;
+  const vertical = modules?.vertical;
   const isDigitalOnly = setup?.business_mode === "digital_invoicing";
 
   function visible(items: Item[]): Item[] {
     if (!enabled) return items;
-    return items.filter((it) => !it.module || enabled.includes(it.module));
+    return items.filter(
+      (it) =>
+        (!it.module || enabled.includes(it.module)) &&
+        // Hide vertical-specific links for other verticals. While the vertical
+        // is still loading we keep the item (show-too-much-briefly), matching
+        // the module behaviour above.
+        (!it.vertical || !vertical || it.vertical === vertical),
+    );
   }
 
   // Service-providers / wholesalers / marriage halls don't think of

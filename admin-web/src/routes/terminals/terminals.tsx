@@ -90,8 +90,8 @@ export default function TerminalsList() {
               <Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="Counter 1" required />
             </div>
             <div className="col-span-2 flex items-center gap-3">
-              <Button type="submit" disabled={create.isPending}>
-                {create.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              <Button type="submit" loading={create.isPending}>
+                {!create.isPending && <Plus className="mr-2 h-4 w-4" />}
                 Add terminal
               </Button>
               {error && <span className="text-sm text-destructive">{error}</span>}
@@ -190,7 +190,7 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
             <Button
               variant="outline" size="sm"
               onClick={() => issue.mutate(t.id)}
-              disabled={issue.isPending}
+              loading={issue.isPending}
               title="Generate a fresh pairing code"
             >
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
@@ -205,7 +205,7 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
                   deactivate.mutate(t.id);
                 }
               }}
-              disabled={deactivate.isPending}
+              loading={deactivate.isPending}
               title="Deactivate terminal"
             >
               <Trash2 className="h-3.5 w-3.5 text-destructive" />

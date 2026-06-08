@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useReturn } from "@/lib/queries";
+import { money } from "@/lib/utils";
 
 export default function ReturnDetail() {
   const { id } = useParams<{ id: string }>();
@@ -50,7 +51,7 @@ export default function ReturnDetail() {
           <CardHeader><CardTitle className="text-sm">Refund</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-sm">
             <div className="capitalize">{ret.refund_method.replace("_", " ")}</div>
-            <div className="font-mono text-2xl">Rs {ret.refund_amount}</div>
+            <div className="font-mono text-2xl">Rs {money(ret.refund_amount)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -88,7 +89,7 @@ export default function ReturnDetail() {
                     {it.product.slice(0, 8)}…
                   </TableCell>
                   <TableCell className="text-right font-mono">{it.quantity}</TableCell>
-                  <TableCell className="text-right font-mono">{it.unit_price}</TableCell>
+                  <TableCell className="text-right font-mono">{money(it.unit_price)}</TableCell>
                   <TableCell className="text-right font-mono">{it.tax_amount}</TableCell>
                   <TableCell className="text-right font-mono">{it.line_total}</TableCell>
                   <TableCell>{it.restocked ? "Yes" : "No"}</TableCell>

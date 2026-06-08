@@ -70,12 +70,15 @@ CREATE TABLE IF NOT EXISTS products (
   name_ur          TEXT,
   uom_code         TEXT NOT NULL,
   tax_rate_id      TEXT,
+  hs_code          TEXT,
   is_taxable       INTEGER NOT NULL DEFAULT 1,
   sale_price       TEXT NOT NULL,
   retail_price     TEXT,
   min_sale_price   TEXT,
   max_discount_pct TEXT,
+  is_third_schedule INTEGER NOT NULL DEFAULT 0,
   is_weighable     INTEGER NOT NULL DEFAULT 0,
+  is_batch_tracked INTEGER NOT NULL DEFAULT 0,
   image_url        TEXT,
   is_active        INTEGER NOT NULL DEFAULT 1,
   updated_at       TEXT NOT NULL,
@@ -101,6 +104,22 @@ CREATE TABLE IF NOT EXISTS stock_levels (
   updated_at     TEXT NOT NULL,
   PRIMARY KEY (product_id, branch_id)
 );
+
+-- Product batches (pharmacy / date-sensitive goods). Mirrored from the server
+-- as a FULL snapshot each catalog sync (the server sends every in-stock batch
+-- for batch-tracked products). FEFO at sale time picks the soonest-expiry batch
+-- with stock. current_quantity is the server's view; offline sales decrement a
+-- local working copy via the cart, reconciled on next sync.
+CREATE TABLE IF NOT EXISTS product_batches (
+  id               TEXT PRIMARY KEY,
+  product_id       TEXT NOT NULL,
+  batch_number     TEXT NOT NULL,
+  expiry_date      TEXT,
+  current_quantity TEXT NOT NULL DEFAULT '0',
+  branch_id        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_batches_product
+  ON product_batches(product_id, expiry_date);
 
 CREATE TABLE IF NOT EXISTS meta_sync (
   entity         TEXT PRIMARY KEY,
@@ -214,6 +233,10 @@ CREATE TABLE IF NOT EXISTS sale_items (
   tax_amount        TEXT NOT NULL DEFAULT '0',
   line_total        TEXT NOT NULL,
   notes             TEXT,
+  -- FEFO batch this line drew stock from (pharmacy / batch-tracked goods).
+  -- NULL for ordinary products. Carried into the checkout sync payload so the
+  -- server records the sale movement against the right batch.
+  batch_id          TEXT,
   UNIQUE(invoice_id, line_number)
 );
 

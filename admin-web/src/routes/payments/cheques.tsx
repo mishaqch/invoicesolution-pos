@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { money } from "@/lib/utils";
 import {
   useBounceCheque,
   useCheques,
@@ -61,7 +62,7 @@ export default function ChequesPage() {
                   <TableCell className="text-xs text-muted-foreground">
                     {c.cheque_date ?? "—"}
                   </TableCell>
-                  <TableCell className="text-right font-mono">{c.amount}</TableCell>
+                  <TableCell className="text-right font-mono">{money(c.amount)}</TableCell>
                   <TableCell>
                     <Badge variant={
                       c.cheque_status === "cleared" ? "default"
@@ -76,7 +77,7 @@ export default function ChequesPage() {
                           size="sm"
                           variant="outline"
                           onClick={() => clear.mutate(c.id)}
-                          disabled={clear.isPending}
+                          loading={clear.isPending}
                         >
                           Mark cleared
                         </Button>
@@ -118,7 +119,7 @@ export default function ChequesPage() {
               <Button variant="outline" onClick={() => setBouncingId(null)}>Cancel</Button>
               <Button
                 variant="destructive"
-                disabled={bounce.isPending}
+                loading={bounce.isPending}
                 onClick={async () => {
                   await bounce.mutateAsync({ id: bouncingId, reason: bounceReason });
                   setBouncingId(null);

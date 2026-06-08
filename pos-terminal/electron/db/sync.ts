@@ -17,16 +17,37 @@ interface PosProductRow {
   name_ur: string;
   uom: string;
   tax_rate: string | null;
+  hs_code: string | null;
   is_taxable: boolean;
   sale_price: string;
   retail_price: string | null;
   min_sale_price: string | null;
   max_discount_pct: string | null;
+  is_third_schedule: boolean;
   is_weighable: boolean;
+  is_batch_tracked: boolean;
   image_url: string;
   is_active: boolean;
   updated_at: string;
   deleted_at: string | null;
+}
+
+interface PosBatchRow {
+  id: string;
+  product: string;
+  batch_number: string;
+  expiry_date: string | null;
+  current_quantity: string;
+  branch: string | null;
+}
+
+export interface LocalBatch {
+  id: string;
+  product_id: string;
+  batch_number: string;
+  expiry_date: string | null;
+  current_quantity: string;
+  branch_id: string | null;
 }
 
 interface CategoryRow {
@@ -44,7 +65,7 @@ interface CategoryRow {
 export async function syncCatalog(opts: {
   apiBase: string;
   accessToken: string;
-}): Promise<{ products: number; categories: number }> {
+}): Promise<{ products: number; categories: number; batches: number }> {
   const db = getDb();
 
   const since = (db
@@ -62,27 +83,36 @@ export async function syncCatalog(opts: {
   const data = (await resp.json()) as {
     products: PosProductRow[];
     categories: CategoryRow[];
+    batches?: PosBatchRow[];
+    batches_full_snapshot?: boolean;
   };
 
   const upsertProduct = db.prepare(`
     INSERT INTO products (
       id, category_id, sku, barcode, name, name_ur, uom_code, tax_rate_id,
-      is_taxable, sale_price, retail_price, min_sale_price, max_discount_pct,
-      is_weighable, image_url, is_active, updated_at, deleted_at
+      hs_code, is_taxable, sale_price, retail_price, min_sale_price, max_discount_pct,
+      is_third_schedule, is_weighable, is_batch_tracked, image_url, is_active, updated_at, deleted_at
     ) VALUES (
       @id, @category, @sku, @barcode, @name, @name_ur, @uom, @tax_rate,
-      @is_taxable, @sale_price, @retail_price, @min_sale_price, @max_discount_pct,
-      @is_weighable, @image_url, @is_active, @updated_at, @deleted_at
+      @hs_code, @is_taxable, @sale_price, @retail_price, @min_sale_price, @max_discount_pct,
+      @is_third_schedule, @is_weighable, @is_batch_tracked, @image_url, @is_active, @updated_at, @deleted_at
     )
     ON CONFLICT(id) DO UPDATE SET
       category_id=excluded.category_id, sku=excluded.sku, barcode=excluded.barcode,
       name=excluded.name, name_ur=excluded.name_ur, uom_code=excluded.uom_code,
-      tax_rate_id=excluded.tax_rate_id, is_taxable=excluded.is_taxable,
+      tax_rate_id=excluded.tax_rate_id, hs_code=excluded.hs_code, is_taxable=excluded.is_taxable,
       sale_price=excluded.sale_price, retail_price=excluded.retail_price,
       min_sale_price=excluded.min_sale_price, max_discount_pct=excluded.max_discount_pct,
-      is_weighable=excluded.is_weighable, image_url=excluded.image_url,
+      is_third_schedule=excluded.is_third_schedule,
+      is_weighable=excluded.is_weighable, is_batch_tracked=excluded.is_batch_tracked,
+      image_url=excluded.image_url,
       is_active=excluded.is_active, updated_at=excluded.updated_at,
       deleted_at=excluded.deleted_at
+  `);
+
+  const insertBatch = db.prepare(`
+    INSERT INTO product_batches (id, product_id, batch_number, expiry_date, current_quantity, branch_id)
+    VALUES (@id, @product_id, @batch_number, @expiry_date, @current_quantity, @branch_id)
   `);
 
   const deleteFts = db.prepare(`DELETE FROM products_fts WHERE id = ?`);
@@ -103,8 +133,11 @@ export async function syncCatalog(opts: {
     for (const p of data.products) {
       upsertProduct.run({
         ...p,
+        hs_code: (p as { hs_code?: string | null }).hs_code ?? null,
         is_taxable: p.is_taxable ? 1 : 0,
+        is_third_schedule: (p as { is_third_schedule?: boolean }).is_third_schedule ? 1 : 0,
         is_weighable: p.is_weighable ? 1 : 0,
+        is_batch_tracked: (p as { is_batch_tracked?: boolean }).is_batch_tracked ? 1 : 0,
         is_active: p.is_active ? 1 : 0,
       });
       // Maintain FTS index manually (we used content='' above).
@@ -121,6 +154,23 @@ export async function syncCatalog(opts: {
       });
     }
 
+    // Batches arrive as a FULL snapshot (the server can't incrementally express
+    // current_quantity decrements). Replace the local table wholesale so a sold-
+    // out / removed batch disappears. Only when the server actually sent the set.
+    if (data.batches_full_snapshot && Array.isArray(data.batches)) {
+      db.prepare(`DELETE FROM product_batches`).run();
+      for (const b of data.batches) {
+        insertBatch.run({
+          id: b.id,
+          product_id: b.product,
+          batch_number: b.batch_number,
+          expiry_date: b.expiry_date ?? null,
+          current_quantity: b.current_quantity,
+          branch_id: b.branch ?? null,
+        });
+      }
+    }
+
     db.prepare(`
       INSERT INTO meta_sync (entity, last_synced_at) VALUES ('products', CURRENT_TIMESTAMP)
       ON CONFLICT(entity) DO UPDATE SET last_synced_at=CURRENT_TIMESTAMP
@@ -128,7 +178,56 @@ export async function syncCatalog(opts: {
   });
   tx();
 
-  return { products: data.products.length, categories: data.categories.length };
+  return {
+    products: data.products.length,
+    categories: data.categories.length,
+    batches: data.batches?.length ?? 0,
+  };
+}
+
+/**
+ * FEFO batch pick for a product: the soonest-expiry batch that still has stock.
+ * Used at sale time for batch-tracked products. Returns null when the product
+ * has no in-stock batches (caller decides whether to block or sell unbatched).
+ * Batches with no expiry sort last (NULLs last) so dated stock clears first.
+ */
+export function nearestExpiryBatch(productId: string, branchId?: string | null): LocalBatch | null {
+  const db = getDb();
+  const params: (string | number)[] = [productId];
+  let branchClause = "";
+  if (branchId) {
+    branchClause = " AND (branch_id = ? OR branch_id IS NULL)";
+    params.push(branchId);
+  }
+  const row = db
+    .prepare(
+      `SELECT id, product_id, batch_number, expiry_date, current_quantity, branch_id
+       FROM product_batches
+       WHERE product_id = ? AND CAST(current_quantity AS REAL) > 0${branchClause}
+       ORDER BY (expiry_date IS NULL), expiry_date ASC
+       LIMIT 1`,
+    )
+    .get(...params) as LocalBatch | undefined;
+  return row ?? null;
+}
+
+/** All in-stock batches for a product, soonest-expiry first (FEFO order). */
+export function batchesForProduct(productId: string, branchId?: string | null): LocalBatch[] {
+  const db = getDb();
+  const params: (string | number)[] = [productId];
+  let branchClause = "";
+  if (branchId) {
+    branchClause = " AND (branch_id = ? OR branch_id IS NULL)";
+    params.push(branchId);
+  }
+  return db
+    .prepare(
+      `SELECT id, product_id, batch_number, expiry_date, current_quantity, branch_id
+       FROM product_batches
+       WHERE product_id = ? AND CAST(current_quantity AS REAL) > 0${branchClause}
+       ORDER BY (expiry_date IS NULL), expiry_date ASC`,
+    )
+    .all(...params) as LocalBatch[];
 }
 
 export function searchProducts(query: string, limit = 50): PosProductRow[] {
