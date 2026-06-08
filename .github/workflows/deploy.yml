@@ -1,50 +1,109 @@
 name: deploy
 
-# Phase 8 deploy skeleton.
+# Deploy to the production VPS (Hetzner 167.233.19.109 — client./admin.invoicesolution.pk).
 #
-# Pulls latest main on the VPS via SSH, runs migrations, restarts
-# systemd units. Idempotent: rerunning is safe.
+# IMPORTANT — how this server is actually laid out (verified, not assumed):
+#   * /srv/pos is NOT a git checkout — code is shipped by rsync, not `git pull`.
+#     (The old `git fetch && git reset --hard` skeleton failed on every run
+#     because there is no .git there.)
+#   * The deploy SSH key authenticates as ROOT. The app itself runs as the
+#     unprivileged `pos` user (owns /srv/pos, the venv, and the systemd units),
+#     so build/migrate run via `sudo -u pos` and service restarts run as root.
+#   * The backend forces HTTPS (SECURE_SSL_REDIRECT), so a plain
+#     http://localhost:8000 health check 301-redirects — we send
+#     `X-Forwarded-Proto: https` to get a real 200.
+#   * pyproject has no `[prod]` extra — install the bare package (`pip install -e .`).
 #
-# Required GitHub secrets (set in repo settings → secrets):
-#   DEPLOY_HOST            — e.g. 1.2.3.4 or pos.example.com
-#   DEPLOY_USER            — typically `pos`
-#   DEPLOY_SSH_KEY         — private key (the matching pubkey lives in
-#                            ~pos/.ssh/authorized_keys on the VPS)
-#   DEPLOY_KNOWN_HOSTS     — output of `ssh-keyscan -H pos.example.com`
+# Manual trigger only (workflow_dispatch). Deploying every push straight to live
+# customers is risky; run this deliberately from the Actions tab when ready.
+#
+# Required GitHub secrets:
+#   DEPLOY_HOST         — 167.233.19.109
+#   DEPLOY_USER         — root  (the user the deploy key authenticates as)
+#   DEPLOY_SSH_KEY      — the pos_deploy PRIVATE key (matching pubkey is in
+#                         /root/.ssh/authorized_keys on the VPS)
+#   DEPLOY_KNOWN_HOSTS  — output of `ssh-keyscan 167.233.19.109`
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Tag-only deploy is safer; uncomment when ready.
-    # if: startsWith(github.ref, 'refs/tags/v')
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
           echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
 
-      - name: Pull and restart
+      - name: Backup production database
         run: |
-          ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} <<'EOF'
+          ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            'sudo -u pos bash -lc "
+              set -euo pipefail
+              mkdir -p /srv/pos/backups
+              set -a; . /etc/pos/backend.env; set +a
+              ts=\$(date +%Y%m%d-%H%M%S)
+              pg_dump \"\$DATABASE_URL\" | gzip > /srv/pos/backups/pre-deploy-\$ts.sql.gz
+              echo backed up to /srv/pos/backups/pre-deploy-\$ts.sql.gz
+              ls -t /srv/pos/backups/pre-deploy-*.sql.gz | tail -n +11 | xargs -r rm --   # keep last 10
+            "'
+
+      - name: Rsync code to the VPS
+        # rsync the source (NOT node_modules/dist/venv/.git or leaked .js). The
+        # build happens on the server. --delete keeps the tree clean but is
+        # confined to the three code dirs we own.
+        run: |
+          rsync -rlptz --checksum -e "ssh -i ~/.ssh/id_deploy" \
+            --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' \
+            --exclude='*.egg-info' --exclude='staticfiles' --exclude='media' \
+            --exclude='.env*' --exclude='*.sqlite3' --exclude='.DS_Store' \
+            --exclude='celerybeat-schedule' \
+            backend/ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/srv/pos/backend/
+          rsync -rlptz --checksum -e "ssh -i ~/.ssh/id_deploy" \
+            --exclude='.DS_Store' \
+            shared/ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/srv/pos/shared/
+          rsync -rlptz --checksum -e "ssh -i ~/.ssh/id_deploy" \
+            --exclude='node_modules' --exclude='dist' --exclude='.DS_Store' \
+            --exclude='src/**/*.js' --exclude='src/**/*.js.map' \
+            admin-web/ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/srv/pos/admin-web/
+
+      - name: Migrate, collectstatic, build (as pos), then restart (as root)
+        run: |
+          ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} bash -s <<'EOF'
             set -euo pipefail
-            cd /srv/pos
-            git fetch --all --tags
-            git reset --hard origin/main
-            cd backend
-            /srv/pos/venv/bin/pip install -e ".[prod]" --quiet
-            /srv/pos/venv/bin/python manage.py migrate --noinput
-            /srv/pos/venv/bin/python manage.py collectstatic --noinput
-            cd ../admin-web
-            npm ci --silent
-            npm run build --silent
-            sudo systemctl restart pos-backend pos-celery-worker pos-celery-beat
-            # Smoke
-            curl --max-time 5 --fail http://localhost:8000/api/health/ready/
+            # Files arrive owned by root (rsync over a root session) — hand them
+            # back to the app user before it touches them.
+            chown -R pos:pos /srv/pos/backend /srv/pos/admin-web /srv/pos/shared
+
+            sudo -u pos bash -lc '
+              set -euo pipefail
+              cd /srv/pos/backend
+              set -a; . /etc/pos/backend.env; set +a
+              /srv/pos/venv/bin/pip install -e . --quiet
+              /srv/pos/venv/bin/python manage.py migrate --noinput
+              /srv/pos/venv/bin/python manage.py collectstatic --noinput
+              cd /srv/pos/admin-web
+              npm ci --silent
+              npm run build
+            '
+
+            systemctl restart pos-backend pos-celery-worker pos-celery-beat
+            nginx -t && systemctl reload nginx
           EOF
+
+      - name: Smoke test
+        run: |
+          ssh -i ~/.ssh/id_deploy ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            'curl -sf --max-time 8 -H "X-Forwarded-Proto: https" \
+               http://127.0.0.1:8000/api/health/ready/ > /dev/null \
+             && echo "health: OK" || (echo "health check FAILED" && exit 1)'
