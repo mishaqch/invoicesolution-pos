@@ -41,6 +41,9 @@ export function migrate(connection: Database.Database): void {
   addColumnIfMissing(connection, "products", "is_batch_tracked", "INTEGER NOT NULL DEFAULT 0");
   // FEFO: the batch a sale line drew from (NULL for ordinary products).
   addColumnIfMissing(connection, "sale_items", "batch_id", "TEXT");
+  // Restaurant: chosen modifiers (JSON) + kitchen note on a sale line.
+  addColumnIfMissing(connection, "sale_items", "modifiers", "TEXT");
+  addColumnIfMissing(connection, "sale_items", "item_note", "TEXT");
 }
 
 function addColumnIfMissing(

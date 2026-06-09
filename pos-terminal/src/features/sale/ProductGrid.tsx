@@ -7,6 +7,9 @@ import type { CartLine } from "@/stores/sale";
 
 interface Props {
   onAdd: (line: Omit<CartLine, "id">) => void;
+  /** Restaurant path: when set, used instead of onAdd so the parent can open a
+   *  modifier picker for the product before it lands in the cart. */
+  onAddProduct?: (line: Omit<CartLine, "id">, productId: string) => void | Promise<void>;
   /** Branch context for FEFO batch selection on batch-tracked products. */
   branchId?: string | null;
   /** Surface a non-blocking warning (e.g. no/expired batch) to the cashier. */
@@ -16,7 +19,7 @@ interface Props {
   clearSignal?: number;
 }
 
-export function ProductGrid({ onAdd, branchId, onWarn, clearSignal }: Props) {
+export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal }: Props) {
   const [query, setQuery] = useState("");
   const { results, loading } = useProductSearch(query);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,7 +72,11 @@ export function ProductGrid({ onAdd, branchId, onWarn, clearSignal }: Props) {
                     // the real HS code AND a FEFO batch (for batch-tracked
                     // products), exactly like the barcode-scan path.
                     const { line, warning } = await buildCartLineFromProduct(p, { branchId });
-                    onAdd(line as Omit<CartLine, "id">);
+                    if (onAddProduct) {
+                      await onAddProduct(line as Omit<CartLine, "id">, p.id);
+                    } else {
+                      onAdd(line as Omit<CartLine, "id">);
+                    }
                     if (warning) onWarn?.(warning);
                   })();
                 }}

@@ -124,12 +124,12 @@ function init(m: InitMessage) {
       db.exec(`ALTER TABLE invoices ADD COLUMN ${col} ${type}`);
     }
   }
-  // FEFO: batch_id on sale_items (the worker reads sale_items to build the
-  // checkout sync payload, so it needs the column on a pre-existing DB).
+  // FEFO + restaurant: extra sale_items columns the worker's DB must have on a
+  // pre-existing terminal (schema.sql's CREATE IF NOT EXISTS won't add them).
   {
     const cols = db.prepare(`PRAGMA table_info(sale_items)`).all() as { name: string }[];
-    if (!cols.some((c) => c.name === "batch_id")) {
-      db.exec(`ALTER TABLE sale_items ADD COLUMN batch_id TEXT`);
+    for (const [c, type] of [["batch_id", "TEXT"], ["modifiers", "TEXT"], ["item_note", "TEXT"]] as const) {
+      if (!cols.some((x) => x.name === c)) db.exec(`ALTER TABLE sale_items ADD COLUMN ${c} ${type}`);
     }
   }
 

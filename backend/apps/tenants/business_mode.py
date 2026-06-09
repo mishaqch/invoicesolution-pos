@@ -84,13 +84,13 @@ DEFAULT_FBR_CONNECTION_TYPE = "di_api"
 # governed by `modules_enabled`. Existing tenants default to 'grocery', so
 # nothing changes for them.
 #
-# Restaurant is intentionally deferred (V2); adding it later is one more enum
-# entry plus the vertical-gated screens.
+# Adding a vertical is one more enum entry plus the vertical-gated screens.
 # ---------------------------------------------------------------------------
 
 VERTICALS = (
     ("grocery", "Grocery / general retail"),
     ("pharmacy", "Pharmacy"),
+    ("restaurant", "Restaurant / F&B"),
 )
 
 DEFAULT_VERTICAL = "grocery"
@@ -115,6 +115,7 @@ DEFAULT_MODULES_FOR_MODE: dict[str, list[str]] = {
         "branches", "terminals", "inventory", "returns",
         "debit_credit_notes", "manual_amendments",
         "payments_advanced", "customer_display", "hardware",
+        "restaurant",
         "reports_basic", "reports_advanced", "audit_log",
     ],
     "digital_invoicing": [
@@ -127,6 +128,7 @@ DEFAULT_MODULES_FOR_MODE: dict[str, list[str]] = {
         "branches", "terminals", "inventory", "returns",
         "debit_credit_notes", "manual_amendments",
         "payments_advanced", "customer_display", "hardware",
+        "restaurant",
         "reports_basic", "reports_advanced", "audit_log",
     ],
 }

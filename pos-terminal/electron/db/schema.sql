@@ -237,6 +237,9 @@ CREATE TABLE IF NOT EXISTS sale_items (
   -- NULL for ordinary products. Carried into the checkout sync payload so the
   -- server records the sale movement against the right batch.
   batch_id          TEXT,
+  -- Restaurant: JSON array of chosen modifiers + kitchen note (for reprint).
+  modifiers         TEXT,
+  item_note         TEXT,
   UNIQUE(invoice_id, line_number)
 );
 

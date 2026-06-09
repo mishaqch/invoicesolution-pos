@@ -448,6 +448,162 @@ export function usePostGoodsReceipt() {
   });
 }
 
+// --- Restaurant (F&B vertical) --------------------------------------------
+
+export interface RestaurantTable {
+  id: string;
+  branch: string;
+  branch_name?: string;
+  name: string;
+  seats: number;
+  zone: string | null;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface Modifier {
+  id?: string;
+  group?: string;
+  name: string;
+  price_delta: string;
+  display_order: number;
+  is_active: boolean;
+}
+
+export interface RestaurantModifierGroup {
+  id: string;
+  name: string;
+  min_select: number;
+  max_select: number;
+  display_order: number;
+  is_active: boolean;
+  modifiers: Modifier[];
+}
+
+export interface OrderItemView {
+  name: string;
+  quantity: string;
+  modifiers: { name: string; price: string }[];
+  item_note: string | null;
+  course: number | null;
+  sent_to_kitchen: boolean;
+  is_cancelled: boolean;
+}
+
+export interface OrderView {
+  id: string;
+  local_invoice_number: string;
+  order_type: string | null;
+  order_status: string | null;
+  table: string | null;
+  table_id: string | null;
+  covers: number | null;
+  kitchen_sent_at: string | null;
+  grand_total: string;
+  items: OrderItemView[];
+}
+
+export interface FloorTable {
+  id: string;
+  name: string;
+  seats: number;
+  zone: string | null;
+  order: OrderView | null;
+}
+
+export function useTables(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("restaurant");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["rest-tables", params],
+    queryFn: () => api<Page<RestaurantTable>>(`/restaurant/tables/${query ? `?${query}` : ""}`),
+    enabled,
+  });
+}
+
+export function useSaveTable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Partial<RestaurantTable> & { id?: string }) =>
+      api<RestaurantTable>(`/restaurant/tables/${id ? `${id}/` : ""}`, {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rest-tables"] }),
+  });
+}
+
+export function useDeleteTable() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api(`/restaurant/tables/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rest-tables"] }),
+  });
+}
+
+export function useModifierGroups() {
+  const enabled = useModuleEnabled("restaurant");
+  return useQuery({
+    queryKey: ["rest-modifier-groups"],
+    queryFn: () => api<Page<RestaurantModifierGroup>>("/restaurant/modifier-groups/"),
+    enabled,
+  });
+}
+
+export function useSaveModifierGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Partial<RestaurantModifierGroup> & { id?: string }) =>
+      api<RestaurantModifierGroup>(`/restaurant/modifier-groups/${id ? `${id}/` : ""}`, {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rest-modifier-groups"] }),
+  });
+}
+
+export function useDeleteModifierGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api(`/restaurant/modifier-groups/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rest-modifier-groups"] }),
+  });
+}
+
+export function useFloor(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("restaurant");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["rest-floor", params],
+    queryFn: () => api<{ tables: FloorTable[] }>(`/restaurant/floor/${query ? `?${query}` : ""}`),
+    enabled,
+    refetchInterval: 10_000,   // live-ish floor
+  });
+}
+
+export function useKds(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("restaurant");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["rest-kds", params],
+    queryFn: () => api<{ orders: OrderView[] }>(`/restaurant/kds/${query ? `?${query}` : ""}`),
+    enabled,
+    refetchInterval: 5_000,    // kitchen needs near-realtime
+  });
+}
+
+export function useOrderAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, op }: { id: string; op: "send-to-kitchen" | "ready" | "served" }) =>
+      api<OrderView>(`/restaurant/orders/${id}/${op}/`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["rest-kds"] });
+      qc.invalidateQueries({ queryKey: ["rest-floor"] });
+    },
+  });
+}
+
 export function useTransfers() {
   return useQuery({
     queryKey: ["transfers"],

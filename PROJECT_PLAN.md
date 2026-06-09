@@ -590,7 +590,7 @@ Don't try to ship these in V1. They will distract you and delay launch.
 - Multi-currency support.
 - Advanced loyalty programs (points, tiers, rewards).
 - E-commerce integration (Shopify, Daraz).
-- Restaurant-specific features (table management, kitchen display, course timing). This is its own product.
+- ~~Restaurant-specific features (table management, kitchen display, course timing).~~ **SHIPPED** as the `restaurant` vertical: order types (dine-in/takeaway/delivery), tables + floor map, menu modifiers, KOT thermal printing + send-to-kitchen, on-screen kitchen display (KDS), and split payment. Gated by `Tenant.vertical == "restaurant"` + the `restaurant` module so grocery/pharmacy/DI are untouched. See `apps/restaurant/`.
 - Salon/service business workflows (appointments, technician commission).
 - Wholesale-specific features (price tiers, credit terms, bulk pricing).
 - Provincial sales tax (SRB Sindh, PRA Punjab) — federal FBR first; provinces in V2.

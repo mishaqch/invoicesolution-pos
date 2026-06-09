@@ -293,9 +293,17 @@ def _create_invoice_from_payload(*, tenant_id, terminal_id, payload, request=Non
                 "discount_amount": line.get("discount_amount", 0),
                 "tax_rate": line.get("tax_rate", 0),
                 "is_taxable": line.get("is_taxable", True),
+                # Restaurant (ignored for other verticals).
+                "modifiers": line.get("modifiers") or [],
+                "course": line.get("course"),
+                "item_note": line.get("item_note"),
             }
             for line in payload["cart_lines"]
         ],
+        # Restaurant order-level fields (None for other verticals).
+        order_type=payload.get("order_type"),
+        table_id=payload.get("table"),
+        covers=payload.get("covers"),
         cart_discount_pct=payload.get("cart_discount_pct", 0),
         payments=[
             {"payment_method": p["payment_method"], "amount": p["amount"]}

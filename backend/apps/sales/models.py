@@ -134,6 +134,29 @@ class Invoice(TenantScopedModel):
     is_held = models.BooleanField(default=False)
     held_label = models.CharField(max_length=50, blank=True, null=True)
 
+    # --- Restaurant vertical (all nullable; null for grocery/pharmacy/DI) -----
+    # An open table/order is an is_held invoice carrying these. Charge runs the
+    # normal checkout (clears is_held → finalize → FBR). These never reach PRAL.
+    order_type = models.CharField(
+        max_length=12, blank=True, null=True,
+        choices=(("dine_in", "Dine-in"), ("takeaway", "Takeaway"), ("delivery", "Delivery")),
+    )
+    table = models.ForeignKey(
+        "restaurant.Table", on_delete=models.SET_NULL, blank=True, null=True,
+        related_name="orders",
+    )
+    covers = models.PositiveSmallIntegerField(blank=True, null=True)  # party size
+    order_status = models.CharField(
+        max_length=20, blank=True, null=True,
+        choices=(
+            ("open", "Open"),
+            ("sent_to_kitchen", "Sent to kitchen"),
+            ("ready", "Ready"),
+            ("served", "Served"),
+        ),
+    )
+    kitchen_sent_at = models.DateTimeField(blank=True, null=True)
+
     # Phase 4 — invoices linked to a submitted Annexure-C cannot be edited.
     # Phase 6 returns logic flips this when a credit note's reference invoice
     # is in a submitted return.
@@ -223,6 +246,20 @@ class SaleItem(models.Model):
     sro_item_serial_no = models.CharField(max_length=20, blank=True, null=True)
 
     line_total = models.DecimalField(max_digits=14, decimal_places=4)
+
+    # --- Restaurant vertical (nullable / empty for other verticals) ----------
+    # Snapshot of the modifiers chosen for this line, e.g.
+    #   [{"name": "Extra cheese", "price": "50.0000"}, {"name": "Large", "price": "100.0000"}]
+    # Their prices are already folded into unit_price/line_total at quote time;
+    # this list is kept for the receipt + KOT display. NOT sent to FBR.
+    modifiers = models.JSONField(default=list, blank=True)
+    # Optional course grouping for kitchen firing (1 = starters, 2 = mains, …).
+    course = models.PositiveSmallIntegerField(blank=True, null=True)
+    # Free-text kitchen note for this line ("no onions", "well done").
+    item_note = models.CharField(max_length=255, blank=True, null=True)
+    # Set true once this line has been fired to the kitchen, so re-firing only
+    # prints newly-added lines.
+    sent_to_kitchen = models.BooleanField(default=False)
 
     # Edit/cancel tracking — Phase 4 enforces the rules.
     is_edited = models.BooleanField(default=False)

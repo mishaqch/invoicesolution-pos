@@ -36,7 +36,17 @@ export interface CartLine {
   batch_id?: string | null;
   batch_number?: string | null;
   expiry_date?: string | null;
+  // Restaurant (F&B): chosen modifiers (name + price delta). Their deltas are
+  // folded into unit_price so totals/tax stay correct; kept for receipt + KOT.
+  modifiers?: { name: string; price: string }[];
+  item_note?: string | null;          // kitchen note: "no onions"
+  course?: number | null;             // firing course
+  // True once this line has been fired to the kitchen, so re-firing a KOT only
+  // prints newly-added lines.
+  sent_to_kitchen?: boolean;
 }
+
+export type OrderType = "dine_in" | "takeaway" | "delivery";
 
 export interface SelectedCustomer {
   id: string;
@@ -61,6 +71,12 @@ interface SaleState {
   customer: SelectedCustomer | null;
   cartDiscountPct: string;     // 0–100
 
+  // Restaurant order context (null/undefined for non-restaurant verticals).
+  orderType: OrderType | null;
+  tableId: string | null;
+  tableName: string | null;
+  covers: number | null;
+
   addLine: (line: Omit<CartLine, "id" | "quantity"> & { quantity?: string }) => void;
   updateLine: (id: string, patch: Partial<CartLine>) => void;
   removeLine: (id: string) => void;
@@ -68,6 +84,7 @@ interface SaleState {
 
   setCustomer: (c: SelectedCustomer | null) => void;
   setCartDiscountPct: (pct: string) => void;
+  setOrderContext: (ctx: { orderType: OrderType | null; tableId?: string | null; tableName?: string | null; covers?: number | null }) => void;
 
   setStage: (s: SaleStage) => void;
   resetForNewSale: () => void;
@@ -76,15 +93,23 @@ interface SaleState {
     lines: CartLine[];
     customer: SelectedCustomer | null;
     cartDiscountPct: string;
+    orderType?: OrderType | null;
+    tableId?: string | null;
+    tableName?: string | null;
+    covers?: number | null;
   }) => void;
 }
 
-const blank = (): Pick<SaleState, "clientUuid" | "stage" | "lines" | "customer" | "cartDiscountPct"> => ({
+const blank = (): Pick<SaleState, "clientUuid" | "stage" | "lines" | "customer" | "cartDiscountPct" | "orderType" | "tableId" | "tableName" | "covers"> => ({
   clientUuid: newClientUuid(),
   stage: "empty",
   lines: [],
   customer: null,
   cartDiscountPct: "0",
+  orderType: null,
+  tableId: null,
+  tableName: null,
+  covers: null,
 });
 
 export const useSaleStore = create<SaleState>((set, get) => ({
@@ -134,6 +159,13 @@ export const useSaleStore = create<SaleState>((set, get) => ({
 
   setCustomer: (c) => set({ customer: c }),
   setCartDiscountPct: (pct) => set({ cartDiscountPct: pct }),
+  setOrderContext: (ctx) =>
+    set({
+      orderType: ctx.orderType,
+      tableId: ctx.tableId ?? null,
+      tableName: ctx.tableName ?? null,
+      covers: ctx.covers ?? null,
+    }),
 
   setStage: (s) => set({ stage: s }),
 
@@ -145,6 +177,10 @@ export const useSaleStore = create<SaleState>((set, get) => ({
       lines: payload.lines,
       customer: payload.customer,
       cartDiscountPct: payload.cartDiscountPct,
+      orderType: payload.orderType ?? null,
+      tableId: payload.tableId ?? null,
+      tableName: payload.tableName ?? null,
+      covers: payload.covers ?? null,
       stage: payload.lines.length > 0 ? "has_items" : "empty",
     }),
 }));

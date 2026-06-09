@@ -55,6 +55,7 @@ def test_catalog_includes_required_modules():
         "sales", "fbr", "customers", "branches", "terminals", "inventory",
         "returns", "debit_credit_notes", "manual_amendments",
         "payments_advanced", "customer_display", "hardware",
+        "restaurant",
         "reports_basic", "reports_advanced", "audit_log",
     }
     assert set(MODULE_KEYS) == expected

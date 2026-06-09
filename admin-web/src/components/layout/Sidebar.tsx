@@ -5,8 +5,12 @@ import {
   Boxes,
   Building2,
   CalendarClock,
+  ChefHat,
+  Grid3x3,
+  LayoutGrid,
   Monitor,
   ClipboardList,
+  Utensils,
   FileText,
   HelpCircle,
   LayoutDashboard,
@@ -87,6 +91,15 @@ const INVENTORY: Item[] = [
   { to: "/suppliers", label: "Suppliers", icon: Truck, module: "inventory", vertical: "pharmacy" },
 ];
 
+// Restaurant (F&B vertical only). All gated by the restaurant module +
+// vertical, so non-restaurant tenants never see this section.
+const RESTAURANT: Item[] = [
+  { to: "/restaurant/floor", label: "Floor", icon: LayoutGrid, module: "restaurant", vertical: "restaurant" },
+  { to: "/restaurant/kitchen", label: "Kitchen", icon: ChefHat, module: "restaurant", vertical: "restaurant" },
+  { to: "/restaurant/tables", label: "Tables", icon: Grid3x3, module: "restaurant", vertical: "restaurant" },
+  { to: "/restaurant/modifiers", label: "Modifiers", icon: Utensils, module: "restaurant", vertical: "restaurant" },
+];
+
 const ADMIN: Item[] = [
   { to: "/branches", label: "Branches", icon: Building2, module: "branches" },
   { to: "/terminals", label: "Terminals", icon: Monitor, module: "terminals" },
@@ -140,6 +153,7 @@ export function Sidebar() {
   const top = visible(TOP);
   const catalog = withDiLabels(visible(CATALOG));
   const inventory = visible(INVENTORY);
+  const restaurant = visible(RESTAURANT);
   const adminItems = visible(ADMIN);
 
   return (
@@ -150,6 +164,7 @@ export function Sidebar() {
           {top.length > 0 && <Group items={top} />}
           {catalog.length > 0 && <Section title="Catalog" items={catalog} />}
           {inventory.length > 0 && <Section title="Inventory" items={inventory} />}
+          {restaurant.length > 0 && <Section title="Restaurant" items={restaurant} />}
           {adminItems.length > 0 && <Section title="Admin" items={adminItems} />}
         </nav>
         <div className="border-t px-4 py-3 text-[11px] text-muted-foreground">

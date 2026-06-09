@@ -23,6 +23,10 @@ import Movements from "@/routes/inventory/movements";
 import RestockList from "@/routes/inventory/restock";
 import SuppliersList from "@/routes/suppliers/list";
 import ReceiveStock from "@/routes/purchases/receive";
+import TablesAdmin from "@/routes/restaurant/tables";
+import ModifiersAdmin from "@/routes/restaurant/modifiers";
+import FloorView from "@/routes/restaurant/floor";
+import KitchenDisplay from "@/routes/restaurant/kitchen";
 import StockByBranch from "@/routes/inventory/stock-by-branch";
 import StockTransfersList from "@/routes/inventory/transfers";
 import LoginRoute from "@/routes/login";
@@ -149,6 +153,21 @@ export default function App() {
                 </RequireModule>
               }
             />
+
+            {/* Restaurant — F&B vertical. Gated by restaurant module + vertical. */}
+            <Route
+              path="restaurant"
+              element={
+                <RequireModule module="restaurant">
+                  <RequireVertical vertical="restaurant"><Outlet /></RequireVertical>
+                </RequireModule>
+              }
+            >
+              <Route path="tables" element={<TablesAdmin />} />
+              <Route path="modifiers" element={<ModifiersAdmin />} />
+              <Route path="floor" element={<FloorView />} />
+              <Route path="kitchen" element={<KitchenDisplay />} />
+            </Route>
 
             <Route path="sales">
               <Route index element={<InvoicesList />} />

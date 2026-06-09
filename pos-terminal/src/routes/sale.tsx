@@ -5,6 +5,10 @@ import { useNavigate } from "react-router-dom";
 
 import { buildCartLineFromProduct } from "@/features/sale/addToCart";
 import { ApprovalProvider } from "@/features/sale/ApprovalGate";
+import { OrderTypeBar } from "@/features/restaurant/OrderTypeBar";
+import { SendToKitchen } from "@/features/restaurant/SendToKitchen";
+import { ModifierPicker, fetchModifierGroups, type ChosenModifiers } from "@/features/restaurant/ModifierPicker";
+import { Money } from "@/lib/money";
 import { CartPane } from "@/features/sale/CartPane";
 import { ProductGrid } from "@/features/sale/ProductGrid";
 import { TotalsPane } from "@/features/sale/TotalsPane";
@@ -33,6 +37,40 @@ export default function SaleRoute() {
   const lines = useSaleStore((s) => s.lines);
   const setStage = useSaleStore((s) => s.setStage);
   const [scanSignal, setScanSignal] = useState(0);
+  // Restaurant tenants get the order-type bar + send-to-kitchen; every other
+  // vertical sees the exact current screen (no behaviour change).
+  const isRestaurant = tenant?.vertical === "restaurant";
+  const access = useSessionStore((s) => s.access);
+
+  // Pending modifier-picker state: when a restaurant menu item has modifier
+  // groups we hold the would-be cart line until the cashier picks options.
+  const [pendingMods, setPendingMods] = useState<{
+    line: Parameters<typeof addLine>[0];
+    name: string;
+    groups: Parameters<typeof ModifierPicker>[0]["groups"];
+  } | null>(null);
+
+  /**
+   * Restaurant-aware add: if the product has modifier groups, open the picker;
+   * otherwise add straight away. Non-restaurant tenants always add directly.
+   */
+  const addWithModifiers = async (line: Parameters<typeof addLine>[0], productId: string) => {
+    if (!isRestaurant) { addLine(line); return; }
+    const groups = await fetchModifierGroups(productId, access);
+    if (groups.length === 0) { addLine(line); return; }
+    setPendingMods({ line, name: line.product_name, groups });
+  };
+
+  function confirmModifiers(chosen: ChosenModifiers) {
+    if (!pendingMods) return;
+    const base = Money.fromStr(pendingMods.line.unit_price);
+    addLine({
+      ...pendingMods.line,
+      unit_price: base.add(chosen.delta).toStorageString(),
+      modifiers: chosen.modifiers,
+    });
+    setPendingMods(null);
+  }
 
   /**
    * Hardware barcode scan → add to cart. Resolves the code against the local
@@ -55,7 +93,7 @@ export default function SaleRoute() {
       const { line, warning } = await buildCartLineFromProduct(p, {
         branchId: ctx.branch?.id ?? null,
       });
-      addLine(line);
+      await addWithModifiers(line, p.id);
       if (warning) {
         toast.show({ message: warning, variant: "warning" });
       }
@@ -270,6 +308,8 @@ export default function SaleRoute() {
         </div>
       </header>
 
+      {isRestaurant && <OrderTypeBar branchId={ctx.branch?.id ?? null} />}
+
       {/* The grid takes the rest of the viewport. min-h-0 is critical:
           without it, a flex child can't shrink below its content's
           intrinsic height, and overflow-hidden on the inner panes
@@ -280,6 +320,7 @@ export default function SaleRoute() {
         <div className="col-span-5 flex min-h-0 flex-col overflow-hidden">
           <ProductGrid
             onAdd={addLine}
+            onAddProduct={isRestaurant ? addWithModifiers : undefined}
             branchId={ctx.branch?.id ?? null}
             onWarn={(message) => toast.show({ message, variant: "warning" })}
             clearSignal={scanSignal}
@@ -287,13 +328,29 @@ export default function SaleRoute() {
         </div>
         {/* Cart — own scroll if line count grows. */}
         <div className="col-span-4 flex min-h-0 flex-col overflow-hidden rounded-md border bg-background">
-          <CartPane />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <CartPane />
+          </div>
+          {isRestaurant && lines.length > 0 && (
+            <div className="border-t p-2">
+              <SendToKitchen orderNumber={useSaleStore.getState().clientUuid.slice(0, 8)} />
+            </div>
+          )}
         </div>
         {/* Totals — pinned, never scrolls. */}
         <div className="col-span-3 flex min-h-0 flex-col overflow-hidden">
           <TotalsPane onHold={onHold} />
         </div>
       </main>
+
+      {pendingMods && (
+        <ModifierPicker
+          productName={pendingMods.name}
+          groups={pendingMods.groups}
+          onCancel={() => setPendingMods(null)}
+          onConfirm={confirmModifiers}
+        />
+      )}
     </div>
     </ApprovalProvider>
   );

@@ -7,8 +7,8 @@ export type SubscriptionStatus =
   | "suspended"
   | "cancelled";
 
-/** The KIND of shop — grocery vs pharmacy. UI-only presentation flag. */
-export type Vertical = "grocery" | "pharmacy";
+/** The KIND of shop — grocery vs pharmacy vs restaurant. UI-only presentation flag. */
+export type Vertical = "grocery" | "pharmacy" | "restaurant";
 
 export interface Tenant {
   id: string;

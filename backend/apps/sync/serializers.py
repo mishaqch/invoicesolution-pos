@@ -17,6 +17,11 @@ class _LineSerializer(serializers.Serializer):
     discount_amount = serializers.DecimalField(max_digits=14, decimal_places=4, required=False, default=0)
     tax_rate = serializers.DecimalField(max_digits=5, decimal_places=2, required=False, default=0)
     is_taxable = serializers.BooleanField(default=True)
+    # Restaurant (optional; ignored for other verticals). modifiers is a list of
+    # {name, price} snapshots whose deltas are already in unit_price.
+    modifiers = serializers.ListField(child=serializers.DictField(), required=False, default=list)
+    course = serializers.IntegerField(required=False, allow_null=True)
+    item_note = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
 
 
 class _PaymentSerializer(serializers.Serializer):
@@ -40,6 +45,12 @@ class IngestInvoiceSerializer(serializers.Serializer):
     )
     payments = _PaymentSerializer(many=True)
     notes = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Restaurant order-level (optional; null for other verticals).
+    order_type = serializers.ChoiceField(
+        choices=["dine_in", "takeaway", "delivery"], required=False, allow_null=True,
+    )
+    table = serializers.UUIDField(required=False, allow_null=True)
+    covers = serializers.IntegerField(required=False, allow_null=True)
 
 
 class IngestCustomerSerializer(serializers.Serializer):

@@ -101,6 +101,9 @@ export default function PaymentRoute() {
         notes: null,
         // FEFO batch (pharmacy) — server records the sale movement against it.
         batch_id: q.batch_id ?? null,
+        // Restaurant — kept for receipt/KOT display (deltas already in price).
+        modifiers: q.modifiers ?? [],
+        item_note: q.item_note ?? null,
       }));
 
       const payments = tenders.map((t) => ({
@@ -161,8 +164,17 @@ export default function PaymentRoute() {
           discount_amount: l.discount_amount,
           tax_rate: l.tax_rate,
           is_taxable: l.is_taxable,
+          // Restaurant (empty/null for other verticals). Modifier deltas are
+          // already folded into unit_price; this is the receipt + KOT snapshot.
+          modifiers: l.modifiers ?? [],
+          item_note: l.item_note ?? null,
+          course: l.course ?? null,
         })),
         cart_discount_pct: cartDiscountPct,
+        // Restaurant order-level context (null for other verticals).
+        order_type: useSaleStore.getState().orderType,
+        table: useSaleStore.getState().tableId,
+        covers: useSaleStore.getState().covers,
         payments: tenders.map((t) => ({
           payment_method: t.payment_method,
           amount: t.amount,
@@ -217,6 +229,9 @@ export default function PaymentRoute() {
         ntn: tenant?.ntn ?? "",
         address: tenant?.address ?? undefined,
         contact: tenant?.phone ?? undefined,
+        // Restaurant: order type + table on the receipt (null otherwise).
+        order_type: useSaleStore.getState().orderType,
+        table_name: useSaleStore.getState().tableName,
         invoice: printInvoice,
         items,
         payments,

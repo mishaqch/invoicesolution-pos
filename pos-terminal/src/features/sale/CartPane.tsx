@@ -31,6 +31,18 @@ export function CartPane() {
                   <div className="text-xs text-muted-foreground">
                     {line.product_sku} · Rs {line.unit_price}
                   </div>
+                  {/* Restaurant: chosen modifiers + kitchen note under the line. */}
+                  {line.modifiers && line.modifiers.length > 0 && (
+                    <div className="text-[11px] text-muted-foreground">
+                      {line.modifiers.map((m) => m.name).join(", ")}
+                    </div>
+                  )}
+                  {line.item_note && (
+                    <div className="text-[11px] italic text-muted-foreground">“{line.item_note}”</div>
+                  )}
+                  {line.sent_to_kitchen && (
+                    <div className="text-[10px] font-medium text-success-soft-foreground">✓ in kitchen</div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1">

@@ -89,6 +89,8 @@ INSTALLED_APPS = [
     # Procurement (pharmacy / wholesale) — suppliers + goods receipts
     "apps.suppliers",
     "apps.purchases",
+    # Restaurant / F&B vertical — tables, modifiers, kitchen
+    "apps.restaurant",
     # Local — Phase 2
     "apps.customers",
     "apps.sales",

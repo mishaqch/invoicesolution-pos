@@ -22,8 +22,9 @@ export interface ModuleCatalogEntry {
 export type FbrConnectionType = "di_api" | "ims_sdc";
 export type BusinessMode = "pos" | "digital_invoicing" | "both";
 /** The KIND of shop — decides which sections the UI surfaces (pharmacy gets
- *  batch/expiry/supplier tools). Mirrors apps/tenants/business_mode.VERTICALS. */
-export type Vertical = "grocery" | "pharmacy";
+ *  batch/expiry/supplier tools; restaurant gets tables/menu/kitchen). Mirrors
+ *  apps/tenants/business_mode.VERTICALS. */
+export type Vertical = "grocery" | "pharmacy" | "restaurant";
 
 export interface ModulesPayload {
   catalog: ModuleCatalogEntry[];
@@ -51,6 +52,7 @@ export type ModuleKey =
   | "payments_advanced"
   | "customer_display"
   | "hardware"
+  | "restaurant"
   | "reports_basic"
   | "reports_advanced"
   | "audit_log";
@@ -96,4 +98,9 @@ export function useVertical(): Vertical {
 /** True when the tenant is a pharmacy (so batch/expiry/supplier UI is shown). */
 export function useIsPharmacy(): boolean {
   return useVertical() === "pharmacy";
+}
+
+/** True when the tenant is a restaurant (so tables/menu/kitchen UI is shown). */
+export function useIsRestaurant(): boolean {
+  return useVertical() === "restaurant";
 }

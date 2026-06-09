@@ -39,6 +39,9 @@ interface ReceiptInput {
   ntn: string;
   address?: string;
   contact?: string;   // business phone / contact number (header)
+  // Restaurant only — shown under the title so the customer sees dine-in/table.
+  order_type?: string | null;
+  table_name?: string | null;
   invoice: PosInvoiceInput;
   items: PosSaleItemInput[];
   payments: PosPaymentInput[];
@@ -181,6 +184,138 @@ export async function openCashDrawer(): Promise<{ success: boolean; reason?: str
     success: false,
     reason: "drawer timeout (5s)",
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Kitchen Order Ticket (KOT) — restaurant vertical
+// ---------------------------------------------------------------------------
+
+interface KotItem {
+  product_name: string;
+  quantity: string | number;
+  modifiers?: { name: string }[];
+  item_note?: string | null;
+}
+interface KotInput {
+  order_number: string;       // local invoice / order #
+  order_type: string;         // dine_in / takeaway / delivery
+  table_name?: string | null;
+  covers?: number | null;
+  time: string;               // "19:32"
+  items: KotItem[];           // ONLY the newly-fired items
+  width: 48 | 32;
+}
+
+/**
+ * Print a Kitchen Order Ticket. This is NOT a fiscal document — no prices, no
+ * FBR, never sent to PRAL. Big, scannable item names + modifiers + note for the
+ * line cook. Reuses the same ESC/POS printer path as the receipt; falls back to
+ * disk when no printer is configured (so kitchen orders are never lost).
+ */
+export async function printKOT(input: KotInput): Promise<PrintResult> {
+  const printerUrl = resolvePrinterInterface();
+  const plain = renderKotText(input);
+  if (!printerUrl) {
+    const fallback = writeFallback(`kot-${input.order_number}-${input.time.replace(/\D/g, "")}`, plain);
+    return { success: false, reason: "no printer configured", fallbackPath: fallback };
+  }
+  const timeout = printerUrl.startsWith("cups://") ? 30_000 : TIMEOUT_MS;
+  try {
+    return await withTimeout(realPrintKOT(input, printerUrl), timeout, () => {
+      const fallback = writeFallback(`kot-${input.order_number}`, plain);
+      return { success: false, reason: `KOT printer timeout (${timeout / 1000}s)`, fallbackPath: fallback };
+    });
+  } catch (e) {
+    const fallback = writeFallback(`kot-${input.order_number}`, plain);
+    return { success: false, reason: `KOT print error: ${e instanceof Error ? e.message : String(e)}`, fallbackPath: fallback };
+  }
+}
+
+async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintResult> {
+  let mod: any;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    mod = require("node-thermal-printer");
+  } catch (e) {
+    return { success: false, reason: "printer driver not installed" };
+  }
+  const cupsQueue = printerUrl.startsWith("cups://")
+    ? printerUrl.slice("cups://".length).replace(/\/+$/, "")
+    : null;
+  const ThermalPrinter = mod.printer;
+  const PrinterTypes = mod.types;
+  const printer = new ThermalPrinter({
+    type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
+    interface: cupsQueue ? "tcp://127.0.0.1:1" : printerUrl,
+    characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
+    width: input.width,
+    options: { timeout: TIMEOUT_MS },
+  });
+  if (!cupsQueue) {
+    const ok = await printer.isPrinterConnected();
+    if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
+  }
+
+  printer.alignCenter();
+  printer.bold(true);
+  printer.setTextDoubleHeight();
+  printer.setTextDoubleWidth();
+  printer.println("KITCHEN");
+  printer.setTextNormal();
+  printer.bold(true);
+  // Destination line: table for dine-in, otherwise the order type.
+  printer.setTextSize(1, 1);
+  printer.println(input.table_name ? `TABLE ${input.table_name}` : input.order_type.replace("_", " ").toUpperCase());
+  printer.setTextNormal();
+  printer.bold(false);
+  printer.println(`Order ${input.order_number}   ${input.time}`);
+  if (input.covers) printer.println(`Covers: ${input.covers}`);
+  printer.drawLine();
+  printer.alignLeft();
+
+  for (const it of input.items) {
+    printer.bold(true);
+    printer.setTextSize(1, 1);
+    const qty = Number(it.quantity);
+    printer.println(`${Number.isFinite(qty) ? qty : it.quantity} x ${it.product_name}`);
+    printer.setTextNormal();
+    printer.bold(false);
+    for (const m of it.modifiers ?? []) {
+      printer.println(`   - ${m.name}`);
+    }
+    if (it.item_note) printer.println(`   ** ${it.item_note} **`);
+    printer.newLine();
+  }
+  printer.drawLine();
+  printer.cut();
+
+  if (cupsQueue) {
+    return printViaCups(printer.getBuffer(), cupsQueue);
+  }
+  try {
+    await printer.execute();
+    return { success: true };
+  } catch (e) {
+    return { success: false, reason: `KOT execute failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+function renderKotText(input: KotInput): string {
+  const W = input.width;
+  const center = (s: string) => (s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s);
+  const rule = "-".repeat(W);
+  const lines: string[] = [center("KITCHEN")];
+  lines.push(center(input.table_name ? `TABLE ${input.table_name}` : input.order_type.toUpperCase()));
+  lines.push(`Order ${input.order_number}   ${input.time}`);
+  if (input.covers) lines.push(`Covers: ${input.covers}`);
+  lines.push(rule);
+  for (const it of input.items) {
+    lines.push(`${it.quantity} x ${it.product_name}`);
+    for (const m of it.modifiers ?? []) lines.push(`   - ${m.name}`);
+    if (it.item_note) lines.push(`   ** ${it.item_note} **`);
+  }
+  lines.push(rule);
+  return lines.join("\n");
 }
 
 
@@ -455,6 +590,11 @@ function renderBodyText(input: ReceiptInput): string {
 
   lines.push(`Invoice: ${input.invoice.local_invoice_number}`);
   lines.push(`Date:    ${input.invoice.invoice_date}`);
+  // Restaurant: order type + table for the customer's reference.
+  if (input.order_type) {
+    const ot = input.order_type.replace("_", " ");
+    lines.push(`Order:   ${ot}${input.table_name ? ` — Table ${input.table_name}` : ""}`);
+  }
   if (input.invoice.buyer_name) {
     lines.push(`Buyer:   ${input.invoice.buyer_name}`);
   }
@@ -466,6 +606,11 @@ function renderBodyText(input: ReceiptInput): string {
     const right = money2(it.line_total);
     const pad = Math.max(1, W - left.length - right.length);
     lines.push(left + " ".repeat(pad) + right);
+    // Restaurant: show chosen modifiers under the line.
+    const mods = (it as { modifiers?: { name: string }[] }).modifiers;
+    if (mods && mods.length > 0) {
+      lines.push(`    + ${mods.map((m) => m.name).join(", ")}`.slice(0, W));
+    }
   }
   lines.push(rule);
 

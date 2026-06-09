@@ -47,6 +47,10 @@ def create_invoice(
     reference_invoice: Invoice | None = None,
     reason: str | None = None,
     reason_notes: str | None = None,
+    # Restaurant vertical (all optional; None for grocery/pharmacy/DI).
+    order_type: str | None = None,
+    table_id=None,
+    covers: int | None = None,
     request=None,
 ) -> Invoice:
     """Create an invoice (sale, debit-note, or credit-note).
@@ -133,6 +137,11 @@ def create_invoice(
         client_uuid=client_uuid,
         notes=notes,
         status="pending_sync",
+        # Restaurant vertical (None for other verticals).
+        order_type=order_type,
+        table_id=table_id,
+        covers=covers,
+        order_status="open" if order_type else None,
     )
 
     # Pre-flight: any 3rd-Schedule product without a retail_price would
@@ -209,6 +218,12 @@ def create_invoice(
             line_total=line_quote.line_total.amount,
             fixed_notified_value=fixed_notified,
             sale_type=sale_type,
+            # Restaurant snapshot (empty/None for other verticals). Modifier
+            # price deltas are already folded into unit_price by the caller, so
+            # totals + tax are correct; this list is for the receipt + KOT only.
+            modifiers=line_input.get("modifiers") or [],
+            course=line_input.get("course"),
+            item_note=line_input.get("item_note"),
         )
 
         record_movement(

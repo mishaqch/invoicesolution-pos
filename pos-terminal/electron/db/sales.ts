@@ -68,6 +68,9 @@ export interface PosSaleItemInput {
   notes: string | null;
   /** FEFO batch this line drew from (pharmacy). NULL for ordinary products. */
   batch_id?: string | null;
+  /** Restaurant: chosen modifiers (array, stored as JSON) + kitchen note. */
+  modifiers?: { name: string; price: string }[];
+  item_note?: string | null;
 }
 
 export interface PosPaymentInput {
@@ -166,12 +169,12 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
       id, invoice_id, line_number,
       product_id, product_name, product_sku, uom_code, hs_code,
       quantity, unit_price, discount_pct, discount_amount,
-      tax_rate, tax_amount, line_total, notes, batch_id
+      tax_rate, tax_amount, line_total, notes, batch_id, modifiers, item_note
     ) VALUES (
       @id, @invoice_id, @line_number,
       @product_id, @product_name, @product_sku, @uom_code, @hs_code,
       @quantity, @unit_price, @discount_pct, @discount_amount,
-      @tax_rate, @tax_amount, @line_total, @notes, @batch_id
+      @tax_rate, @tax_amount, @line_total, @notes, @batch_id, @modifiers, @item_note
     )
   `);
   const insertPayment = db.prepare(`
@@ -195,7 +198,14 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
       updated_at: now,
     });
     for (const item of args.items) {
-      insertItem.run({ ...item, notes: item.notes ?? null, batch_id: item.batch_id ?? null });
+      insertItem.run({
+        ...item,
+        notes: item.notes ?? null,
+        batch_id: item.batch_id ?? null,
+        // better-sqlite3 can't bind arrays/objects — store modifiers as JSON.
+        modifiers: item.modifiers && item.modifiers.length ? JSON.stringify(item.modifiers) : null,
+        item_note: item.item_note ?? null,
+      });
     }
     for (const p of args.payments) {
       insertPayment.run({

@@ -134,6 +134,18 @@ MODULES: list[_Module] = [
                        "kick.",
         "forced": False,
     },
+    # --- Restaurant (F&B vertical) ---
+    {
+        "key": "restaurant",
+        "label": "Restaurant / F&B",
+        "group": "Restaurant",
+        "description": "Dine-in / takeaway / delivery orders, tables + "
+                       "floor map, menu modifiers (add-ons / sizes), "
+                       "kitchen tickets (KOT) + kitchen display. Gates the "
+                       "restaurant API; pair with the 'restaurant' vertical "
+                       "to surface the UI.",
+        "forced": False,
+    },
     # --- Insights ---
     {
         "key": "reports_basic",
