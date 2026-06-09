@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import { useSaleStore, type OrderType } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
+import { OpenOrdersPanel } from "./OpenOrdersPanel";
 
 interface TableRow { id: string; name: string; seats: number }
 
@@ -24,14 +25,36 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
   const setOrderContext = useSaleStore((s) => s.setOrderContext);
   const access = useSessionStore((s) => s.access);
 
+  const setCustomer = useSaleStore((s) => s.setCustomer);
+
   const [tables, setTables] = useState<TableRow[]>([]);
   const [picking, setPicking] = useState(false);
+  const [showOrders, setShowOrders] = useState(false);
+  const [custName, setCustName] = useState("");
+  const [custPhone, setCustPhone] = useState("");
+  const [custAddr, setCustAddr] = useState("");
 
   // Default to dine-in on first mount so the cashier always has a context.
   useEffect(() => {
     if (!orderType) setOrderContext({ orderType: "dine_in" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // For takeaway/delivery, mirror the typed name/phone/address onto the sale's
+  // customer so it flows to the order + receipt. A walk-in (unregistered) buyer.
+  function pushCustomer(name: string, phone: string, addr: string) {
+    if (!name && !phone && !addr) { setCustomer(null); return; }
+    setCustomer({
+      id: "",
+      name: name || "Walk-in",
+      phone: phone || null,
+      cnic: null,
+      ntn: null,
+      registration_type: "unregistered",
+      province: null,
+      ...(addr ? { address: addr } : {}),
+    } as never);
+  }
 
   async function loadTables() {
     try {
@@ -92,6 +115,43 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
           )}
         </div>
       )}
+
+      {/* Takeaway / delivery: capture the customer so we can call + (delivery) deliver. */}
+      {(orderType === "takeaway" || orderType === "delivery") && (
+        <div className="ml-2 flex flex-1 items-center gap-2">
+          <input
+            value={custName}
+            onChange={(e) => { setCustName(e.target.value); pushCustomer(e.target.value, custPhone, custAddr); }}
+            placeholder="Customer name"
+            className="h-8 w-36 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          <input
+            value={custPhone}
+            onChange={(e) => { setCustPhone(e.target.value); pushCustomer(custName, e.target.value, custAddr); }}
+            placeholder="Phone"
+            inputMode="tel"
+            className="h-8 w-32 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          {orderType === "delivery" && (
+            <input
+              value={custAddr}
+              onChange={(e) => { setCustAddr(e.target.value); pushCustomer(custName, custPhone, e.target.value); }}
+              placeholder="Delivery address"
+              className="h-8 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+          )}
+        </div>
+      )}
+
+      {/* Open-orders book — resume a parked table/order. */}
+      <button
+        type="button"
+        onClick={() => setShowOrders(true)}
+        className="ml-auto rounded-md border px-3 py-1.5 font-medium hover:bg-accent"
+      >
+        Open orders
+      </button>
+      {showOrders && <OpenOrdersPanel branchId={branchId} onClose={() => setShowOrders(false)} />}
     </div>
   );
 }

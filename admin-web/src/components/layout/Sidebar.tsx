@@ -150,8 +150,16 @@ export function Sidebar() {
     );
   }
 
+  // A restaurant's "products" are menu items — relabel for the right language.
+  function withVerticalLabels(items: Item[]): Item[] {
+    if (vertical !== "restaurant") return items;
+    return items.map((it) =>
+      it.to === "/catalog/products" ? { ...it, label: "Menu" } : it,
+    );
+  }
+
   const top = visible(TOP);
-  const catalog = withDiLabels(visible(CATALOG));
+  const catalog = withVerticalLabels(withDiLabels(visible(CATALOG)));
   const inventory = visible(INVENTORY);
   const restaurant = visible(RESTAURANT);
   const adminItems = visible(ADMIN);

@@ -604,6 +604,37 @@ export function useOrderAction() {
   });
 }
 
+/** One open order with cart_lines (for the admin bill view / terminal resume). */
+export function useOpenOrder(id: string | undefined) {
+  return useQuery({
+    queryKey: ["rest-open-order", id],
+    queryFn: () => api<OrderView & { cart_lines: unknown[] }>(`/restaurant/orders/?id=${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+/** A product's attached modifier groups (ordered ids). */
+export function useProductModifierGroups(productId: string | undefined) {
+  const enabled = useModuleEnabled("restaurant");
+  return useQuery({
+    queryKey: ["product-modifier-groups", productId],
+    queryFn: () => api<{ group_ids: string[] }>(`/restaurant/products/${productId}/modifier-groups/`),
+    enabled: enabled && Boolean(productId),
+  });
+}
+
+export function useSaveProductModifierGroups() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ productId, groupIds }: { productId: string; groupIds: string[] }) =>
+      api<{ group_ids: string[] }>(`/restaurant/products/${productId}/modifier-groups/`, {
+        method: "PUT",
+        body: JSON.stringify({ group_ids: groupIds }),
+      }),
+    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["product-modifier-groups", v.productId] }),
+  });
+}
+
 export function useTransfers() {
   return useQuery({
     queryKey: ["transfers"],

@@ -333,7 +333,7 @@ export default function SaleRoute() {
           </div>
           {isRestaurant && lines.length > 0 && (
             <div className="border-t p-2">
-              <SendToKitchen orderNumber={useSaleStore.getState().clientUuid.slice(0, 8)} />
+              <SendToKitchen branchId={ctx.branch?.id ?? null} terminalId={ctx.terminal?.id ?? null} />
             </div>
           )}
         </div>

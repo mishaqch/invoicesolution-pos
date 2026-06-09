@@ -24,7 +24,12 @@ import {
   useUoms,
   useUpdateProduct,
 } from "@/lib/queries";
-import { useIsModuleEnabled, useIsPharmacy } from "@/features/modules/hooks";
+import { useIsModuleEnabled, useIsPharmacy, useIsRestaurant } from "@/features/modules/hooks";
+import {
+  useModifierGroups,
+  useProductModifierGroups,
+  useSaveProductModifierGroups,
+} from "@/lib/queries";
 import type { ProductBatch, StockLevel } from "@pos/shared/types";
 import { money } from "@/lib/utils";
 
@@ -94,6 +99,8 @@ export default function ProductEdit() {
   // Pharmacy tenants get the batch/expiry tools (the is_batch_tracked toggle +
   // the Batches card on edit). Grocery tenants never see them.
   const isPharmacy = useIsPharmacy();
+  // Restaurant tenants get the Modifiers card (attach Size/Add-ons groups).
+  const isRestaurant = useIsRestaurant();
   const { data: branchData } = useBranches();
   const branches = branchData?.results ?? [];
   const postAdjustment = usePostAdjustment();
@@ -419,6 +426,17 @@ export default function ProductEdit() {
           </Card>
         )}
 
+        {isRestaurant && !isNew && id && (
+          <Card className="md:col-span-2">
+            <CardHeader>
+              <CardTitle>Modifiers</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ModifierAttach productId={id} />
+            </CardContent>
+          </Card>
+        )}
+
         <div className="md:col-span-2 flex items-center justify-between">
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="ml-auto flex gap-2">
@@ -684,6 +702,76 @@ function BatchManager({
             </span>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Restaurant: attach modifier groups (Size, Add-ons) to this menu item.
+ * The terminal then shows ONLY these groups when the item is added. Checkboxes
+ * against the tenant's group catalog; PUT replaces the product's links.
+ */
+function ModifierAttach({ productId }: { productId: string }) {
+  const { data: catalog } = useModifierGroups();
+  const { data: current } = useProductModifierGroups(productId);
+  const save = useSaveProductModifierGroups();
+  const groups = catalog?.results ?? [];
+  const [selected, setSelected] = useState<string[] | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  // Initialise from the server once both queries land.
+  const attached = selected ?? current?.group_ids ?? [];
+
+  function toggle(id: string) {
+    const base = selected ?? current?.group_ids ?? [];
+    setSelected(base.includes(id) ? base.filter((g) => g !== id) : [...base, id]);
+  }
+
+  async function persist() {
+    setMsg(null);
+    try {
+      await save.mutateAsync({ productId, groupIds: attached });
+      setMsg("Saved.");
+      setSelected(null);
+    } catch (err) {
+      setMsg(extractApiErrorMessage(err));
+    }
+  }
+
+  if (groups.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No modifier groups yet. Create them under Restaurant → Modifiers, then attach here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Tick the option groups this item offers (e.g. Size, Add-ons). The terminal shows only the attached groups.
+      </p>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+        {groups.map((g) => (
+          <label key={g.id} className="flex items-center gap-2 rounded-md border p-2 text-sm">
+            <input
+              type="checkbox"
+              checked={attached.includes(g.id)}
+              onChange={() => toggle(g.id)}
+            />
+            <span>
+              {g.name}
+              <span className="ml-1 text-xs text-muted-foreground">
+                ({g.min_select > 0 ? "required" : "optional"})
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" loading={save.isPending} onClick={persist}>Save modifiers</Button>
+        {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
       </div>
     </div>
   );

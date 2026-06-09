@@ -17,7 +17,7 @@ from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
 from apps.sales.models import Invoice
 
 from . import services
-from .models import Modifier, ModifierGroup, Table
+from .models import MenuItemModifierGroup, Modifier, ModifierGroup, Table
 from .serializers import (
     ModifierGroupSerializer,
     ModifierGroupWriteSerializer,
@@ -66,6 +66,17 @@ class ModifierGroupViewSet(_TenantScoped, viewsets.ModelViewSet):
     def get_serializer_class(self):
         return ModifierGroupSerializer if self.action in ("list", "retrieve") else ModifierGroupWriteSerializer
 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # ?product=<id> → only the groups attached to that menu item (via
+        # MenuItemModifierGroup). The terminal's modifier picker relies on this
+        # so it shows ONLY the item's own options, not every group in the tenant.
+        if (product := self.request.query_params.get("product")):
+            qs = qs.filter(product_links__product_id=product).order_by(
+                "product_links__display_order", "display_order",
+            ).distinct()
+        return qs
+
     def perform_create(self, serializer):
         serializer.save(tenant_id=self.request.tenant_id)
 
@@ -73,6 +84,55 @@ class ModifierGroupViewSet(_TenantScoped, viewsets.ModelViewSet):
         instance.deleted_at = timezone.now()
         instance.is_active = False
         instance.save(update_fields=["deleted_at", "is_active", "updated_at"])
+
+
+class ProductModifierGroupsView(APIView):
+    """Attach modifier groups to a menu item.
+
+    GET /api/restaurant/products/<product_id>/modifier-groups/ → ordered group ids
+    PUT same → replace the product's attached groups with the posted id list.
+    Used by the admin product-edit "Modifiers" card.
+    """
+    permission_classes = [_RESTAURANT_GATE, HasRolePerm.with_perm("products.manage")]
+
+    def _product(self, request, product_id):
+        from apps.catalog.models import Product
+        p = Product.objects.for_tenant(request.tenant_id).filter(pk=product_id).first()
+        if not p:
+            raise NotFound("Product not found.")
+        return p
+
+    def get(self, request, product_id):
+        p = self._product(request, product_id)
+        links = p.modifier_links.order_by("display_order")
+        return Response({"group_ids": [str(l.group_id) for l in links]})
+
+    def put(self, request, product_id):
+        p = self._product(request, product_id)
+        ids = request.data.get("group_ids", [])
+        if not isinstance(ids, list):
+            raise ValidationError({"group_ids": "Expected a list."})
+        valid = set(
+            ModifierGroup.objects.filter(
+                tenant_id=request.tenant_id, deleted_at__isnull=True, pk__in=ids,
+            ).values_list("id", flat=True)
+        )
+        p.modifier_links.all().delete()
+        accepted = []
+        for order, gid in enumerate(ids):
+            g = _coerce_uuid(gid)
+            if g in valid:
+                MenuItemModifierGroup.objects.create(product=p, group_id=g, display_order=order)
+                accepted.append(str(g))
+        return Response({"group_ids": accepted})
+
+
+def _coerce_uuid(v):
+    from uuid import UUID
+    try:
+        return UUID(str(v))
+    except (ValueError, TypeError):
+        return None
 
 
 def _order_payload(inv: Invoice) -> dict:
@@ -158,3 +218,72 @@ class OrderActionView(APIView):
         else:
             raise ValidationError({"op": "Unknown action."})
         return Response(_order_payload(invoice), status=status.HTTP_200_OK)
+
+
+def _order_detail_payload(inv: Invoice) -> dict:
+    """Fuller payload for the terminal to RESUME an order — includes the data
+    the cashier needs to rebuild the cart (product ids, unit prices, modifiers)."""
+    base = _order_payload(inv)
+    base["cart_lines"] = [
+        {
+            "product": str(it.product_id),
+            "product_name": it.product_name,
+            "product_sku": it.product_sku,
+            "uom_code": it.uom_code,
+            "hs_code": it.hs_code,
+            "quantity": str(it.quantity),
+            "unit_price": str(it.unit_price),
+            "discount_pct": str(it.discount_pct),
+            "discount_amount": str(it.discount_amount),
+            "tax_rate": str(it.tax_rate),
+            "modifiers": it.modifiers or [],
+            "item_note": it.item_note,
+            "course": it.course,
+            "sent_to_kitchen": it.sent_to_kitchen,
+        }
+        for it in inv.items.all().order_by("line_number")
+    ]
+    base["client_uuid"] = str(inv.client_uuid)
+    base["customer_id"] = str(inv.customer_id) if inv.customer_id else None
+    return base
+
+
+class OpenOrderView(APIView):
+    """Open (held, unpaid) restaurant orders — the live order book.
+
+    GET  /api/restaurant/orders/         → list open orders (terminal table list)
+    GET  /api/restaurant/orders/?id=<id> → one order, with cart_lines to resume
+    POST /api/restaurant/orders/         → create/update an open order (fire
+         kitchen). Idempotent on client_uuid. Body = the same cart payload the
+         terminal sends to checkout (product/quantity/unit_price/modifiers/…)
+         plus order_type/table/covers/customer.
+    """
+    permission_classes = [_RESTAURANT_GATE, IsTenantMember]
+
+    def get(self, request):
+        if (oid := request.query_params.get("id")):
+            inv = Invoice.objects.for_tenant(request.tenant_id).filter(pk=oid).first()
+            if not inv:
+                raise NotFound("Order not found.")
+            return Response(_order_detail_payload(inv))
+        branch_id = request.query_params.get("branch")
+        orders = services.open_orders_qs(request.tenant_id, branch_id=branch_id)
+        return Response({"orders": [_order_payload(o) for o in orders]})
+
+    def post(self, request):
+        from apps.tenants.models import Branch, Terminal
+
+        payload = request.data
+        if not payload.get("client_uuid"):
+            raise ValidationError({"client_uuid": "Required."})
+        if not payload.get("terminal") or not payload.get("branch"):
+            raise ValidationError({"detail": "branch and terminal are required."})
+        branch = Branch.objects.for_tenant(request.tenant_id).filter(pk=payload["branch"]).first()
+        terminal = Terminal.objects.for_tenant(request.tenant_id).filter(pk=payload["terminal"]).first()
+        if not branch or not terminal:
+            raise NotFound("Branch or terminal not found.")
+        invoice = services.upsert_open_order(
+            tenant_id=request.tenant_id, branch=branch, terminal=terminal,
+            cashier=request.user, payload=payload, request=request,
+        )
+        return Response(_order_detail_payload(invoice), status=status.HTTP_200_OK)

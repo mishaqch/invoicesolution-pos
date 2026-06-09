@@ -1,14 +1,25 @@
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Minus, Plus, StickyNote, Trash2 } from "lucide-react";
 
 import { Money } from "@/lib/money";
 import { quoteCart, useSaleStore } from "@/stores/sale";
+import { useSessionStore } from "@/stores/session";
 import { useApprovalGate } from "./ApprovalGate";
 
 export function CartPane() {
   const lines = useSaleStore((s) => s.lines);
   const removeLine = useSaleStore((s) => s.removeLine);
   const setQuantity = useSaleStore((s) => s.setQuantity);
+  const updateLine = useSaleStore((s) => s.updateLine);
+  const isRestaurant = useSessionStore((s) => s.tenant?.vertical === "restaurant");
   const { requireApproval } = useApprovalGate();
+
+  // Edit a line's kitchen note in place (restaurant). Prompt keeps it simple and
+  // works on a touch terminal; updateLine writes to the cart so it flows to the
+  // KOT + the order snapshot on next fire.
+  function editNote(id: string, current: string | null | undefined) {
+    const next = window.prompt("Kitchen note for this item (e.g. no onions):", current ?? "");
+    if (next !== null) updateLine(id, { item_note: next.trim() || null });
+  }
 
   const totals = quoteCart({
     lines,
@@ -39,6 +50,16 @@ export function CartPane() {
                   )}
                   {line.item_note && (
                     <div className="text-[11px] italic text-muted-foreground">“{line.item_note}”</div>
+                  )}
+                  {isRestaurant && (
+                    <button
+                      type="button"
+                      onClick={() => editNote(line.id, line.item_note)}
+                      className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                    >
+                      <StickyNote className="h-3 w-3" />
+                      {line.item_note ? "Edit note" : "Add note"}
+                    </button>
                   )}
                   {line.sent_to_kitchen && (
                     <div className="text-[10px] font-medium text-success-soft-foreground">✓ in kitchen</div>

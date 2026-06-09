@@ -194,3 +194,104 @@ def test_plain_checkout_has_no_restaurant_fields(db, tenant, branch, terminal, o
     assert item.modifiers == []
     assert item.course is None
     assert item.sent_to_kitchen is False
+
+
+# ---------------------------------------------------------------------------
+# Modifier attachment + product-scoped filtering
+# ---------------------------------------------------------------------------
+
+
+def test_modifier_groups_filtered_by_product(db, tenant, branch, owner_user, burger):
+    from apps.restaurant.models import MenuItemModifierGroup, Modifier, ModifierGroup
+    size = ModifierGroup.objects.create(tenant=tenant, name="Size", min_select=1, max_select=1)
+    Modifier.objects.create(group=size, name="Large", price_delta=Decimal("100"))
+    other = ModifierGroup.objects.create(tenant=tenant, name="Unrelated", min_select=0, max_select=1)
+    MenuItemModifierGroup.objects.create(product=burger, group=size)
+
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+
+    # No filter → both groups.
+    allg = client.get("/api/restaurant/modifier-groups/").json()["results"]
+    assert {g["name"] for g in allg} == {"Size", "Unrelated"}
+
+    # ?product= → only the attached group.
+    scoped = client.get(f"/api/restaurant/modifier-groups/?product={burger.id}").json()["results"]
+    assert {g["name"] for g in scoped} == {"Size"}
+    assert other.name not in {g["name"] for g in scoped}
+
+
+def test_attach_modifier_groups_to_product(db, tenant, branch, owner_user, burger):
+    from apps.restaurant.models import ModifierGroup
+    g1 = ModifierGroup.objects.create(tenant=tenant, name="Size")
+    g2 = ModifierGroup.objects.create(tenant=tenant, name="Add-ons", min_select=0, max_select=3)
+
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    url = f"/api/restaurant/products/{burger.id}/modifier-groups/"
+
+    resp = client.put(url, {"group_ids": [str(g1.id), str(g2.id)]}, format="json")
+    assert resp.status_code == 200, resp.content
+    assert burger.modifier_links.count() == 2
+
+    # GET returns them; PUT with a subset replaces.
+    assert set(client.get(url).json()["group_ids"]) == {str(g1.id), str(g2.id)}
+    client.put(url, {"group_ids": [str(g1.id)]}, format="json")
+    assert burger.modifier_links.count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Open orders — server-synced on send-to-kitchen (live KDS/Floor)
+# ---------------------------------------------------------------------------
+
+
+def test_open_order_created_on_fire_and_shows_on_kds(db, tenant, branch, terminal, owner_user, burger):
+    from apps.restaurant.models import Table
+    table = Table.objects.create(tenant=tenant, branch=branch, name="T9", seats=4)
+    cu = str(uuid.uuid4())
+
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    body = {
+        "client_uuid": cu,
+        "terminal": str(terminal.id),
+        "branch": str(branch.id),
+        "order_type": "dine_in",
+        "table": str(table.id),
+        "covers": 3,
+        "cart_lines": [
+            {"product": str(burger.id), "quantity": "2", "unit_price": "500",
+             "tax_rate": "0", "is_taxable": False,
+             "modifiers": [{"name": "Extra cheese", "price": "50.0000"}], "item_note": "no mayo"},
+        ],
+    }
+    resp = client.post("/api/restaurant/orders/", body, format="json")
+    assert resp.status_code == 200, resp.content
+    order_id = resp.json()["id"]
+
+    # It's a held order, sent to kitchen, with the snapshot + restaurant fields.
+    inv = Invoice.objects.get(pk=order_id)
+    assert inv.is_held and inv.order_status == "sent_to_kitchen"
+    assert inv.order_type == "dine_in" and inv.covers == 3
+    assert inv.grand_total == Decimal("1000.0000")
+    assert inv.items.get().modifiers == [{"name": "Extra cheese", "price": "50.0000"}]
+
+    # Shows live on KDS + floor.
+    assert len(client.get("/api/restaurant/kds/").json()["orders"]) == 1
+    floor = client.get("/api/restaurant/floor/").json()["tables"]
+    t9 = next(t for t in floor if t["name"] == "T9")
+    assert t9["order"] is not None
+
+    # Re-fire (idempotent on client_uuid): same order, replaced lines, no dup.
+    body["cart_lines"].append({"product": str(burger.id), "quantity": "1", "unit_price": "500",
+                               "tax_rate": "0", "is_taxable": False})
+    resp2 = client.post("/api/restaurant/orders/", body, format="json")
+    assert resp2.json()["id"] == order_id
+    assert Invoice.objects.filter(client_uuid=cu).count() == 1
+    inv.refresh_from_db()
+    assert inv.items.count() == 2
+
+    # Resume payload carries cart_lines to rebuild the cart.
+    detail = client.get(f"/api/restaurant/orders/?id={order_id}").json()
+    assert len(detail["cart_lines"]) == 2
+    assert detail["cart_lines"][0]["product"] == str(burger.id)
