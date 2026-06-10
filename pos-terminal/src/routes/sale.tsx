@@ -40,7 +40,6 @@ export default function SaleRoute() {
   // Restaurant tenants get the order-type bar + send-to-kitchen; every other
   // vertical sees the exact current screen (no behaviour change).
   const isRestaurant = tenant?.vertical === "restaurant";
-  const access = useSessionStore((s) => s.access);
 
   // Pending modifier-picker state: when a restaurant menu item has modifier
   // groups we hold the would-be cart line until the cashier picks options.
@@ -56,7 +55,7 @@ export default function SaleRoute() {
    */
   const addWithModifiers = async (line: Parameters<typeof addLine>[0], productId: string) => {
     if (!isRestaurant) { addLine(line); return; }
-    const groups = await fetchModifierGroups(productId, access);
+    const groups = await fetchModifierGroups(productId);
     if (groups.length === 0) { addLine(line); return; }
     setPendingMods({ line, name: line.product_name, groups });
   };

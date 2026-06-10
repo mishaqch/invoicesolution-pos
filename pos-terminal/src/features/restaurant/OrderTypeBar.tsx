@@ -7,8 +7,9 @@
 
 import { useEffect, useState } from "react";
 
+import { api } from "@/lib/api";
+import { useToast } from "@/components/feedback/Toast";
 import { useSaleStore, type OrderType } from "@/stores/sale";
-import { useSessionStore } from "@/stores/session";
 import { OpenOrdersPanel } from "./OpenOrdersPanel";
 
 interface TableRow { id: string; name: string; seats: number }
@@ -23,9 +24,8 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
   const orderType = useSaleStore((s) => s.orderType);
   const tableName = useSaleStore((s) => s.tableName);
   const setOrderContext = useSaleStore((s) => s.setOrderContext);
-  const access = useSessionStore((s) => s.access);
-
   const setCustomer = useSaleStore((s) => s.setCustomer);
+  const toast = useToast();
 
   const [tables, setTables] = useState<TableRow[]>([]);
   const [picking, setPicking] = useState(false);
@@ -58,15 +58,28 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
 
   async function loadTables() {
     try {
-      const base = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? "";
-      const url = `${base}/api/restaurant/tables/${branchId ? `?branch=${branchId}` : ""}`;
-      const resp = await fetch(url, { headers: { Authorization: `Bearer ${access}` } });
-      if (resp.ok) {
-        const data = await resp.json();
-        setTables((data.results ?? data) as TableRow[]);
+      // Use the shared api() helper (resolves base URL + bearer token the same
+      // way as login/catalog) instead of a hand-rolled fetch on VITE_API_URL —
+      // the latter silently failed (empty base → relative URL) leaving the
+      // picker blank. Branch filter is optional: if the cashier's branch has no
+      // tables we still fall back to all of the tenant's tables.
+      const path = `/restaurant/tables/${branchId ? `?branch=${branchId}` : ""}`;
+      const data = await api<{ results?: TableRow[] } | TableRow[]>(path);
+      let rows = (Array.isArray(data) ? data : data.results) ?? [];
+      if (rows.length === 0 && branchId) {
+        const all = await api<{ results?: TableRow[] } | TableRow[]>("/restaurant/tables/");
+        rows = (Array.isArray(all) ? all : all.results) ?? [];
       }
-    } catch {
-      /* offline — table picker just shows nothing; cashier can still proceed */
+      setTables(rows);
+      if (rows.length === 0) {
+        toast.show({ message: "No tables found for this account. Add tables in admin → Restaurant → Tables.", variant: "warning" });
+      }
+    } catch (err) {
+      // Surface the failure instead of silently showing an empty picker.
+      toast.show({
+        message: `Could not load tables: ${err instanceof Error ? err.message : "network error"}`,
+        variant: "destructive",
+      });
     }
   }
 

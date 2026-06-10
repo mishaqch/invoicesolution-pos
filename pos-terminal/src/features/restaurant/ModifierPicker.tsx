@@ -8,11 +8,11 @@
  * multi groups as checkboxes with a max-select guard.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/lib/money";
-import { useSessionStore } from "@/stores/session";
 
 interface Modifier { id: string; name: string; price_delta: string }
 interface Group {
@@ -25,17 +25,15 @@ export interface ChosenModifiers {
 }
 
 /** Fetch the modifier groups attached to a product. Returns [] when none/offline. */
-export async function fetchModifierGroups(productId: string, access: string | null): Promise<Group[]> {
+export async function fetchModifierGroups(productId: string): Promise<Group[]> {
+  // Use the shared api() helper (correct base URL + bearer token) instead of a
+  // hand-rolled fetch on VITE_API_URL. Returns [] when the item has no groups
+  // or the call fails (the picker is then skipped and the item adds directly).
   try {
-    const base = (import.meta as { env?: Record<string, string> }).env?.VITE_API_URL ?? "";
-    // The product-scoped groups endpoint; falls back to all groups if the
-    // per-product link API isn't reachable.
-    const resp = await fetch(`${base}/api/restaurant/modifier-groups/?product=${productId}`, {
-      headers: { Authorization: `Bearer ${access}` },
-    });
-    if (!resp.ok) return [];
-    const data = await resp.json();
-    return (data.results ?? data) as Group[];
+    const data = await api<{ results?: Group[] } | Group[]>(
+      `/restaurant/modifier-groups/?product=${productId}`,
+    );
+    return (Array.isArray(data) ? data : data.results) ?? [];
   } catch {
     return [];
   }

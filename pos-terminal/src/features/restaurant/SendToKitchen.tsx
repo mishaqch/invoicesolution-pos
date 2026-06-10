@@ -43,7 +43,10 @@ export function SendToKitchen({
 
     // 1) Create/update the server open order (live KDS/Floor). Best-effort.
     let serverOk = false;
-    if (branchId && terminalId) {
+    let serverErr: string | null = null;
+    if (!branchId || !terminalId) {
+      serverErr = "terminal not paired to a branch";
+    } else {
       try {
         await fireOpenOrder({
           client_uuid: st.clientUuid,
@@ -71,8 +74,10 @@ export function SendToKitchen({
           })),
         });
         serverOk = true;
-      } catch {
-        /* offline / server error — fall through to print + local mark */
+      } catch (err) {
+        // Keep the message so we can tell the cashier WHY the kitchen screen
+        // didn't update (vs. silently looking like it worked).
+        serverErr = err instanceof Error ? err.message : "network error";
       }
     }
 
@@ -100,25 +105,38 @@ export function SendToKitchen({
       /* printer error — KOT goes to disk via the main process fallback */
     }
 
-    // 3) Mark fired locally regardless (the ticket exists; avoid double-fire).
-    unsent.forEach((l) => updateLine(l.id, { sent_to_kitchen: true }));
+    // Mark lines fired ONLY when the kitchen actually got them (server order
+    // created, or a KOT printed in a true offline case). If the server call
+    // failed while we ARE online, leave them unsent so the cashier can retry —
+    // otherwise the order would silently never reach the kitchen screen.
+    if (serverOk || printOk) {
+      unsent.forEach((l) => updateLine(l.id, { sent_to_kitchen: true }));
+    }
 
     if (serverOk && printOk) {
       toast.show({ message: `Sent ${unsent.length} item(s) to the kitchen.`, variant: "success" });
     } else if (serverOk) {
-      toast.show({ message: "Order sent to kitchen screen; KOT saved to disk (printer issue).", variant: "warning" });
+      toast.show({ message: "Order on the kitchen screen; KOT saved to disk (printer issue).", variant: "warning" });
     } else if (printOk) {
-      toast.show({ message: "KOT printed; kitchen screen will update on next sync (offline).", variant: "warning" });
+      // KOT printed but the server rejected the order — the kitchen SCREEN won't
+      // show it. Tell the cashier why so it's not a silent failure.
+      toast.show({
+        message: `KOT printed, but kitchen screen NOT updated: ${serverErr ?? "server error"}.`,
+        variant: "destructive",
+      });
     } else {
-      toast.show({ message: "Sent (offline) — KOT saved to disk; will sync later.", variant: "warning" });
+      toast.show({
+        message: `Could not send to kitchen: ${serverErr ?? "unknown error"}.`,
+        variant: "destructive",
+      });
     }
     setBusy(false);
   }
 
   return (
-    <Button type="button" variant="outline" className="w-full gap-2" loading={busy} onClick={fire}>
+    <Button type="button" variant="outline" className="w-full gap-2" disabled={busy} onClick={fire}>
       <ChefHat className="h-4 w-4" />
-      Send to kitchen{unsent.length > 0 ? ` (${unsent.length})` : ""}
+      {busy ? "Sending…" : `Send to kitchen${unsent.length > 0 ? ` (${unsent.length})` : ""}`}
     </Button>
   );
 }
