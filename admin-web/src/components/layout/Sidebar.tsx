@@ -45,6 +45,9 @@ interface Item {
    *  (e.g. pharmacy-only Expiry / Suppliers). Items without `vertical`
    *  show for every vertical. */
   vertical?: Vertical;
+  /** When set, the item is HIDDEN for tenants of these verticals (e.g. the
+   *  warehouse-style inventory tools don't fit a restaurant). */
+  hideForVerticals?: Vertical[];
 }
 
 const TOP: Item[] = [
@@ -77,15 +80,19 @@ const CATALOG: Item[] = [
   { to: "/catalog/hs-codes", label: "HS codes", icon: FileText },
 ];
 
+// Warehouse-style stock management (grocery + pharmacy). Restaurants think in
+// orders/KOTs, not stock ledgers, so the whole group is hidden for them
+// (hideForVerticals: ["restaurant"]) — except the pharmacy-only items which
+// already gate to pharmacy.
 const INVENTORY: Item[] = [
-  { to: "/inventory/stock", label: "Stock by branch", icon: Boxes, module: "inventory" },
-  { to: "/inventory/restock", label: "Restock", icon: AlertTriangle, module: "inventory" },
+  { to: "/inventory/stock", label: "Stock by branch", icon: Boxes, module: "inventory", hideForVerticals: ["restaurant"] },
+  { to: "/inventory/restock", label: "Restock", icon: AlertTriangle, module: "inventory", hideForVerticals: ["restaurant"] },
   // Pharmacy-only: batches at/near expiry. Hidden for grocery tenants.
   { to: "/inventory/expiry", label: "Expiry", icon: CalendarClock, module: "inventory", vertical: "pharmacy" },
-  { to: "/inventory/movements", label: "Movements", icon: ClipboardList, module: "inventory" },
-  { to: "/inventory/adjustments", label: "Adjustments", icon: ClipboardList, module: "inventory" },
-  { to: "/inventory/transfers", label: "Transfers", icon: ClipboardList, module: "inventory" },
-  { to: "/inventory/audits", label: "Audits", icon: ClipboardList, module: "inventory" },
+  { to: "/inventory/movements", label: "Movements", icon: ClipboardList, module: "inventory", hideForVerticals: ["restaurant"] },
+  { to: "/inventory/adjustments", label: "Adjustments", icon: ClipboardList, module: "inventory", hideForVerticals: ["restaurant"] },
+  { to: "/inventory/transfers", label: "Transfers", icon: ClipboardList, module: "inventory", hideForVerticals: ["restaurant"] },
+  { to: "/inventory/audits", label: "Audits", icon: ClipboardList, module: "inventory", hideForVerticals: ["restaurant"] },
   // Procurement (pharmacy-only): suppliers + receiving stock via goods receipts.
   { to: "/purchases/receive", label: "Receive stock", icon: PackagePlus, module: "inventory", vertical: "pharmacy" },
   { to: "/suppliers", label: "Suppliers", icon: Truck, module: "inventory", vertical: "pharmacy" },
@@ -135,7 +142,10 @@ export function Sidebar() {
         // Hide vertical-specific links for other verticals. While the vertical
         // is still loading we keep the item (show-too-much-briefly), matching
         // the module behaviour above.
-        (!it.vertical || !vertical || it.vertical === vertical),
+        (!it.vertical || !vertical || it.vertical === vertical) &&
+        // Hide items that don't fit this vertical (e.g. warehouse inventory for
+        // a restaurant). Only hide once we know the vertical.
+        (!it.hideForVerticals || !vertical || !it.hideForVerticals.includes(vertical)),
     );
   }
 
