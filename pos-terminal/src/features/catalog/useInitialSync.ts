@@ -10,8 +10,9 @@ interface SyncState {
   error: string | null;
   productsLocal: number;
   lastSyncedAt: number | null; // epoch ms of last successful sync
-  /** Manually pull the latest catalog now (the "Sync" button). */
-  resync: () => Promise<void>;
+  /** Manually pull the latest catalog now (the "Sync" button). Pass force=true
+   *  to wipe the local catalog first (the "Reset catalog" action). */
+  resync: (force?: boolean) => Promise<void>;
 }
 
 /**
@@ -26,26 +27,31 @@ interface SyncState {
  */
 export function useInitialCatalogSync(): SyncState {
   const access = useSessionStore((s) => s.access);
+  const tenantId = useSessionStore((s) => s.tenant?.id ?? null);
   const [state, setState] = useState<Omit<SyncState, "resync">>({
     status: "idle", error: null, productsLocal: 0, lastSyncedAt: null,
   });
   const accessRef = useRef(access);
   accessRef.current = access;
+  const tenantRef = useRef(tenantId);
+  tenantRef.current = tenantId;
   const inFlight = useRef(false);
 
-  const run = useCallback(async () => {
+  const run = useCallback(async (force = false) => {
     const token = accessRef.current;
     if (!token || inFlight.current) return;
     inFlight.current = true;
     setState((s) => ({ ...s, status: "syncing", error: null }));
     try {
-      const before = await window.api.catalog.count();
-      await window.api.catalog.sync({ apiBase: API_BASE, accessToken: token });
+      // Pass the tenant id so the sync wipes + full-pulls on a tenant switch
+      // (otherwise the terminal keeps a previous tenant's products). `force`
+      // wipes even without a switch (the "Reset catalog" escape hatch).
+      await window.api.catalog.sync({ apiBase: API_BASE, accessToken: token, tenantId: tenantRef.current, force });
       const after = await window.api.catalog.count();
       setState({
         status: "ready",
         error: null,
-        productsLocal: Math.max(before, after),
+        productsLocal: after,
         lastSyncedAt: Date.now(),
       });
     } catch (err) {

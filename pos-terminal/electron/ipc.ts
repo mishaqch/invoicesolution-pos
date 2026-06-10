@@ -137,8 +137,10 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   });
 
   // Catalog
-  ipcMain.handle("catalog:sync", (_e, opts: { apiBase: string; accessToken: string }) =>
-    syncCatalog(opts),
+  ipcMain.handle(
+    "catalog:sync",
+    (_e, opts: { apiBase: string; accessToken: string; tenantId?: string | null; force?: boolean }) =>
+      syncCatalog(opts),
   );
   ipcMain.handle("catalog:search", (_e, query: string, limit?: number) =>
     searchProducts(query, limit),

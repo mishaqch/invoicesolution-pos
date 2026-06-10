@@ -254,11 +254,23 @@ export default function SaleRoute() {
                 variant: "success",
               });
             }}
+            onContextMenu={async (e) => {
+              // Right-click / long-press → "Reset catalog": wipe the local
+              // products and pull a clean full set for THIS tenant. Use this if
+              // the terminal is showing another tenant's products.
+              e.preventDefault();
+              if (!window.confirm("Reset catalog? This clears local products and re-downloads this account's menu.")) return;
+              await sync.resync(true);
+              toast.show({
+                message: t("sale.sync_reset", "Catalog reset — {{n}} products.", { n: sync.productsLocal }),
+                variant: "success",
+              });
+            }}
             disabled={sync.status === "syncing"}
             title={
               sync.lastSyncedAt
-                ? `Last synced ${new Date(sync.lastSyncedAt).toLocaleTimeString()} · ${sync.productsLocal} products`
-                : "Pull the latest products from the cloud"
+                ? `Last synced ${new Date(sync.lastSyncedAt).toLocaleTimeString()} · ${sync.productsLocal} products · right-click to reset`
+                : "Pull the latest products from the cloud (right-click to reset)"
             }
             className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
           >

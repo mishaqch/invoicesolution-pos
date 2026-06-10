@@ -175,7 +175,7 @@ const api = {
     pendingCount: (): Promise<number> => ipcRenderer.invoke("queue:pending-count"),
   },
   catalog: {
-    sync: (opts: { apiBase: string; accessToken: string }): Promise<{
+    sync: (opts: { apiBase: string; accessToken: string; tenantId?: string | null; force?: boolean }): Promise<{
       products: number;
       categories: number;
       batches: number;

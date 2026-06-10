@@ -65,10 +65,41 @@ interface CategoryRow {
 export async function syncCatalog(opts: {
   apiBase: string;
   accessToken: string;
+  /** The logged-in tenant's id. If it differs from the tenant the local
+   *  catalog was last synced for, we WIPE the local catalog and do a clean full
+   *  pull — otherwise an incremental (?since=) sync only ADDS rows, so a
+   *  terminal that previously synced a grocery tenant would keep showing those
+   *  products after logging into a restaurant tenant. */
+  tenantId?: string | null;
+  /** Force a wipe + full re-pull even if the tenant hasn't changed (the
+   *  "Reset catalog" escape hatch). */
+  force?: boolean;
 }): Promise<{ products: number; categories: number; batches: number }> {
   const db = getDb();
 
-  const since = (db
+  // Detect a tenant switch (or a first-ever sync) and reset the local catalog.
+  const lastTenant = (db
+    .prepare("SELECT value FROM kv_meta WHERE key = 'catalog.tenant_id'")
+    .get() as { value: string } | undefined)?.value ?? null;
+  const tenantChanged = opts.force || (!!opts.tenantId && lastTenant !== opts.tenantId);
+  if (tenantChanged) {
+    const wipe = db.transaction(() => {
+      db.prepare("DELETE FROM products").run();
+      db.prepare("DELETE FROM products_fts").run();
+      db.prepare("DELETE FROM categories").run();
+      db.prepare("DELETE FROM product_batches").run();
+      db.prepare("DELETE FROM stock_levels").run();
+      db.prepare("DELETE FROM meta_sync WHERE entity = 'products'").run();
+      db.prepare(
+        "INSERT INTO kv_meta(key, value, updated_at) VALUES ('catalog.tenant_id', ?, CURRENT_TIMESTAMP) " +
+          "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+      ).run(opts.tenantId);
+    });
+    wipe();
+  }
+
+  // After a wipe, `since` is gone → a full pull. Normal runs stay incremental.
+  const since = tenantChanged ? undefined : (db
     .prepare("SELECT last_synced_at FROM meta_sync WHERE entity = 'products'")
     .get() as { last_synced_at: string } | undefined)?.last_synced_at;
 
@@ -175,6 +206,16 @@ export async function syncCatalog(opts: {
       INSERT INTO meta_sync (entity, last_synced_at) VALUES ('products', CURRENT_TIMESTAMP)
       ON CONFLICT(entity) DO UPDATE SET last_synced_at=CURRENT_TIMESTAMP
     `).run();
+
+    // Record which tenant this catalog belongs to (so a future login as a
+    // different tenant triggers the wipe above). Stamped on every successful
+    // sync, covering the first-ever sync where no marker existed yet.
+    if (opts.tenantId) {
+      db.prepare(
+        "INSERT INTO kv_meta(key, value, updated_at) VALUES ('catalog.tenant_id', ?, CURRENT_TIMESTAMP) " +
+          "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+      ).run(opts.tenantId);
+    }
   });
   tx();
 
