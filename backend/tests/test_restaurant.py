@@ -103,7 +103,11 @@ def test_order_checkout_snapshots_modifiers_and_table(db, tenant, branch, termin
     assert inv.order_type == "dine_in"
     assert str(inv.table_id) == str(table.id)
     assert inv.covers == 2
-    assert inv.order_status == "open"
+    # A CHARGED restaurant sale (create_invoice with payments) is finalized →
+    # served, not held/open. (The 'open' status belongs to the held order
+    # created by upsert_open_order before payment.)
+    assert inv.order_status == "served"
+    assert inv.is_held is False
     assert inv.grand_total == Decimal("1000.0000")  # 2 x 500
 
     item = inv.items.get()
@@ -295,3 +299,43 @@ def test_open_order_created_on_fire_and_shows_on_kds(db, tenant, branch, termina
     detail = client.get(f"/api/restaurant/orders/?id={order_id}").json()
     assert len(detail["cart_lines"]) == 2
     assert detail["cart_lines"][0]["product"] == str(burger.id)
+
+
+def test_charge_finalizes_held_open_order_in_place(db, tenant, branch, terminal, owner_user, burger):
+    """An order fired to the kitchen (held) is FINALIZED on charge — same row,
+    same client_uuid: hold cleared, payment recorded, no duplicate invoice."""
+    from apps.restaurant.services import upsert_open_order
+
+    cu = uuid.uuid4()
+    # 1) Fire to kitchen → held open order (no payment).
+    held = upsert_open_order(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=owner_user,
+        payload={
+            "client_uuid": str(cu),
+            "order_type": "dine_in",
+            "cart_lines": [{"product": str(burger.id), "quantity": "2", "unit_price": "450",
+                            "tax_rate": "0", "is_taxable": False}],
+        },
+    )
+    assert held.is_held and held.order_status == "sent_to_kitchen"
+    held_number = held.local_invoice_number
+    held_pk = held.pk
+
+    # 2) Charge with the SAME client_uuid (what the terminal sends at payment).
+    final = checkout.create_invoice(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=owner_user,
+        cash_session=None, customer=None,
+        cart_lines=[{"product": str(burger.id), "quantity": "2", "unit_price": "450",
+                     "tax_rate": "0", "is_taxable": False}],
+        payments=[{"payment_method": "cash", "amount": "900"}],
+        client_uuid=cu, order_type="dine_in",
+    )
+
+    # Same row reused (same pk + number), now finalized + paid + not held.
+    assert final.pk == held_pk
+    assert final.local_invoice_number == held_number
+    assert final.is_held is False
+    assert final.order_status == "served"
+    assert final.paid_total == Decimal("900.0000")
+    # Exactly ONE invoice for this client_uuid — no duplicate.
+    assert Invoice.objects.filter(client_uuid=cu).count() == 1

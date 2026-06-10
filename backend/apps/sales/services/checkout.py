@@ -62,10 +62,20 @@ def create_invoice(
     from the reference when one is supplied and no `customer` arg
     overrides it.
     """
-    # Idempotency: if we've already seen this client_uuid, return the prior row.
+    # Idempotency: if we've already seen this client_uuid, return the prior row —
+    # UNLESS it's a HELD open order (a restaurant order fired to the kitchen
+    # before payment). A held order must be FINALIZED now (clear the hold, record
+    # payment + stock + FBR), not returned as-is. We FINALIZE IT IN PLACE (reuse
+    # the same row, keeping its local_invoice_number) rather than delete +
+    # recreate — deleting would trip the DB-level DELETE grant on the append-only
+    # fbr_submissions table that the Invoice FK points at.
+    finalize_held: Invoice | None = None
     existing = Invoice.objects.filter(client_uuid=client_uuid).first()
     if existing is not None:
-        return existing
+        if not existing.is_held:
+            return existing  # already a finalized sale — true duplicate POST.
+        finalize_held = existing
+        finalize_held.items.all().delete()  # provisional snapshot, no payments/stock yet
 
     # Consistency: the terminal must belong to the invoice's branch. Otherwise
     # the invoice would be numbered under one branch but submitted to FBR under
@@ -107,14 +117,18 @@ def create_invoice(
         buyer_province = None
         buyer_reg = "Unregistered"
 
-    invoice = Invoice.objects.create(
+    invoice_fields = dict(
         tenant_id=tenant_id,
         branch=branch,
         terminal=terminal,
         cashier=cashier,
         cash_session=cash_session,
         customer=customer or (reference_invoice.customer if reference_invoice else None),
-        local_invoice_number=local_invoice_number or next_invoice_number(terminal=terminal),
+        # Finalizing a held order keeps its existing number; a fresh sale gets a new one.
+        local_invoice_number=(
+            finalize_held.local_invoice_number if finalize_held
+            else (local_invoice_number or next_invoice_number(terminal=terminal))
+        ),
         invoice_type=invoice_type,
         reference_invoice=reference_invoice,
         reason=reason,
@@ -137,12 +151,23 @@ def create_invoice(
         client_uuid=client_uuid,
         notes=notes,
         status="pending_sync",
-        # Restaurant vertical (None for other verticals).
+        # Restaurant: charging finalizes the order — clear the hold + mark served.
         order_type=order_type,
         table_id=table_id,
         covers=covers,
-        order_status="open" if order_type else None,
+        order_status=("served" if order_type else None),
+        is_held=False,
+        kitchen_sent_at=(finalize_held.kitchen_sent_at if finalize_held else None),
     )
+
+    if finalize_held is not None:
+        # Finalize the held order in place: update its columns + keep the row.
+        for attr, value in invoice_fields.items():
+            setattr(finalize_held, attr, value)
+        finalize_held.save()
+        invoice = finalize_held
+    else:
+        invoice = Invoice.objects.create(**invoice_fields)
 
     # Pre-flight: any 3rd-Schedule product without a retail_price would
     # produce a PRAL rejection (errorCode 0122 — retail price > 0
