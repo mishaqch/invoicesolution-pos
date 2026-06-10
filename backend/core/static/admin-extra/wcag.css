@@ -22,14 +22,23 @@
     }
 }
 
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+:where(a, button, input, select, textarea, summary, [tabindex]):not(#nav-filter):focus-visible {
     outline: 3px solid rgb(22 163 74) !important;
     outline-offset: 2px !important;
     border-radius: 4px;
 }
 
+/* The sidebar search (#nav-filter) sits inside an Unfold wrapper that already
+ * shows a focus state on the OUTER div — so a ring on the input too is a double
+ * indicator. Suppress the input's own outline; the wrapper owns the cue. */
+#nav-filter:focus,
+#nav-filter:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
 @media (forced-colors: active) {
-    :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    :where(a, button, input, select, textarea, summary, [tabindex]):not(#nav-filter):focus-visible {
         outline: 3px solid CanvasText !important;
     }
     .border-base-200,
