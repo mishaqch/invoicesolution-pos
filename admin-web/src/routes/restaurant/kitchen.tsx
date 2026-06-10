@@ -1,13 +1,32 @@
 import { ChefHat, Clock } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ApiError } from "@/lib/api";
 import { useKds, useOrderAction, type OrderView } from "@/lib/queries";
 
 export default function KitchenDisplay() {
-  const { data, isLoading } = useKds();
+  const { data, isLoading, error } = useKds();
   const action = useOrderAction();
   const orders = data?.orders ?? [];
+  const [notice, setNotice] = useState<string | null>(null);
+
+  function act(id: string, op: "ready" | "served") {
+    setNotice(null);
+    action.mutate({ id, op }, {
+      onError: (err) => {
+        // 404 just means the order was already paid/removed (a stale card from
+        // the 5s poll). Don't alarm the kitchen — note it and let the auto
+        // refetch (onSettled) drop the card.
+        if (err instanceof ApiError && err.status === 404) {
+          setNotice("That order was already cleared — refreshing.");
+        } else {
+          setNotice(`Couldn't update the order: ${err instanceof Error ? err.message : "error"}.`);
+        }
+      },
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -18,8 +37,19 @@ export default function KitchenDisplay() {
         </p>
       </div>
 
+      {notice && (
+        <div className="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning-soft-foreground">
+          {notice}
+        </div>
+      )}
+
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : error ? (
+        <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Couldn't load the kitchen queue ({error instanceof ApiError ? `HTTP ${error.status}` : "network error"}).
+          It will retry automatically.
+        </div>
       ) : orders.length === 0 ? (
         <div className="rounded-md border py-12 text-center text-muted-foreground">
           <ChefHat className="mx-auto mb-2 h-7 w-7 opacity-50" />
@@ -28,7 +58,7 @@ export default function KitchenDisplay() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {orders.map((o) => (
-            <OrderTicket key={o.id} o={o} onAction={(op) => action.mutate({ id: o.id, op })} busy={action.isPending} />
+            <OrderTicket key={o.id} o={o} onAction={(op) => act(o.id, op)} busy={action.isPending} />
           ))}
         </div>
       )}

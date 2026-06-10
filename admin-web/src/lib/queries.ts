@@ -597,7 +597,10 @@ export function useOrderAction() {
   return useMutation({
     mutationFn: ({ id, op }: { id: string; op: "send-to-kitchen" | "ready" | "served" }) =>
       api<OrderView>(`/restaurant/orders/${id}/${op}/`, { method: "POST" }),
-    onSuccess: () => {
+    onSettled: () => {
+      // Always refresh the queue afterwards — including the 404 case where the
+      // order was already paid/removed elsewhere (a stale card from the 5s
+      // poll). The refetch makes the gone order drop off instead of erroring.
       qc.invalidateQueries({ queryKey: ["rest-kds"] });
       qc.invalidateQueries({ queryKey: ["rest-floor"] });
     },
