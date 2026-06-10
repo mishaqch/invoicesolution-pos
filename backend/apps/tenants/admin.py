@@ -33,6 +33,7 @@ from unfold.widgets import (
 from .business_mode import (
     FBR_BUSINESS_NATURE_CHOICES,
     default_modules_for_mode,
+    normalise_vertical_for_mode,
 )
 from .models import Branch, Tenant, TenantMembership, Terminal
 from .modules import MODULES, normalise as normalise_modules
@@ -487,6 +488,13 @@ class TenantAdminForm(forms.ModelForm):
             self.instance.modules_enabled = normalise_modules(
                 default_modules_for_mode(mode),
             )
+        # Vertical (grocery/pharmacy/restaurant) is a POS concept — it shapes the
+        # counter/terminal. A Digital-Invoicing-only tenant has no POS, so the
+        # field is meaningless: normalise it to the neutral default so the tenant
+        # never carries a stale pharmacy/restaurant vertical.
+        self.instance.vertical = normalise_vertical_for_mode(
+            self.cleaned_data.get("business_mode"), self.cleaned_data.get("vertical"),
+        )
         return super().save(commit=commit)
 
 
@@ -520,12 +528,19 @@ class TenantAdmin(ModelAdmin):
         css = {"all": (
             "accounts/admin/admin_forms.css",
             "tenants/admin/fbr_connection_toggle.css",
+            "tenants/admin/vertical_toggle.css",
         )}
         # Live-toggle the "FBR sandbox scenarios" fieldset based on the chosen
         # FBR connection type (show only for di_api; hide for ims_sdc) — covers
         # the create page + dropdown changes before save. The server also drops
         # it for saved ims_sdc tenants (get_fieldsets).
-        js = ("tenants/admin/fbr_connection_toggle.js",)
+        #
+        # vertical_toggle hides the Vertical field when business mode is
+        # Digital Invoicing (vertical is a POS-only concept; DI has no till).
+        js = (
+            "tenants/admin/fbr_connection_toggle.js",
+            "tenants/admin/vertical_toggle.js",
+        )
 
     warn_unsaved_form = True
     list_fullwidth = True

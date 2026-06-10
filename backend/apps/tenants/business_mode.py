@@ -96,6 +96,15 @@ VERTICALS = (
 DEFAULT_VERTICAL = "grocery"
 
 
+def normalise_vertical_for_mode(business_mode: str | None, vertical: str | None) -> str:
+    """Vertical is a POS concept. A Digital-Invoicing-only tenant has no till,
+    so any vertical on it is meaningless — collapse it to the neutral default.
+    POS / both keep whatever vertical was chosen (defaulting when absent)."""
+    if (business_mode or DEFAULT_BUSINESS_MODE) == "digital_invoicing":
+        return DEFAULT_VERTICAL
+    return vertical or DEFAULT_VERTICAL
+
+
 # Which modules each mode unlocks. Used by the onboarding wizard +
 # whenever business_mode flips. Forced modules (sales/fbr/customers)
 # are always on regardless and are not listed here.

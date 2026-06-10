@@ -1,0 +1,5 @@
+/* Hide the Vertical field for Digital-Invoicing-only tenants. !important beats
+ * any inline display Unfold/Alpine sets on the field row. */
+.ivs-hide-vertical {
+  display: none !important;
+}
