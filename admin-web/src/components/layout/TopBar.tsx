@@ -23,6 +23,10 @@ export function TopBar() {
   const logout = useAuthStore((s) => s.logout);
 
   const onLogout = async () => {
+    // Confirm first — logout ends the session and is easy to tap by accident
+    // (especially on mobile). Matches the confirm() pattern used for other
+    // destructive actions across the app.
+    if (!window.confirm("Sign out of your account?")) return;
     if (refresh) {
       try {
         await api("/auth/logout/", {
