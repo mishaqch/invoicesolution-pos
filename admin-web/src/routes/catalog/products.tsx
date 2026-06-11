@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useDeleteProduct, useProducts, useTenantSetup } from "@/lib/queries";
@@ -56,24 +57,26 @@ export default function ProductsList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">{heading}</h1>
-        <div className="flex items-center gap-2">
-          <Link to="/catalog/products/import">
-            <Button variant="outline" size="sm">
-              <Upload className="mr-2 h-4 w-4" /> Import CSV
-            </Button>
-          </Link>
-          <Link to="/catalog/products/new">
-            <Button size="sm">
-              <Plus className="mr-2 h-4 w-4" /> {newLabel}
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title={heading}
+        actions={
+          <>
+            <Link to="/catalog/products/import">
+              <Button variant="outline" size="sm">
+                <Upload className="mr-2 h-4 w-4" /> Import CSV
+              </Button>
+            </Link>
+            <Link to="/catalog/products/new">
+              <Button size="sm">
+                <Plus className="mr-2 h-4 w-4" /> {newLabel}
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
-      <div className="flex max-w-md items-center gap-2">
-        <Search className="h-4 w-4 text-muted-foreground" />
+      <div className="flex w-full items-center gap-2 sm:max-w-md">
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
         <Input
           placeholder="Search by SKU, barcode, name…"
           value={search}
@@ -85,12 +88,12 @@ export default function ProductsList() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>SKU</TableHead>
+              <TableHead className="hidden lg:table-cell">SKU</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Barcode</TableHead>
-              <TableHead>HS code</TableHead>
+              <TableHead className="hidden xl:table-cell">Barcode</TableHead>
+              <TableHead className="hidden xl:table-cell">HS code</TableHead>
               <TableHead className="text-right">Sale price</TableHead>
-              <TableHead>Status</TableHead>
+              <TableHead className="hidden md:table-cell">Status</TableHead>
               <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
@@ -112,20 +115,25 @@ export default function ProductsList() {
             ) : (
               rows.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell className="font-mono text-xs">{p.sku}</TableCell>
+                  <TableCell className="hidden font-mono text-xs lg:table-cell">{p.sku}</TableCell>
                   <TableCell>
                     <Link to={`/catalog/products/${p.id}`} className="hover:underline">
                       {p.name}
                     </Link>
+                    {/* SKU shown inline under the name on small screens where the
+                        SKU column is hidden, so it's never lost. */}
+                    <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">
+                      {p.sku}
+                    </span>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
+                  <TableCell className="hidden font-mono text-xs text-muted-foreground xl:table-cell">
                     {p.barcode ?? "—"}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
+                  <TableCell className="hidden font-mono text-xs text-muted-foreground xl:table-cell">
                     {p.hs_code ?? "—"}
                   </TableCell>
                   <TableCell className="text-right font-mono">{money(p.sale_price)}</TableCell>
-                  <TableCell>
+                  <TableCell className="hidden md:table-cell">
                     {p.is_active ? (
                       <Badge variant="secondary">Active</Badge>
                     ) : (

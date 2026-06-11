@@ -97,12 +97,12 @@ export default function CustomerDetail() {
       <Link to="/customers" className="text-sm text-muted-foreground hover:underline">
         ← Customers
       </Link>
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">
           {isNew ? "New customer" : form.name || "Customer"}
         </h1>
         {!isNew && existing && (
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
             <span>
               Balance:{" "}
               <span className="font-mono">{formatRs(existing.current_balance)}</span>

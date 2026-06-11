@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useProducts, useStockMovements } from "@/lib/queries";
 
@@ -8,17 +9,16 @@ export default function Movements() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Stock movements</h1>
-      <p className="text-sm text-muted-foreground">Append-only ledger. Most recent first.</p>
+      <PageHeader title="Stock movements" subtitle="Append-only ledger. Most recent first." />
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>When</TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead className="hidden md:table-cell">Type</TableHead>
               <TableHead>Product</TableHead>
               <TableHead className="text-right">Qty</TableHead>
-              <TableHead>Reason</TableHead>
+              <TableHead className="hidden lg:table-cell">Reason</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -32,10 +32,10 @@ export default function Movements() {
                   <TableCell className="text-xs text-muted-foreground">
                     {new Date(m.created_at).toLocaleString()}
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{m.movement_type}</TableCell>
+                  <TableCell className="hidden font-mono text-xs md:table-cell">{m.movement_type}</TableCell>
                   <TableCell>{productLookup.get(m.product)?.name ?? m.product}</TableCell>
                   <TableCell className="text-right font-mono">{m.quantity}</TableCell>
-                  <TableCell className="text-sm">{m.reason}</TableCell>
+                  <TableCell className="hidden text-sm lg:table-cell">{m.reason}</TableCell>
                 </TableRow>
               ))
             )}

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useTaxRates } from "@/lib/queries";
 
@@ -6,18 +7,17 @@ export default function TaxRatesList() {
   const { data, isLoading } = useTaxRates();
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Tax rates</h1>
-      <p className="text-sm text-muted-foreground">
-        Standard rates seeded at tenant creation. Edit via the Django admin until the
-        full edit UI ships.
-      </p>
+      <PageHeader
+        title="Tax rates"
+        subtitle="Standard rates seeded at tenant creation. Edit via the Django admin until the full edit UI ships."
+      />
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead className="text-right">Rate</TableHead>
-              <TableHead>Applies to</TableHead>
+              <TableHead className="hidden sm:table-cell">Applies to</TableHead>
               <TableHead>Default</TableHead>
             </TableRow>
           </TableHeader>
@@ -29,7 +29,7 @@ export default function TaxRatesList() {
                 <TableRow key={t.id}>
                   <TableCell>{t.name}</TableCell>
                   <TableCell className="text-right font-mono">{t.rate}%</TableCell>
-                  <TableCell className="capitalize">{t.applies_to}</TableCell>
+                  <TableCell className="hidden capitalize sm:table-cell">{t.applies_to}</TableCell>
                   <TableCell>{t.is_default && <Badge>Default</Badge>}</TableCell>
                 </TableRow>
               ))

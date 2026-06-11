@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useSyncStatus, useTerminals } from "@/lib/queries";
 
@@ -15,13 +16,10 @@ export default function SyncHealth() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Sync health</h1>
-        <p className="text-sm text-muted-foreground">
-          Live status of every terminal's outbound queue. Auto-refreshes
-          every 5 seconds.
-        </p>
-      </div>
+      <PageHeader
+        title="Sync health"
+        subtitle="Live status of every terminal's outbound queue. Auto-refreshes every 5 seconds."
+      />
 
       <Card>
         <CardHeader>
@@ -32,10 +30,10 @@ export default function SyncHealth() {
             <TableHeader>
               <TableRow>
                 <TableHead>Terminal</TableHead>
-                <TableHead>Branch</TableHead>
+                <TableHead className="hidden lg:table-cell">Branch</TableHead>
                 <TableHead>Pending</TableHead>
                 <TableHead>Failed</TableHead>
-                <TableHead>Last sync</TableHead>
+                <TableHead className="hidden md:table-cell">Last sync</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -59,7 +57,7 @@ export default function SyncHealth() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="hidden font-mono text-xs lg:table-cell">
                         {t?.branch.slice(0, 8) ?? "—"}…
                       </TableCell>
                       <TableCell className="font-mono">
@@ -72,7 +70,7 @@ export default function SyncHealth() {
                           0
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
+                      <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
                         {s.last_processed_at
                           ? new Date(s.last_processed_at).toLocaleString()
                           : "—"}

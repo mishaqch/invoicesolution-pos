@@ -732,15 +732,15 @@ export default function InvoiceDetail() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>#</TableHead>
+                <TableHead className="hidden sm:table-cell">#</TableHead>
                 <TableHead>Product</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead title="PRAL HS code submitted to FBR for this line">
+                <TableHead className="hidden lg:table-cell">SKU</TableHead>
+                <TableHead className="hidden xl:table-cell" title="PRAL HS code submitted to FBR for this line">
                   HS code
                 </TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Unit price</TableHead>
-                <TableHead className="text-right">Tax</TableHead>
+                <TableHead className="hidden text-right md:table-cell">Unit price</TableHead>
+                <TableHead className="hidden text-right md:table-cell">Tax</TableHead>
                 <TableHead className="text-right">Line total</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -754,23 +754,27 @@ export default function InvoiceDetail() {
                 const lineGated = it.is_cancelled || it.is_edited || !canCancel;
                 return (
                   <TableRow key={it.id} className={it.is_cancelled ? "opacity-50" : ""}>
-                    <TableCell>{it.line_number}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{it.line_number}</TableCell>
                     <TableCell>
                       {it.is_cancelled && <span className="mr-1 text-xs font-bold text-destructive">C</span>}
                       {it.is_edited && <span className="mr-1 text-xs font-bold text-amber-600">E</span>}
                       <span className={it.is_cancelled ? "line-through" : ""}>
                         {it.product_name}
                       </span>
+                      {/* SKU surfaced inline where the SKU column is hidden. */}
+                      <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">
+                        {it.product_sku}
+                      </span>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{it.product_sku}</TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">{it.product_sku}</TableCell>
+                    <TableCell className="hidden font-mono text-xs xl:table-cell">
                       {it.hs_code || (
                         <span className="text-muted-foreground italic">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right font-mono">{it.quantity}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {money(it.unit_price)}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {money(it.tax_amount)}</TableCell>
+                    <TableCell className="hidden text-right font-mono md:table-cell">Rs {money(it.unit_price)}</TableCell>
+                    <TableCell className="hidden text-right font-mono md:table-cell">Rs {money(it.tax_amount)}</TableCell>
                     <TableCell className="text-right font-mono">Rs {money(it.line_total)}</TableCell>
                     <TableCell className="text-right">
                       {!lineGated && (
@@ -856,7 +860,7 @@ export default function InvoiceDetail() {
               and counts against this month's 10% amendment cap.
             </p>
 
-            <div className="mt-4 grid grid-cols-3 gap-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-qty">Quantity</Label>
                 <NumberInput
@@ -1294,11 +1298,11 @@ function FbrSubmissionsPanel({ invoiceId }: { invoiceId: string }) {
           <TableHeader>
             <TableRow>
               <TableHead>When</TableHead>
-              <TableHead>Endpoint</TableHead>
-              <TableHead>Env</TableHead>
-              <TableHead className="text-right">HTTP</TableHead>
+              <TableHead className="hidden lg:table-cell">Endpoint</TableHead>
+              <TableHead className="hidden xl:table-cell">Env</TableHead>
+              <TableHead className="hidden text-right md:table-cell">HTTP</TableHead>
               <TableHead className="text-right">PRAL code</TableHead>
-              <TableHead className="text-right">ms</TableHead>
+              <TableHead className="hidden text-right xl:table-cell">ms</TableHead>
               <TableHead>FBR no. / error</TableHead>
             </TableRow>
           </TableHeader>
@@ -1327,14 +1331,18 @@ function SubmissionRow({ row }: { row: FbrSubmissionRow }) {
       >
         <TableCell className="font-mono text-xs">
           {new Date(row.submitted_at).toLocaleString()}
+          {/* Endpoint surfaced inline where its column is hidden. */}
+          <span className="block text-[11px] text-muted-foreground lg:hidden">
+            {row.endpoint}
+          </span>
         </TableCell>
-        <TableCell className="font-mono text-xs">{row.endpoint}</TableCell>
-        <TableCell className="text-xs">
+        <TableCell className="hidden font-mono text-xs lg:table-cell">{row.endpoint}</TableCell>
+        <TableCell className="hidden text-xs xl:table-cell">
           <Badge variant={row.environment === "production" ? "default" : "info"}>
             {row.environment}
           </Badge>
         </TableCell>
-        <TableCell className="text-right font-mono text-xs">
+        <TableCell className="hidden text-right font-mono text-xs md:table-cell">
           {row.http_status}
         </TableCell>
         <TableCell className="text-right font-mono text-xs">
@@ -1342,7 +1350,7 @@ function SubmissionRow({ row }: { row: FbrSubmissionRow }) {
             {row.status_code || "—"}
           </Badge>
         </TableCell>
-        <TableCell className="text-right font-mono text-xs">
+        <TableCell className="hidden text-right font-mono text-xs xl:table-cell">
           {row.duration_ms ?? "—"}
         </TableCell>
         <TableCell className="font-mono text-[11px] break-all max-w-[280px]">
@@ -1352,7 +1360,7 @@ function SubmissionRow({ row }: { row: FbrSubmissionRow }) {
       {open && (
         <TableRow>
           <TableCell colSpan={7} className="bg-muted/30 p-0">
-            <div className="grid grid-cols-2 gap-4 p-3">
+            <div className="grid grid-cols-1 gap-4 p-3 md:grid-cols-2">
               <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Request payload

@@ -73,7 +73,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar />
         <SyncBanner />
-        <main id="main-content" className="flex-1 overflow-auto p-6" role="main">
+        <main id="main-content" className="flex-1 overflow-auto p-4 md:p-6" role="main">
           {children}
         </main>
       </div>

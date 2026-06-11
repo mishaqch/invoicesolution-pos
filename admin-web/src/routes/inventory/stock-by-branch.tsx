@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useBranches, useProducts, useStockLevels } from "@/lib/queries";
@@ -15,8 +16,8 @@ export default function StockByBranch() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Stock by branch</h1>
-      <div className="flex max-w-md items-end gap-3">
+      <PageHeader title="Stock by branch" />
+      <div className="flex w-full items-end gap-3 sm:max-w-md">
         <div className="flex-1 space-y-1.5">
           <label className="text-sm font-medium">Branch</label>
           <Select value={branch} onChange={(e) => setBranch(e.target.value)}>
@@ -33,9 +34,9 @@ export default function StockByBranch() {
           <TableHeader>
             <TableRow>
               <TableHead>Product</TableHead>
-              <TableHead>SKU</TableHead>
+              <TableHead className="hidden lg:table-cell">SKU</TableHead>
               <TableHead className="text-right">Quantity</TableHead>
-              <TableHead className="text-right">Reorder level</TableHead>
+              <TableHead className="hidden text-right md:table-cell">Reorder level</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -48,10 +49,17 @@ export default function StockByBranch() {
                 const p = productLookup.get(s.product);
                 return (
                   <TableRow key={s.id}>
-                    <TableCell>{p?.name ?? s.product}</TableCell>
-                    <TableCell className="font-mono text-xs">{p?.sku}</TableCell>
+                    <TableCell>
+                      {p?.name ?? s.product}
+                      {p?.sku && (
+                        <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">
+                          {p.sku}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">{p?.sku}</TableCell>
                     <TableCell className="text-right font-mono">{s.quantity}</TableCell>
-                    <TableCell className="text-right font-mono">{s.reorder_level ?? "—"}</TableCell>
+                    <TableCell className="hidden text-right font-mono md:table-cell">{s.reorder_level ?? "—"}</TableCell>
                   </TableRow>
                 );
               })

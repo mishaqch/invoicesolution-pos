@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/stores/auth";
 import { extractApiErrorMessage } from "@/lib/api";
@@ -398,32 +399,32 @@ export default function ScenariosPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Sandbox scenarios
-          </h1>
-          <p className="max-w-3xl text-sm text-muted-foreground">
+      <PageHeader
+        title="Sandbox scenarios"
+        subtitle={
+          <span className="max-w-3xl">
             Each scenario submits a synthetic invoice to PRAL's sandbox
             (the exact saleType, rate, and SRO schedule each scenarioId
             requires) and reports PRAL's response. Run them one at a
             time to iterate on a failing scenario, or "Run all" to
             verify the whole list. All eligible scenarios must pass
             before the production token activates.
-          </p>
-        </div>
-        <Button
-          onClick={() => runAll.mutate()}
-          disabled={runAll.isPending || tokenMissing}
-        >
-          {runAll.isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Play className="mr-2 h-4 w-4" />
-          )}
-          Run all eligible
-        </Button>
-      </div>
+          </span>
+        }
+        actions={
+          <Button
+            onClick={() => runAll.mutate()}
+            disabled={runAll.isPending || tokenMissing}
+          >
+            {runAll.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Play className="mr-2 h-4 w-4" />
+            )}
+            Run all eligible
+          </Button>
+        }
+      />
 
       {tokenMissing && (
         <p className="text-sm text-amber-700">

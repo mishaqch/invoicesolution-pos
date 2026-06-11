@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { extractApiErrorMessage } from "@/lib/api";
 import {
@@ -103,17 +104,15 @@ export default function ReceiveStock() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Receive stock</h1>
-        <p className="text-sm text-muted-foreground">
-          Record a delivery from a supplier. Posting creates batches (with expiry) and adds the stock to inventory.
-        </p>
-      </div>
+      <PageHeader
+        title="Receive stock"
+        subtitle="Record a delivery from a supplier. Posting creates batches (with expiry) and adds the stock to inventory."
+      />
 
       <Card>
         <CardHeader><CardTitle>New goods receipt</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:grid-cols-4">
             <Field label="Supplier" id="grn_supplier">
               <Select id="grn_supplier" value={supplier} onChange={(e) => setSupplier(e.target.value)}>
                 <option value="">Select…</option>
@@ -136,14 +135,14 @@ export default function ReceiveStock() {
           </div>
 
           {/* Lines */}
-          <div className="rounded-md border">
-            <div className="grid grid-cols-[2fr_0.8fr_1fr_1fr_1fr_auto] gap-2 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+          <div className="rounded-md border overflow-x-auto">
+            <div className="grid min-w-[640px] grid-cols-[2fr_0.8fr_1fr_1fr_1fr_auto] gap-2 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
               <span>Product</span><span>Qty</span><span>Cost</span><span>Batch #</span><span>Expiry</span><span></span>
             </div>
             {lines.map((l, i) => {
               const needsBatch = l.product ? productById[l.product]?.is_batch_tracked : false;
               return (
-                <div key={i} className="grid grid-cols-[2fr_0.8fr_1fr_1fr_1fr_auto] items-center gap-2 border-b px-3 py-2 last:border-0">
+                <div key={i} className="grid min-w-[640px] grid-cols-[2fr_0.8fr_1fr_1fr_1fr_auto] items-center gap-2 border-b px-3 py-2 last:border-0">
                   <Select value={l.product} onChange={(e) => setLine(i, { product: e.target.value })}>
                     <option value="">Select product…</option>
                     {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

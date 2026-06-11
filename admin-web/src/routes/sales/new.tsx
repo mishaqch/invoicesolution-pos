@@ -670,7 +670,7 @@ export default function NewInvoiceRoute() {
                   operator always knows how many items they've added
                   in this picker session and can close in one click. */}
               <div className="flex items-center gap-2">
-                <div className="relative flex-1 max-w-md">
+                <div className="relative w-full flex-1 sm:max-w-md">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     className="pl-9"
@@ -773,6 +773,7 @@ export default function NewInvoiceRoute() {
               No lines yet. Click "Add line" to pick a product.
             </p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/40 text-xs">
                 <tr>
@@ -868,6 +869,7 @@ export default function NewInvoiceRoute() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1040,7 +1042,7 @@ function PaymentExtraFields({
 
   if (m === "card_credit" || m === "card_debit") {
     return (
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <NumberInput
           mode="integer"
           maxLength={4}
@@ -1093,7 +1095,7 @@ function PaymentExtraFields({
 
   if (m === "cheque") {
     return (
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <Input
           value={payment.cheque_number ?? ""}
           onChange={(e) => onChange({ cheque_number: e.target.value })}
@@ -1118,7 +1120,7 @@ function PaymentExtraFields({
 
   if (m === "bank_transfer") {
     return (
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Input
           value={payment.bank_name ?? ""}
           onChange={(e) => onChange({ bank_name: e.target.value })}

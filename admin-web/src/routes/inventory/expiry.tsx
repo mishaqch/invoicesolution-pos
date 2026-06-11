@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -56,23 +57,21 @@ export default function ExpiryList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Expiry</h1>
-          <p className="text-sm text-muted-foreground">
-            Batches in stock that have expired or are nearing expiry — clear or return these.
-          </p>
-        </div>
-        {expiredCount > 0 && (
-          <Badge variant="destructive" className="gap-1 text-sm">
-            <CalendarX className="h-4 w-4" /> {expiredCount} expired in view
-          </Badge>
-        )}
-      </div>
+      <PageHeader
+        title="Expiry"
+        subtitle="Batches in stock that have expired or are nearing expiry — clear or return these."
+        actions={
+          expiredCount > 0 ? (
+            <Badge variant="destructive" className="gap-1 text-sm">
+              <CalendarX className="h-4 w-4" /> {expiredCount} expired in view
+            </Badge>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex max-w-xs flex-1 items-center gap-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
+        <div className="flex w-full max-w-xs flex-1 items-center gap-2">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
           <Input
             placeholder="Search name, SKU or batch…"
             value={search}
@@ -95,10 +94,10 @@ export default function ExpiryList() {
           <TableHeader>
             <TableRow>
               <TableHead>Product</TableHead>
-              <TableHead>Batch</TableHead>
+              <TableHead className="hidden lg:table-cell">Batch</TableHead>
               <TableHead>Expiry</TableHead>
               <TableHead className="text-right">In stock</TableHead>
-              <TableHead>Branch</TableHead>
+              <TableHead className="hidden md:table-cell">Branch</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
@@ -122,13 +121,16 @@ export default function ExpiryList() {
                     </Link>
                     <div className="font-mono text-xs text-muted-foreground">{r.sku}</div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">{r.batch_number}</TableCell>
+                  <TableCell className="hidden font-mono text-xs lg:table-cell">{r.batch_number}</TableCell>
                   <TableCell className="text-sm">
                     {r.expiry_date}
                     <div className="text-xs text-muted-foreground">{describeDays(r.days_to_expiry)}</div>
+                    <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">
+                      {r.batch_number}
+                    </span>
                   </TableCell>
                   <TableCell className="text-right font-mono">{fmt(r.on_hand)} {r.uom ?? ""}</TableCell>
-                  <TableCell className="text-muted-foreground">{r.branch ?? "—"}</TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">{r.branch ?? "—"}</TableCell>
                   <TableCell>{statusBadge(r)}</TableCell>
                 </TableRow>
               ))

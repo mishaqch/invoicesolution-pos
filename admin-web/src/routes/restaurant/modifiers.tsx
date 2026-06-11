@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
+import { PageHeader } from "@/components/ui/page-header";
 import { extractApiErrorMessage } from "@/lib/api";
 import { money } from "@/lib/utils";
 import {
@@ -24,17 +25,15 @@ export default function ModifiersAdmin() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Modifiers</h1>
-          <p className="text-sm text-muted-foreground">
-            Option groups for menu items — sizes, add-ons. Attach them to a product on its edit page.
-          </p>
-        </div>
-        <Button onClick={() => setEditing("new")} className="gap-1">
-          <Plus className="h-4 w-4" /> New group
-        </Button>
-      </div>
+      <PageHeader
+        title="Modifiers"
+        subtitle="Option groups for menu items — sizes, add-ons. Attach them to a product on its edit page."
+        actions={
+          <Button onClick={() => setEditing("new")} className="gap-1">
+            <Plus className="h-4 w-4" /> New group
+          </Button>
+        }
+      />
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -129,7 +128,7 @@ function GroupForm({ group, onClose }: { group: RestaurantModifierGroup | null; 
         <CardHeader><CardTitle>{group ? "Edit group" : "New modifier group"}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <Field label="Group name" id="g_name"><Input id="g_name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Size / Add-ons" /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Min select (0 = optional)" id="g_min"><NumberInput id="g_min" mode="integer" value={minSel} onChange={setMinSel} /></Field>
             <Field label="Max select" id="g_max"><NumberInput id="g_max" mode="integer" value={maxSel} onChange={setMaxSel} /></Field>
           </div>

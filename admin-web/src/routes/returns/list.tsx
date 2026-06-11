@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useBranches, useReturns } from "@/lib/queries";
@@ -21,7 +22,7 @@ export default function ReturnsList() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Returns</h1>
+      <PageHeader title="Returns" />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
         <div>
@@ -56,10 +57,10 @@ export default function ReturnsList() {
           <TableHeader>
             <TableRow>
               <TableHead>Return #</TableHead>
-              <TableHead>Date</TableHead>
+              <TableHead className="hidden md:table-cell">Date</TableHead>
               <TableHead>FBR route</TableHead>
-              <TableHead>Reason</TableHead>
-              <TableHead>Refund method</TableHead>
+              <TableHead className="hidden lg:table-cell">Reason</TableHead>
+              <TableHead className="hidden lg:table-cell">Refund method</TableHead>
               <TableHead className="text-right">Refund</TableHead>
             </TableRow>
           </TableHeader>
@@ -75,15 +76,18 @@ export default function ReturnsList() {
                     <Link to={`/returns/${r.id}`} className="hover:underline">
                       {r.return_number}
                     </Link>
+                    <span className="block text-[11px] text-muted-foreground md:hidden">
+                      {r.return_date}
+                    </span>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{r.return_date}</TableCell>
+                  <TableCell className="hidden text-xs text-muted-foreground md:table-cell">{r.return_date}</TableCell>
                   <TableCell>
                     <Badge variant={r.fbr_route === "amend" ? "default" : "secondary"}>
                       {r.fbr_route ?? "—"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-xs">{r.reason.replace("_", " ")}</TableCell>
-                  <TableCell className="text-xs">{r.refund_method.replace("_", " ")}</TableCell>
+                  <TableCell className="hidden text-xs lg:table-cell">{r.reason.replace("_", " ")}</TableCell>
+                  <TableCell className="hidden text-xs lg:table-cell">{r.refund_method.replace("_", " ")}</TableCell>
                   <TableCell className="text-right font-mono">Rs {money(r.refund_amount)}</TableCell>
                 </TableRow>
               ))

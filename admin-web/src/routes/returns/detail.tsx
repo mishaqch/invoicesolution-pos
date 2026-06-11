@@ -75,11 +75,11 @@ export default function ReturnDetail() {
               <TableRow>
                 <TableHead>Product</TableHead>
                 <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Unit price</TableHead>
-                <TableHead className="text-right">Tax</TableHead>
+                <TableHead className="hidden text-right md:table-cell">Unit price</TableHead>
+                <TableHead className="hidden text-right lg:table-cell">Tax</TableHead>
                 <TableHead className="text-right">Line total</TableHead>
-                <TableHead>Restocked</TableHead>
-                <TableHead>Movement</TableHead>
+                <TableHead className="hidden md:table-cell">Restocked</TableHead>
+                <TableHead className="hidden lg:table-cell">Movement</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -89,11 +89,11 @@ export default function ReturnDetail() {
                     {it.product.slice(0, 8)}…
                   </TableCell>
                   <TableCell className="text-right font-mono">{it.quantity}</TableCell>
-                  <TableCell className="text-right font-mono">{money(it.unit_price)}</TableCell>
-                  <TableCell className="text-right font-mono">{it.tax_amount}</TableCell>
+                  <TableCell className="hidden text-right font-mono md:table-cell">{money(it.unit_price)}</TableCell>
+                  <TableCell className="hidden text-right font-mono lg:table-cell">{it.tax_amount}</TableCell>
                   <TableCell className="text-right font-mono">{it.line_total}</TableCell>
-                  <TableCell>{it.restocked ? "Yes" : "No"}</TableCell>
-                  <TableCell className="font-mono text-xs">{it.movement_type}</TableCell>
+                  <TableCell className="hidden md:table-cell">{it.restocked ? "Yes" : "No"}</TableCell>
+                  <TableCell className="hidden font-mono text-xs lg:table-cell">{it.movement_type}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

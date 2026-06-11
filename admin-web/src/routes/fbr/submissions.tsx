@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -19,7 +20,7 @@ export default function SubmissionsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">FBR submissions</h1>
+      <PageHeader title="FBR submissions" />
 
       <div className="flex items-end gap-2">
         <div>
@@ -39,11 +40,11 @@ export default function SubmissionsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>When</TableHead>
-                <TableHead>Endpoint</TableHead>
-                <TableHead>Env</TableHead>
+                <TableHead className="hidden lg:table-cell">Endpoint</TableHead>
+                <TableHead className="hidden md:table-cell">Env</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>FBR #</TableHead>
-                <TableHead className="text-right">Duration</TableHead>
+                <TableHead className="hidden text-right lg:table-cell">Duration</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
@@ -60,8 +61,8 @@ export default function SubmissionsPage() {
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(row.submitted_at).toLocaleString()}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{row.endpoint}</TableCell>
-                    <TableCell>{row.environment}</TableCell>
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">{row.endpoint}</TableCell>
+                    <TableCell className="hidden md:table-cell">{row.environment}</TableCell>
                     <TableCell>
                       <Badge
                         variant={row.status_code === "00" ? "default" : "destructive"}
@@ -72,7 +73,7 @@ export default function SubmissionsPage() {
                     <TableCell className="font-mono text-xs">
                       {row.fbr_invoice_number ?? "—"}
                     </TableCell>
-                    <TableCell className="text-right text-xs">
+                    <TableCell className="hidden text-right text-xs lg:table-cell">
                       {row.duration_ms ? `${row.duration_ms} ms` : "—"}
                     </TableCell>
                     <TableCell className="text-right">

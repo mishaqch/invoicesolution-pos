@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { cn, money } from "@/lib/utils";
 import { useFloor, type FloorTable, type OrderView } from "@/lib/queries";
 
@@ -21,12 +22,10 @@ export default function FloorView() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Floor</h1>
-        <p className="text-sm text-muted-foreground">
-          Live table map — free, occupied, and order status. Tap an occupied table to view its bill. Refreshes automatically.
-        </p>
-      </div>
+      <PageHeader
+        title="Floor"
+        subtitle="Live table map — free, occupied, and order status. Tap an occupied table to view its bill. Refreshes automatically."
+      />
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>

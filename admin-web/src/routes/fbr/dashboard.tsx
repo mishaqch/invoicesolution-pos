@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { useIsImsSdc } from "@/features/modules/hooks";
 import { useFbrCancelBudget, useFbrPosStatus, useFbrStatus } from "@/lib/queries";
 
@@ -10,7 +11,7 @@ export default function FbrDashboard() {
   const imsSdc = useIsImsSdc();
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">FBR / Compliance</h1>
+      <PageHeader title="FBR / Compliance" />
       {imsSdc ? <ImsDashboard /> : <DiApiDashboard />}
     </div>
   );

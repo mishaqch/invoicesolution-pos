@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useIsImsSdc } from "@/features/modules/hooks";
@@ -61,12 +62,12 @@ export default function BranchesList() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Branches</h1>
+      <PageHeader title="Branches" />
 
       <Card>
         <CardHeader><CardTitle>Add branch</CardTitle></CardHeader>
         <CardContent>
-          <form onSubmit={add} className="grid grid-cols-2 gap-3">
+          <form onSubmit={add} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Name *"><Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} required /></Field>
             <Field label="Code *"><Input value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} required /></Field>
             <Field label="City *"><Input value={v.city} onChange={(e) => setV({ ...v, city: e.target.value })} required /></Field>
@@ -75,12 +76,12 @@ export default function BranchesList() {
                 {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
               </Select>
             </Field>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <Field label="Address *">
                 <Input value={v.address} onChange={(e) => setV({ ...v, address: e.target.value })} required />
               </Field>
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <Button type="submit" loading={create.isPending}>
                 <Plus className="mr-2 h-4 w-4" /> {create.isPending ? "Adding…" : "Add"}
               </Button>
@@ -95,13 +96,13 @@ export default function BranchesList() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead>City</TableHead>
-              <TableHead>Province</TableHead>
+              <TableHead className="hidden lg:table-cell">Code</TableHead>
+              <TableHead className="hidden md:table-cell">City</TableHead>
+              <TableHead className="hidden xl:table-cell">Province</TableHead>
               <TableHead>FBR POS</TableHead>
               {/* DI-API per-branch token is irrelevant to IMS/SDC tenants. */}
-              {!imsSdc && <TableHead>Token</TableHead>}
-              <TableHead>Active</TableHead>
+              {!imsSdc && <TableHead className="hidden lg:table-cell">Token</TableHead>}
+              <TableHead className="hidden md:table-cell">Active</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
@@ -148,10 +149,13 @@ function BranchRow({
   return (
     <>
       <TableRow>
-        <TableCell>{branch.name}</TableCell>
-        <TableCell className="font-mono text-xs">{branch.code}</TableCell>
-        <TableCell>{branch.city}</TableCell>
-        <TableCell>{branch.province}</TableCell>
+        <TableCell>
+          {branch.name}
+          <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">{branch.code}</span>
+        </TableCell>
+        <TableCell className="hidden font-mono text-xs lg:table-cell">{branch.code}</TableCell>
+        <TableCell className="hidden md:table-cell">{branch.city}</TableCell>
+        <TableCell className="hidden xl:table-cell">{branch.province}</TableCell>
         <TableCell>
           {registered ? (
             <Badge variant="success" className="gap-1">
@@ -162,7 +166,7 @@ function BranchRow({
           )}
         </TableCell>
         {!imsSdc && (
-          <TableCell>
+          <TableCell className="hidden lg:table-cell">
             {!hasToken ? (
               <Badge variant="muted">No token</Badge>
             ) : tokenActive ? (
@@ -172,7 +176,7 @@ function BranchRow({
             )}
           </TableCell>
         )}
-        <TableCell>{branch.is_active ? "Yes" : "No"}</TableCell>
+        <TableCell className="hidden md:table-cell">{branch.is_active ? "Yes" : "No"}</TableCell>
         <TableCell>
           <Button variant="ghost" size="sm" onClick={onToggle}>
             <Settings2 className="mr-1 h-4 w-4" /> FBR POS
@@ -347,7 +351,7 @@ function FbrPosEditor({
 
       {/* POS ID + Code */}
       <div className="space-y-2">
-        <div className="grid max-w-xl grid-cols-2 gap-3">
+        <div className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="FBR POS ID">
             <Input value={posId} onChange={(e) => setPosId(e.target.value)}
               placeholder="e.g. 194444" inputMode="numeric" />

@@ -198,9 +198,9 @@ export default function CustomerImportRoute() {
       {result && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center justify-between text-sm">
+            <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <span>2. Review preview</span>
-              <span className="flex gap-1.5">
+              <span className="flex flex-wrap gap-1.5">
                 <Badge variant="info">{result.rows_total} rows</Badge>
                 <Badge variant="success">{result.would_create} new</Badge>
                 <Badge variant="warning">{result.would_update} updates</Badge>

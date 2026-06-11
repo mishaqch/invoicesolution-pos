@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { extractApiErrorMessage } from "@/lib/api";
@@ -44,20 +45,18 @@ export default function SuppliersList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Suppliers</h1>
-          <p className="text-sm text-muted-foreground">
-            Distributors you buy stock from. Goods receipts reference a supplier so every batch is traceable.
-          </p>
-        </div>
-        <Button onClick={() => setEditing("new")} className="gap-1">
-          <Plus className="h-4 w-4" /> New supplier
-        </Button>
-      </div>
+      <PageHeader
+        title="Suppliers"
+        subtitle="Distributors you buy stock from. Goods receipts reference a supplier so every batch is traceable."
+        actions={
+          <Button onClick={() => setEditing("new")} className="gap-1">
+            <Plus className="h-4 w-4" /> New supplier
+          </Button>
+        }
+      />
 
-      <div className="flex max-w-xs items-center gap-2">
-        <Search className="h-4 w-4 text-muted-foreground" />
+      <div className="flex w-full items-center gap-2 sm:max-w-xs">
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
         <Input placeholder="Search suppliers…" value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
@@ -66,9 +65,9 @@ export default function SuppliersList() {
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
-              <TableHead>Contact</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>NTN</TableHead>
+              <TableHead className="hidden md:table-cell">Contact</TableHead>
+              <TableHead className="hidden lg:table-cell">Phone</TableHead>
+              <TableHead className="hidden xl:table-cell">NTN</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
@@ -85,10 +84,18 @@ export default function SuppliersList() {
             ) : (
               rows.map((s) => (
                 <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{s.contact_person ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{s.phone ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{s.ntn ?? "—"}</TableCell>
+                  <TableCell className="font-medium">
+                    {s.name}
+                    {/* Phone surfaced inline where its column is hidden. */}
+                    {s.phone && (
+                      <span className="block font-mono text-[11px] font-normal text-muted-foreground lg:hidden">
+                        {s.phone}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">{s.contact_person ?? "—"}</TableCell>
+                  <TableCell className="hidden font-mono text-xs lg:table-cell">{s.phone ?? "—"}</TableCell>
+                  <TableCell className="hidden font-mono text-xs xl:table-cell">{s.ntn ?? "—"}</TableCell>
                   <TableCell className="text-right">
                     <Button size="sm" variant="outline" onClick={() => setEditing(s)}>Edit</Button>
                   </TableCell>
@@ -161,7 +168,7 @@ function SupplierForm({ supplier, onClose }: { supplier: Supplier | null; onClos
           <Field label="Name" id="s_name">
             <Input id="s_name" value={values.name} onChange={(e) => set("name", e.target.value)} />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Contact person" id="s_contact">
               <Input id="s_contact" value={values.contact_person} onChange={(e) => set("contact_person", e.target.value)} />
             </Field>

@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { useBranches, usePostAdjustment, useProducts } from "@/lib/queries";
 
@@ -40,14 +41,14 @@ export default function Adjustments() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Stock adjustment</h1>
+      <PageHeader title="Stock adjustment" />
 
       <Card>
         <CardHeader>
           <CardTitle>New adjustment</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={submit} className="grid grid-cols-2 gap-3">
+          <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="branch">Branch *</Label>
               <Select id="branch" value={branch} onChange={(e) => setBranch(e.target.value)} required>
@@ -80,11 +81,11 @@ export default function Adjustments() {
               <Label htmlFor="qty">Quantity *</Label>
               <NumberInput id="qty" mode="decimal" value={quantity} onChange={setQuantity} required />
             </div>
-            <div className="col-span-2 space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="reason">Reason *</Label>
               <Input id="reason" value={reason} onChange={(e) => setReason(e.target.value)} required />
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <Button type="submit" loading={post.isPending}>
                 {post.isPending ? "Submitting…" : "Submit"}
               </Button>

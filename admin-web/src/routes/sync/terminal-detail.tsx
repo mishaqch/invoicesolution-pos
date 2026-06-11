@@ -39,7 +39,7 @@ export default function TerminalSyncDetail() {
       {summary && (
         <Card>
           <CardHeader><CardTitle className="text-sm">Status</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-3 gap-4 text-sm">
+          <CardContent className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
             <div>
               <div className="text-muted-foreground">Pending</div>
               <div className="font-mono text-2xl">{summary.pending}</div>
@@ -70,7 +70,7 @@ export default function TerminalSyncDetail() {
         <Select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="max-w-xs"
+          className="w-full sm:max-w-xs"
         >
           <option value="">All</option>
           <option value="received">Received (in flight)</option>
@@ -87,10 +87,10 @@ export default function TerminalSyncDetail() {
             <TableHeader>
               <TableRow>
                 <TableHead>Received</TableHead>
-                <TableHead>Entity</TableHead>
-                <TableHead>Action</TableHead>
+                <TableHead className="hidden md:table-cell">Entity</TableHead>
+                <TableHead className="hidden lg:table-cell">Action</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Error</TableHead>
+                <TableHead className="hidden lg:table-cell">Error</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -107,8 +107,8 @@ export default function TerminalSyncDetail() {
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(row.received_at).toLocaleString()}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{row.entity_type}</TableCell>
-                    <TableCell className="font-mono text-xs">{row.action}</TableCell>
+                    <TableCell className="hidden font-mono text-xs md:table-cell">{row.entity_type}</TableCell>
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">{row.action}</TableCell>
                     <TableCell>
                       <Badge
                         variant={syncStatusVariant(row.status)}
@@ -117,7 +117,7 @@ export default function TerminalSyncDetail() {
                         {SYNC_STATUS_LABEL[row.status] ?? row.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="max-w-md text-xs text-muted-foreground">
+                    <TableCell className="hidden max-w-md text-xs text-muted-foreground lg:table-cell">
                       {row.error_message ?? ""}
                     </TableCell>
                     <TableCell className="text-right">

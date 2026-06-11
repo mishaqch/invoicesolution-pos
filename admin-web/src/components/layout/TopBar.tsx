@@ -1,9 +1,10 @@
-import { Building2, LogOut } from "lucide-react";
+import { Building2, LogOut, Menu } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
+import { useSidebarStore } from "@/stores/sidebar";
 
 /**
  * Top bar shown above every page inside the AdminShell.
@@ -44,9 +45,21 @@ export function TopBar() {
   const [logoBroken, setLogoBroken] = useState(false);
   const hasLogo = Boolean(tenant?.logo_url) && !logoBroken;
 
+  const toggleSidebar = useSidebarStore((s) => s.toggle);
+
   return (
     <header className="flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur-sm">
       <div className="flex min-w-0 items-center gap-2.5">
+        {/* Hamburger — opens the nav drawer on mobile; hidden on desktop where
+            the sidebar is always visible. */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label="Open navigation"
+          className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground/70 hover:bg-accent md:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
         <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary-soft text-primary-soft-foreground">
           {hasLogo ? (
             <img

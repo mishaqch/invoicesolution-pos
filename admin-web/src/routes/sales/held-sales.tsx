@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 
+import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useInvoices } from "@/lib/queries";
 import { money } from "@/lib/utils";
@@ -9,18 +10,17 @@ export default function HeldSalesAdminList() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">Held invoices</h1>
-      <p className="text-sm text-muted-foreground">
-        Draft invoices held across all terminals — manager view. Recall
-        happens on the cashier's terminal.
-      </p>
+      <PageHeader
+        title="Held invoices"
+        subtitle="Draft invoices held across all terminals — manager view. Recall happens on the cashier's terminal."
+      />
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Label</TableHead>
+              <TableHead className="hidden md:table-cell">Label</TableHead>
               <TableHead>Invoice #</TableHead>
-              <TableHead>Items</TableHead>
+              <TableHead className="hidden sm:table-cell">Items</TableHead>
               <TableHead className="text-right">Total</TableHead>
             </TableRow>
           </TableHeader>
@@ -34,13 +34,17 @@ export default function HeldSalesAdminList() {
             ) : (
               data?.results.map((i) => (
                 <TableRow key={i.id}>
-                  <TableCell>{i.held_label ?? "(unlabelled)"}</TableCell>
+                  <TableCell className="hidden md:table-cell">{i.held_label ?? "(unlabelled)"}</TableCell>
                   <TableCell className="font-mono text-xs">
                     <Link to={`/sales/${i.id}`} className="hover:underline">
                       {i.local_invoice_number}
                     </Link>
+                    {/* Label surfaced inline where its column is hidden. */}
+                    <span className="block font-sans text-[11px] text-muted-foreground md:hidden">
+                      {i.held_label ?? "(unlabelled)"}
+                    </span>
                   </TableCell>
-                  <TableCell>{i.items.length}</TableCell>
+                  <TableCell className="hidden sm:table-cell">{i.items.length}</TableCell>
                   <TableCell className="text-right font-mono">{money(i.grand_total)}</TableCell>
                 </TableRow>
               ))

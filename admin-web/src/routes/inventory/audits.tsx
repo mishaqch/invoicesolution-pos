@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { useAudits, useBranches } from "@/lib/queries";
 
 const STATUS_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
@@ -19,13 +20,10 @@ export default function StockAuditsList() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stock audits</h1>
-        <p className="text-sm text-muted-foreground">
-          Physical counts compared against system stock. Finalizing an audit
-          generates adjustments for any variance.
-        </p>
-      </div>
+      <PageHeader
+        title="Stock audits"
+        subtitle="Physical counts compared against system stock. Finalizing an audit generates adjustments for any variance."
+      />
 
       <Card>
         <CardContent className="overflow-x-auto p-0">
@@ -40,11 +38,11 @@ export default function StockAuditsList() {
               <thead className="border-b bg-muted/40">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Audit #</th>
-                  <th className="px-3 py-2 text-left font-medium">Branch</th>
+                  <th className="hidden px-3 py-2 text-left font-medium md:table-cell">Branch</th>
                   <th className="px-3 py-2 text-left font-medium">Status</th>
                   <th className="px-3 py-2 text-right font-medium">Items</th>
-                  <th className="px-3 py-2 text-left font-medium">Started</th>
-                  <th className="px-3 py-2 text-left font-medium">Finalized</th>
+                  <th className="hidden px-3 py-2 text-left font-medium lg:table-cell">Started</th>
+                  <th className="hidden px-3 py-2 text-left font-medium lg:table-cell">Finalized</th>
                 </tr>
               </thead>
               <tbody>
@@ -54,18 +52,21 @@ export default function StockAuditsList() {
                       <Link to={`/inventory/audits/${a.id}`} className="hover:underline">
                         {a.audit_number}
                       </Link>
+                      <span className="block text-[11px] text-muted-foreground md:hidden">
+                        {branchName(a.branch)}
+                      </span>
                     </td>
-                    <td className="px-3 py-2">{branchName(a.branch)}</td>
+                    <td className="hidden px-3 py-2 md:table-cell">{branchName(a.branch)}</td>
                     <td className="px-3 py-2">
                       <Badge variant={STATUS_VARIANTS[a.status] ?? "outline"}>
                         {a.status.replace(/_/g, " ")}
                       </Badge>
                     </td>
                     <td className="px-3 py-2 text-right">{a.items?.length ?? 0}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                    <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
                       {a.started_at ? new Date(a.started_at).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                    <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
                       {a.finalized_at ? new Date(a.finalized_at).toLocaleDateString() : "—"}
                     </td>
                   </tr>

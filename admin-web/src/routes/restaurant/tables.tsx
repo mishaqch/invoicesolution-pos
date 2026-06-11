@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { extractApiErrorMessage } from "@/lib/api";
@@ -27,24 +28,22 @@ export default function TablesAdmin() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Tables</h1>
-          <p className="text-sm text-muted-foreground">
-            Define the dine-in tables cashiers can seat orders at.
-          </p>
-        </div>
-        <Button onClick={() => setEditing("new")} className="gap-1">
-          <Plus className="h-4 w-4" /> New table
-        </Button>
-      </div>
+      <PageHeader
+        title="Tables"
+        subtitle="Define the dine-in tables cashiers can seat orders at."
+        actions={
+          <Button onClick={() => setEditing("new")} className="gap-1">
+            <Plus className="h-4 w-4" /> New table
+          </Button>
+        }
+      />
 
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead><TableHead>Seats</TableHead>
-              <TableHead>Zone</TableHead><TableHead>Branch</TableHead><TableHead></TableHead>
+              <TableHead className="hidden md:table-cell">Zone</TableHead><TableHead className="hidden lg:table-cell">Branch</TableHead><TableHead></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -62,8 +61,8 @@ export default function TablesAdmin() {
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.name}</TableCell>
                   <TableCell>{t.seats}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.zone ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.branch_name ?? "—"}</TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">{t.zone ?? "—"}</TableCell>
+                  <TableCell className="hidden text-muted-foreground lg:table-cell">{t.branch_name ?? "—"}</TableCell>
                   <TableCell className="text-right space-x-2">
                     <Button size="sm" variant="outline" onClick={() => setEditing(t)}>Edit</Button>
                     <Button size="sm" variant="ghost" onClick={() => { if (confirm(`Delete table ${t.name}?`)) del.mutate(t.id); }}>Delete</Button>
@@ -119,7 +118,7 @@ function TableForm({
         <CardHeader><CardTitle>{table ? "Edit table" : "New table"}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <Field label="Name" id="t_name"><Input id="t_name" value={name} onChange={(e) => setName(e.target.value)} placeholder="T1" /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Seats" id="t_seats"><NumberInput id="t_seats" mode="integer" value={seats} onChange={setSeats} /></Field>
             <Field label="Zone (optional)" id="t_zone"><Input id="t_zone" value={zone} onChange={(e) => setZone(e.target.value)} placeholder="Rooftop" /></Field>
           </div>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { useAuthStore } from "@/stores/auth";
 import {
   useReportPreview,
@@ -101,27 +102,31 @@ export default function ReportDetail() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <Link to="/reports" className="text-sm text-muted-foreground hover:underline">
-            ← Reports
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {name.replace(/_/g, " ")}
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => exportFile("csv")}>
-            <Download className="mr-1 h-4 w-4" /> CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => exportFile("xlsx")}>
-            <FileSpreadsheet className="mr-1 h-4 w-4" /> Excel
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => exportFile("pdf")}>
-            <FileText className="mr-1 h-4 w-4" /> PDF
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={
+          <div>
+            <Link to="/reports" className="text-sm text-muted-foreground hover:underline">
+              ← Reports
+            </Link>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {name.replace(/_/g, " ")}
+            </h1>
+          </div>
+        }
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => exportFile("csv")}>
+              <Download className="mr-1 h-4 w-4" /> CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportFile("xlsx")}>
+              <FileSpreadsheet className="mr-1 h-4 w-4" /> Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => exportFile("pdf")}>
+              <FileText className="mr-1 h-4 w-4" /> PDF
+            </Button>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader className="pb-3">

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { useCategories } from "@/lib/queries";
@@ -196,17 +197,14 @@ export default function CategoriesList() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Categories</h1>
-        <p className="text-sm text-muted-foreground">
-          Drag a row onto another to make it a child. Drag onto the top-level
-          drop zone to promote a category to root.
-        </p>
-      </div>
+      <PageHeader
+        title="Categories"
+        subtitle="Drag a row onto another to make it a child. Drag onto the top-level drop zone to promote a category to root."
+      />
 
       <Card>
         <CardContent className="pt-6">
-          <form onSubmit={add} className="flex items-end gap-3">
+          <form onSubmit={add} className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1 space-y-1.5">
               <Label htmlFor="name">Name</Label>
               <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required />

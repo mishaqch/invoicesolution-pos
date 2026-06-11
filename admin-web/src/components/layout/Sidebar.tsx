@@ -22,14 +22,16 @@ import {
   Truck,
   Users,
   Wrench,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { useModules, type ModuleKey, type Vertical } from "@/features/modules/hooks";
 import { useTenantSetup } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
+import { useSidebarStore } from "@/stores/sidebar";
 
 interface Item {
   to: string;
@@ -174,25 +176,81 @@ export function Sidebar() {
   const restaurant = visible(RESTAURANT);
   const adminItems = visible(ADMIN);
 
-  return (
-    <aside className="hidden border-r bg-card md:block md:w-60">
-      <div className="flex h-full flex-col">
-        <BrandStrip />
-        <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
-          {top.length > 0 && <Group items={top} />}
-          {catalog.length > 0 && <Section title="Catalog" items={catalog} />}
-          {inventory.length > 0 && <Section title="Inventory" items={inventory} />}
-          {restaurant.length > 0 && <Section title="Restaurant" items={restaurant} />}
-          {adminItems.length > 0 && <Section title="Admin" items={adminItems} />}
-        </nav>
-        <div className="border-t px-4 py-3 text-[11px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            FBR-compliant build
-          </span>
-        </div>
+  const open = useSidebarStore((s) => s.open);
+  const close = useSidebarStore((s) => s.close);
+
+  // Close the drawer on Escape, and whenever the viewport grows to desktop
+  // (md+) where the sidebar is inline — so it can't get stuck open after a
+  // rotate/resize. Also lock body scroll while the drawer is open on mobile.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const mq = window.matchMedia("(min-width: 768px)");
+    const onChange = () => { if (mq.matches) close(); };
+    window.addEventListener("keydown", onKey);
+    mq.addEventListener("change", onChange);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      mq.removeEventListener("change", onChange);
+      document.body.style.overflow = "";
+    };
+  }, [open, close]);
+
+  // The nav content is identical on desktop and in the mobile drawer.
+  const content = (
+    <div className="flex h-full flex-col">
+      <BrandStrip />
+      <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-3 [scrollbar-width:thin]">
+        {top.length > 0 && <Group items={top} />}
+        {catalog.length > 0 && <Section title="Catalog" items={catalog} />}
+        {inventory.length > 0 && <Section title="Inventory" items={inventory} />}
+        {restaurant.length > 0 && <Section title="Restaurant" items={restaurant} />}
+        {adminItems.length > 0 && <Section title="Admin" items={adminItems} />}
+      </nav>
+      <div className="border-t px-4 py-3 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+          FBR-compliant build
+        </span>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop: inline fixed-width sidebar (unchanged). */}
+      <aside className="hidden border-r bg-card md:block md:w-60">{content}</aside>
+
+      {/* Mobile: slide-in drawer + dim backdrop, shown only below md when open. */}
+      <div
+        className={cn(
+          "fixed inset-0 z-40 bg-black/40 transition-opacity md:hidden",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+        onClick={close}
+        aria-hidden
+      />
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 w-64 max-w-[80vw] border-r bg-card shadow-xl transition-transform duration-200 md:hidden",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+        role="dialog"
+        aria-label="Navigation"
+        aria-modal="true"
+      >
+        <button
+          type="button"
+          onClick={close}
+          aria-label="Close navigation"
+          className="absolute right-2 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        {content}
+      </aside>
+    </>
   );
 }
 
@@ -253,6 +311,7 @@ function Section({ title, items }: { title: string; items: Item[] }) {
 }
 
 function Group({ items }: { items: Item[] }) {
+  const closeDrawer = useSidebarStore((s) => s.close);
   return (
     <div className="space-y-0.5">
       {items.map(({ to, label, icon: Icon, disabled, end }) => (
@@ -271,7 +330,8 @@ function Group({ items }: { items: Item[] }) {
                   : "text-foreground/70 hover:bg-accent hover:text-accent-foreground",
             )
           }
-          onClick={disabled ? (e) => e.preventDefault() : undefined}
+          // Disabled links are inert; live links also dismiss the mobile drawer.
+          onClick={disabled ? (e) => e.preventDefault() : () => closeDrawer()}
           aria-disabled={disabled}
           title={disabled ? "Coming in a later phase" : undefined}
         >

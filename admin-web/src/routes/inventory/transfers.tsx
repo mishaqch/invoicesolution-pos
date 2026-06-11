@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { useBranches, useTransfers } from "@/lib/queries";
 
 const STATUS_VARIANTS: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
@@ -19,13 +20,10 @@ export default function StockTransfersList() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stock transfers</h1>
-        <p className="text-sm text-muted-foreground">
-          Move inventory between branches. Initiate at the source, receive at the destination
-          with variance reconciliation.
-        </p>
-      </div>
+      <PageHeader
+        title="Stock transfers"
+        subtitle="Move inventory between branches. Initiate at the source, receive at the destination with variance reconciliation."
+      />
 
       <Card>
         <CardContent className="overflow-x-auto p-0">
@@ -40,12 +38,12 @@ export default function StockTransfersList() {
               <thead className="border-b bg-muted/40">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Transfer #</th>
-                  <th className="px-3 py-2 text-left font-medium">From</th>
-                  <th className="px-3 py-2 text-left font-medium">To</th>
+                  <th className="hidden px-3 py-2 text-left font-medium md:table-cell">From</th>
+                  <th className="hidden px-3 py-2 text-left font-medium md:table-cell">To</th>
                   <th className="px-3 py-2 text-left font-medium">Status</th>
                   <th className="px-3 py-2 text-right font-medium">Items</th>
-                  <th className="px-3 py-2 text-left font-medium">Dispatched</th>
-                  <th className="px-3 py-2 text-left font-medium">Received</th>
+                  <th className="hidden px-3 py-2 text-left font-medium lg:table-cell">Dispatched</th>
+                  <th className="hidden px-3 py-2 text-left font-medium lg:table-cell">Received</th>
                 </tr>
               </thead>
               <tbody>
@@ -55,19 +53,22 @@ export default function StockTransfersList() {
                       <Link to={`/inventory/transfers/${t.id}`} className="hover:underline">
                         {t.transfer_number}
                       </Link>
+                      <span className="block text-[11px] text-muted-foreground md:hidden">
+                        {branchName(t.from_branch)} → {branchName(t.to_branch)}
+                      </span>
                     </td>
-                    <td className="px-3 py-2">{branchName(t.from_branch)}</td>
-                    <td className="px-3 py-2">{branchName(t.to_branch)}</td>
+                    <td className="hidden px-3 py-2 md:table-cell">{branchName(t.from_branch)}</td>
+                    <td className="hidden px-3 py-2 md:table-cell">{branchName(t.to_branch)}</td>
                     <td className="px-3 py-2">
                       <Badge variant={STATUS_VARIANTS[t.status] ?? "outline"}>
                         {t.status.replace(/_/g, " ")}
                       </Badge>
                     </td>
                     <td className="px-3 py-2 text-right">{t.items?.length ?? 0}</td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                    <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
                       {t.dispatched_at ? new Date(t.dispatched_at).toLocaleDateString() : "—"}
                     </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                    <td className="hidden px-3 py-2 text-xs text-muted-foreground lg:table-cell">
                       {t.received_at ? new Date(t.received_at).toLocaleDateString() : "—"}
                     </td>
                   </tr>

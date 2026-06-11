@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { ApiError } from "@/lib/api";
 import { useKds, useOrderAction, type OrderView } from "@/lib/queries";
 
@@ -30,12 +31,10 @@ export default function KitchenDisplay() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Kitchen</h1>
-        <p className="text-sm text-muted-foreground">
-          Live order queue. Mark orders ready when plated, served when handed off. Refreshes automatically.
-        </p>
-      </div>
+      <PageHeader
+        title="Kitchen"
+        subtitle="Live order queue. Mark orders ready when plated, served when handed off. Refreshes automatically."
+      />
 
       {notice && (
         <div className="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm text-warning-soft-foreground">

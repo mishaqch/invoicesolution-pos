@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/components/feedback/Toast";
@@ -54,14 +55,16 @@ export default function TerminalsList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Terminals</h1>
-        <a href={DOWNLOAD_URL} download>
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" /> Download Terminal App
-          </Button>
-        </a>
-      </div>
+      <PageHeader
+        title="Terminals"
+        actions={
+          <a href={DOWNLOAD_URL} download>
+            <Button variant="outline">
+              <Download className="mr-2 h-4 w-4" /> Download Terminal App
+            </Button>
+          </a>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -77,7 +80,7 @@ export default function TerminalsList() {
       <Card>
         <CardHeader><CardTitle>Add terminal</CardTitle></CardHeader>
         <CardContent>
-          <form onSubmit={add} className="grid grid-cols-2 gap-3">
+          <form onSubmit={add} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Branch *</Label>
               <Select value={v.branch} onChange={(e) => setV({ ...v, branch: e.target.value })} required>
@@ -89,7 +92,7 @@ export default function TerminalsList() {
               <Label>Name *</Label>
               <Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="Counter 1" required />
             </div>
-            <div className="col-span-2 flex items-center gap-3">
+            <div className="flex items-center gap-3 sm:col-span-2">
               <Button type="submit" loading={create.isPending}>
                 {!create.isPending && <Plus className="mr-2 h-4 w-4" />}
                 Add terminal
@@ -115,7 +118,7 @@ export default function TerminalsList() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Branch</TableHead>
+                  <TableHead className="hidden md:table-cell">Branch</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Pairing code</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
@@ -155,8 +158,9 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
         {t.terminal_index != null && (
           <span className="ml-1 text-xs text-muted-foreground">· T{t.terminal_index}</span>
         )}
+        <span className="block text-[11px] text-muted-foreground md:hidden">{branchName}</span>
       </TableCell>
-      <TableCell>{branchName}</TableCell>
+      <TableCell className="hidden md:table-cell">{branchName}</TableCell>
       <TableCell>
         {!t.is_active ? (
           <Badge variant="secondary">Deactivated</Badge>

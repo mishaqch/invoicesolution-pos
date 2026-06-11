@@ -50,7 +50,7 @@ export function Pagination({
           : <>Showing <span className="font-medium text-foreground">{from.toLocaleString()}–{to.toLocaleString()}</span> of <span className="font-medium text-foreground">{total.toLocaleString()}</span></>}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {onPageSizeChange && (
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Rows</span>
@@ -68,7 +68,9 @@ export function Pagination({
         )}
 
         <div className="flex items-center gap-1">
-          <Button variant="outline" size="icon" className="h-8 w-8"
+          {/* First/Last are hidden on mobile to avoid the 4-button row
+              overflowing narrow phones; Prev/Next always fit. */}
+          <Button variant="outline" size="icon" className="hidden h-8 w-8 sm:inline-flex"
             onClick={() => go(1)} disabled={loading || clampedPage <= 1}
             aria-label="First page">
             <ChevronsLeft className="h-4 w-4" />
@@ -86,7 +88,7 @@ export function Pagination({
             aria-label="Next page">
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="icon" className="h-8 w-8"
+          <Button variant="outline" size="icon" className="hidden h-8 w-8 sm:inline-flex"
             onClick={() => go(totalPages)} disabled={loading || clampedPage >= totalPages}
             aria-label="Last page">
             <ChevronsRight className="h-4 w-4" />

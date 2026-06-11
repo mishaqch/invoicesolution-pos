@@ -44,7 +44,7 @@ export default function CancelBudgetPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Stat
               label="Last month's sales"
               value={`Rs ${parseFloat(budget.previous_month_sales).toFixed(2)}`}
@@ -93,7 +93,7 @@ export default function CancelBudgetPage() {
         <CardHeader>
           <CardTitle className="text-sm">Consumption history</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="overflow-x-auto p-0">
           <Table>
             <TableHeader>
               <TableRow>

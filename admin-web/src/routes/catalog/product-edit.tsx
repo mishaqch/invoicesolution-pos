@@ -243,7 +243,7 @@ export default function ProductEdit() {
             <Field label="Name (Urdu)" id="name_ur">
               <Input id="name_ur" value={values.name_ur} onChange={(e) => set("name_ur", e.target.value)} dir="rtl" />
             </Field>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="SKU *" id="sku">
                 <Input id="sku" value={values.sku} onChange={(e) => set("sku", e.target.value)} required />
               </Field>
@@ -267,7 +267,7 @@ export default function ProductEdit() {
             <CardTitle>Pricing</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Cost price" id="cost_price">
                 <NumberInput id="cost_price" mode="decimal" value={values.cost_price} onChange={(v) => set("cost_price", v)} />
               </Field>
@@ -275,7 +275,7 @@ export default function ProductEdit() {
                 <NumberInput id="sale_price" mode="decimal" value={values.sale_price} onChange={(v) => set("sale_price", v)} required />
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Retail price" id="retail_price">
                 <NumberInput id="retail_price" mode="decimal" value={values.retail_price} onChange={(v) => set("retail_price", v)} />
               </Field>
@@ -361,7 +361,7 @@ export default function ProductEdit() {
                   balance; later changes go through Inventory → Adjustments so the
                   stock history stays accurate.
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Field label="Opening stock qty" id="opening_stock">
                     <NumberInput
                       id="opening_stock" mode="decimal"
@@ -538,7 +538,7 @@ function StockOnEdit({
 
       <div className="border-t pt-3 space-y-2">
         <div className="text-xs font-medium text-muted-foreground">Adjust stock</div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {branches.length > 1 && (
             <Select value={effectiveBranch} onChange={(e) => setBranch(e.target.value)}>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -639,8 +639,8 @@ function BatchManager({
   return (
     <div className="space-y-4">
       {/* Existing batches */}
-      <div className="rounded-md border">
-        <div className="grid grid-cols-[1.2fr_1fr_0.8fr_1fr_0.8fr] gap-2 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+      <div className="rounded-md border overflow-x-auto">
+        <div className="grid min-w-[480px] grid-cols-[1.2fr_1fr_0.8fr_1fr_0.8fr] gap-2 border-b bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
           <span>Batch #</span><span>Expiry</span><span>On hand</span><span>Branch</span><span>Cost</span>
         </div>
         {isLoading ? (
@@ -651,7 +651,7 @@ function BatchManager({
           batches.map((b) => {
             const st = expiryStatus(b);
             return (
-              <div key={b.id} className="grid grid-cols-[1.2fr_1fr_0.8fr_1fr_0.8fr] gap-2 border-b px-3 py-2 text-sm last:border-0">
+              <div key={b.id} className="grid min-w-[480px] grid-cols-[1.2fr_1fr_0.8fr_1fr_0.8fr] gap-2 border-b px-3 py-2 text-sm last:border-0">
                 <span className="font-medium">{b.batch_number}</span>
                 <span className={st?.cls ?? "text-muted-foreground"}>
                   {b.expiry_date ?? "—"}{st ? ` · ${st.label}` : ""}

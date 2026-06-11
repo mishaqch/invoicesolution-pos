@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -231,19 +232,17 @@ export default function InvoicesList() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Invoices</h1>
-          <p className="text-sm text-muted-foreground">
-            FBR Digital Invoicing — track every invoice across its lifecycle.
-          </p>
-        </div>
-        <Button asChild>
-          <Link to="/sales/new">
-            <Plus className="mr-1 h-4 w-4" /> New invoice
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Invoices"
+        subtitle="FBR Digital Invoicing — track every invoice across its lifecycle."
+        actions={
+          <Button asChild>
+            <Link to="/sales/new">
+              <Plus className="mr-1 h-4 w-4" /> New invoice
+            </Link>
+          </Button>
+        }
+      />
 
       {/* KPI tiles ------------------------------------------------------- */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -391,10 +390,10 @@ export default function InvoicesList() {
           <TableHeader>
             <TableRow>
               <TableHead>Invoice #</TableHead>
-              <TableHead>FBR #</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Buyer</TableHead>
-              <TableHead className="text-right">Items</TableHead>
+              <TableHead className="hidden lg:table-cell">FBR #</TableHead>
+              <TableHead className="hidden md:table-cell">Date</TableHead>
+              <TableHead className="hidden md:table-cell">Buyer</TableHead>
+              <TableHead className="hidden text-right sm:table-cell">Items</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead>Status</TableHead>
             </TableRow>
@@ -421,8 +420,13 @@ export default function InvoicesList() {
                     <Link to={`/sales/${i.id}`} className="font-medium text-primary hover:underline">
                       {i.local_invoice_number}
                     </Link>
+                    {/* Buyer + date surfaced under the invoice # on small
+                        screens where their columns are hidden. */}
+                    <span className="block text-[11px] font-sans text-muted-foreground md:hidden">
+                      {i.buyer_name ?? "Walk-in"} · {i.invoice_date}
+                    </span>
                   </TableCell>
-                  <TableCell className="font-mono text-xs">
+                  <TableCell className="hidden font-mono text-xs lg:table-cell">
                     {i.fbr_invoice_number ? (
                       // Tiny QR + the UNIQUE TAIL of the FBR number so
                       // the row stays compact. PRAL's invoice number
@@ -463,13 +467,13 @@ export default function InvoicesList() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground tabular-nums">
+                  <TableCell className="hidden text-xs text-muted-foreground tabular-nums md:table-cell">
                     {i.invoice_date}
                   </TableCell>
-                  <TableCell className="max-w-[180px] truncate text-sm">
+                  <TableCell className="hidden max-w-[180px] truncate text-sm md:table-cell">
                     {i.buyer_name ?? <span className="text-muted-foreground">Walk-in</span>}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm">
+                  <TableCell className="hidden text-right tabular-nums text-sm sm:table-cell">
                     {i.items.length}
                   </TableCell>
                   <TableCell className="text-right font-mono text-sm tabular-nums">

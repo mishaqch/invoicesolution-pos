@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useHsCodes, useHsCodesMeta } from "@/lib/queries";
 
@@ -30,30 +31,32 @@ export default function HsCodesBrowser() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold tracking-tight">HS codes</h1>
-      <p className="text-sm text-muted-foreground">
-        {meta?.count && meta.count > 1000 ? (
-          <>
-            Full PRAL HS catalog —{" "}
-            <strong>{meta.count.toLocaleString()}</strong> codes
-            {syncedAgo && (
-              <>, last synced {syncedAgo}</>
-            )}
-            . Source: <code>/pdi/v1/itemdesccode</code>.
-          </>
-        ) : (
-          <>
-            HS catalog{meta?.count ? ` — ${meta.count.toLocaleString()} codes` : ""}.
-            Run <code>manage.py sync_pral_reference</code> to pull the full
-            ~7,800-code list from PRAL.
-          </>
-        )}
-      </p>
+      <PageHeader
+        title="HS codes"
+        subtitle={
+          meta?.count && meta.count > 1000 ? (
+            <>
+              Full PRAL HS catalog —{" "}
+              <strong>{meta.count.toLocaleString()}</strong> codes
+              {syncedAgo && (
+                <>, last synced {syncedAgo}</>
+              )}
+              . Source: <code>/pdi/v1/itemdesccode</code>.
+            </>
+          ) : (
+            <>
+              HS catalog{meta?.count ? ` — ${meta.count.toLocaleString()} codes` : ""}.
+              Run <code>manage.py sync_pral_reference</code> to pull the full
+              ~7,800-code list from PRAL.
+            </>
+          )
+        }
+      />
       <Input
         placeholder="Search by code or description…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        className="max-w-md"
+        className="w-full sm:max-w-md"
       />
       <div className="rounded-md border">
         <Table>
@@ -61,8 +64,8 @@ export default function HsCodesBrowser() {
             <TableRow>
               <TableHead className="w-32">Code</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead className="text-right">Default rate</TableHead>
-              <TableHead>UoM</TableHead>
+              <TableHead className="hidden text-right md:table-cell">Default rate</TableHead>
+              <TableHead className="hidden lg:table-cell">UoM</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -75,10 +78,10 @@ export default function HsCodesBrowser() {
                 <TableRow key={h.code}>
                   <TableCell className="font-mono text-xs">{h.code}</TableCell>
                   <TableCell>{h.description}</TableCell>
-                  <TableCell className="text-right font-mono">
+                  <TableCell className="hidden text-right font-mono md:table-cell">
                     {h.default_tax_rate ?? "—"}
                   </TableCell>
-                  <TableCell>{h.uom_default ?? "—"}</TableCell>
+                  <TableCell className="hidden lg:table-cell">{h.uom_default ?? "—"}</TableCell>
                 </TableRow>
               ))
             )}
