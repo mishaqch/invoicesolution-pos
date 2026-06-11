@@ -1,47 +1,22 @@
-import { Building2, LogOut, Menu } from "lucide-react";
+import { Building2, Menu } from "lucide-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import { useSidebarStore } from "@/stores/sidebar";
+
+import { ProfileMenu } from "./ProfileMenu";
 
 /**
  * Top bar shown above every page inside the AdminShell.
  *
- * Left:  tenant chip with the business icon + name
- * Right: user info (name + role badge) + sign-out icon button
+ * Left:  hamburger (mobile) + tenant chip with the business icon + name
+ * Right: profile menu — avatar dropdown with user info + Settings + Sign out.
  *
  * Uses the brand palette so the chrome reads consistently with the
  * rest of the redesigned theme.
  */
 export function TopBar() {
   const tenant = useAuthStore((s) => s.tenant);
-  const user = useAuthStore((s) => s.user);
-  const role = useAuthStore((s) => s.role);
-  const refresh = useAuthStore((s) => s.refresh);
-  const logout = useAuthStore((s) => s.logout);
-
-  const onLogout = async () => {
-    // Confirm first — logout ends the session and is easy to tap by accident
-    // (especially on mobile). Matches the confirm() pattern used for other
-    // destructive actions across the app.
-    if (!window.confirm("Sign out of your account?")) return;
-    if (refresh) {
-      try {
-        await api("/auth/logout/", {
-          method: "POST",
-          body: JSON.stringify({ refresh }),
-        });
-      } catch { /* swallow */ }
-    }
-    logout();
-  };
-
-  // Compact first-initial avatar for the user. Keeps the bar tight at
-  // narrow viewports where a long name would push the logout button
-  // off the screen.
-  const initial = (user?.full_name ?? user?.email ?? "?").charAt(0).toUpperCase();
 
   // Tenant logo with broken-image fallback. If the upload URL 404s or
   // the host blocks hotlinking we drop back to the Building2 glyph
@@ -91,24 +66,7 @@ export function TopBar() {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className="hidden text-right text-xs leading-tight md:block">
-          <div className="font-medium">{user?.full_name ?? user?.email}</div>
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            {role ?? "—"}
-          </div>
-        </div>
-        <div className="flex h-9 w-9 select-none items-center justify-center rounded-full bg-primary-soft text-sm font-semibold text-primary-soft-foreground">
-          {initial}
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onLogout}
-          aria-label="Sign out"
-          title="Sign out"
-        >
-          <LogOut className="h-4 w-4" />
-        </Button>
+        <ProfileMenu />
       </div>
     </header>
   );
