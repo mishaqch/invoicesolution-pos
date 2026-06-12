@@ -60,7 +60,10 @@ import { cn } from "@/lib/utils";
 
 const STATUS_FILTER_OPTIONS = [
   { value: "", label: "All statuses" },
-  { value: "valid", label: "Validated" },
+  // "Validated" sums valid + finalized (a finalized invoice is a validated one
+  // that aged past 72h). The API accepts the comma list and filters on both, so
+  // the rows match the "Validated by FBR" KPI tile count.
+  { value: "valid,finalized", label: "Validated" },
   { value: "finalized", label: "Finalized (>72h)" },
   { value: "submitted", label: "Submitted" },
   { value: "failed", label: "Failed" },
@@ -98,7 +101,7 @@ const TILES: KpiTile[] = [
     label: "Validated by FBR",
     icon: CheckCircle2,
     statuses: ["valid", "finalized"],
-    filterValue: "valid",
+    filterValue: "valid,finalized",
     tone: "success",
   },
   {

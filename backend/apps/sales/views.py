@@ -80,7 +80,11 @@ class InvoiceViewSet(
         if (cust := params.get("customer")):
             qs = qs.filter(customer_id=cust)
         if (st := params.get("status")):
-            qs = qs.filter(status=st)
+            # Accept a single status or a comma-separated list (e.g.
+            # "valid,finalized") so the "Validated" tile/filter — which counts
+            # valid + finalized together — returns rows that match its count.
+            statuses = [s for s in st.split(",") if s]
+            qs = qs.filter(status__in=statuses) if len(statuses) > 1 else qs.filter(status=st)
         if (start := params.get("from")):
             qs = qs.filter(invoice_date__gte=start)
         if (end := params.get("to")):
@@ -425,6 +429,45 @@ class InvoiceViewSet(
                 {"detail": messages[0] if messages else "Cannot cancel."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        invoice.refresh_from_db()
+        return Response(InvoiceSerializer(invoice).data)
+
+    @action(detail=True, methods=["post"], url_path="mark-cancelled-on-fbr",
+            permission_classes=[HasRolePerm.with_perm("sales.cancel.threshold_high")])
+    def mark_cancelled_on_fbr(self, request, pk=None):
+        """Record that an invoice was cancelled DIRECTLY on the FBR portal.
+
+        PRAL's Digital Invoicing API is write-only — there is no endpoint to
+        query an invoice's current status — so when a taxpayer cancels an
+        invoice on the FBR portal itself (outside our platform), we have no way
+        to detect it automatically. This action lets an owner/manager record
+        that reality: it flips our local status to 'cancelled' (so the badge,
+        reports, and lists match FBR) WITHOUT calling PRAL (FBR already did the
+        cancel) and WITHOUT consuming the 10% cancel-budget (that budget tracks
+        cancels INITIATED through us). Only meaningful for an invoice that has
+        an FBR number; idempotent if already cancelled.
+        """
+        invoice = self.get_object()
+        if not invoice.fbr_invoice_number:
+            return Response(
+                {"detail": "This invoice has no FBR number — there's nothing "
+                           "to reconcile from FBR. Use the normal cancel flow."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if invoice.status == "cancelled":
+            return Response(InvoiceSerializer(invoice).data)  # idempotent
+
+        before = invoice.status
+        invoice.status = "cancelled"
+        invoice.save(update_fields=["status", "updated_at"])
+        from apps.audit.services import log as audit_log
+        audit_log(
+            tenant_id=invoice.tenant_id, user=request.user,
+            entity_type="invoice", entity_id=invoice.id,
+            action="cancelled_on_fbr_portal",
+            before={"status": before}, after={"status": "cancelled"},
+            request=request,
+        )
         invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
 

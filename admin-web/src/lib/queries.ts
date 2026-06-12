@@ -846,6 +846,25 @@ export function useCancelInvoice() {
   });
 }
 
+/** Record that an invoice was cancelled DIRECTLY on the FBR portal.
+ *  PRAL has no status-query endpoint, so a portal-side cancel can't be detected
+ *  automatically — this lets an owner/manager reconcile the local status to
+ *  'cancelled'. No PRAL call, no cancel-budget consumption. */
+export function useMarkCancelledOnFbr() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ id: string; status: string }>(
+        `/sales/invoices/${id}/mark-cancelled-on-fbr/`, { method: "POST" },
+      ),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-summary"] });
+      qc.invalidateQueries({ queryKey: ["invoice", data.id] });
+    },
+  });
+}
+
 /** Delete an UNSUBMITTED draft invoice (no FBR number). Soft-deletes
  *  server-side + reverses stock. Only valid for pending_sync/failed
  *  invoices with no fbr_invoice_number. */

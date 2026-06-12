@@ -22,6 +22,7 @@ import {
   useCancelInvoice,
   useCancelInvoiceItem,
   useDeleteDraftInvoice,
+  useMarkCancelledOnFbr,
   useEditInvoiceItem,
   useFbrSubmissions,
   useInvoice,
@@ -184,6 +185,7 @@ export default function InvoiceDetail() {
   const { data: invoice, isLoading } = useInvoice(id);
   const cancel = useCancelInvoice();
   const cancelItem = useCancelInvoiceItem();
+  const markCancelledOnFbr = useMarkCancelledOnFbr();
   const editItem = useEditInvoiceItem();
   const resubmit = useResubmitInvoice();
   const validate = useValidateInvoice();
@@ -248,6 +250,17 @@ export default function InvoiceDetail() {
     && invoice.status !== "cancelled"
     && invoice.status !== "finalized"
     && !(deadline?.expired ?? false);
+
+  // An invoice can be cancelled on the FBR portal directly (outside our
+  // platform). PRAL has no status-query endpoint, so we can't detect it — this
+  // lets an owner/manager record it once it's happened. Offer it for any
+  // FBR-validated invoice (including finalized/past-72h) that isn't already
+  // cancelled here.
+  const canMarkCancelledOnFbr =
+    !!invoice.fbr_invoice_number
+    && invoice.status !== "cancelled"
+    && ["valid", "finalized", "partially_cancelled",
+        "partially_edited", "partially_edited_and_cancelled"].includes(invoice.status);
 
   // Surface the same friendly reasons rules.py emits, so a hover on
   // the disabled cancel-chip explains the state in plain English.
@@ -517,6 +530,24 @@ export default function InvoiceDetail() {
         {canCancel && (
           <Button variant="destructive" onClick={() => setShowConfirm(true)}>
             Cancel sale
+          </Button>
+        )}
+        {canMarkCancelledOnFbr && (
+          <Button
+            variant="outline"
+            loading={markCancelledOnFbr.isPending}
+            title="Use this only if you already cancelled this invoice on the FBR portal. It records the cancellation here — it does NOT cancel on FBR."
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "Mark this invoice as cancelled on FBR?\n\nUse this ONLY if you have already cancelled it on the FBR portal. " +
+                  "It updates the status here to match FBR — it does not send a cancellation to FBR.",
+                )
+              ) return;
+              markCancelledOnFbr.mutate(invoice.id);
+            }}
+          >
+            Mark cancelled on FBR
           </Button>
         )}
       </div>
