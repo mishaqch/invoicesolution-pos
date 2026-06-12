@@ -680,10 +680,10 @@ export default function NewInvoiceRoute() {
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-sm">Items</CardTitle>
           <Button
-            size="sm" variant="outline"
+            variant="default"
             onClick={() => setShowProductPicker((v) => !v)}
           >
-            <Plus className="mr-1 h-4 w-4" /> Add line
+            <Plus className="mr-1 h-4 w-4" /> Add Products
           </Button>
         </CardHeader>
         <CardContent className="p-0">
@@ -795,7 +795,7 @@ export default function NewInvoiceRoute() {
 
           {lines.length === 0 ? (
             <p className="p-6 text-sm text-muted-foreground">
-              No lines yet. Click "Add line" to pick a product.
+              No products yet. Click "Add Products" to pick one.
             </p>
           ) : (
             <div className="overflow-x-auto">
