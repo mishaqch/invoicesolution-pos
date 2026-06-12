@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useModules } from "@/features/modules/hooks";
 import {
   useActivateProductionToken,
   useFbrPosStatus,
@@ -49,6 +50,10 @@ const STEPS = [
 
 export default function FbrSetupWizard() {
   const { data: status } = useFbrStatus();
+  const { data: modules } = useModules();
+  // "POS connections" (per-branch FBR terminal status) is a POS concept. A
+  // Digital-Invoicing-only back-office tenant has no POS terminals, so hide it.
+  const isDigitalOnly = modules?.business_mode === "digital_invoicing";
   const submitSandbox = useSubmitSandboxToken();
   const activateProd = useActivateProductionToken();
   const test = useTestFbrToken();
@@ -548,9 +553,10 @@ export default function FbrSetupWizard() {
       </Card>
 
       {/* =========================================================
-          POS CONNECTIONS (per branch)
+          POS CONNECTIONS (per branch) — POS tenants only; a back-office
+          Digital-Invoicing tenant has no POS terminals to connect.
           ========================================================= */}
-      <PosConnectionsCard />
+      {!isDigitalOnly && <PosConnectionsCard />}
 
       {error && (
         <div
