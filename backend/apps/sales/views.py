@@ -117,7 +117,13 @@ class InvoiceViewSet(
 
         qs = self.get_queryset()
         rows = (
-            qs.values("status")
+            # .order_by() clears the queryset's default ("-invoice_date",
+            # "-created_at") ordering. Without this, Django folds those columns
+            # into the GROUP BY, so two invoices of the same status but
+            # different timestamps land in separate groups — and the by_status
+            # dict below collapses them by key, undercounting each status.
+            qs.order_by()
+            .values("status")
             .annotate(count=Count("id"), revenue=Sum("grand_total"))
         )
         by_status = {

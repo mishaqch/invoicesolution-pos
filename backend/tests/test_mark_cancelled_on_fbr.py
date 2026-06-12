@@ -127,3 +127,32 @@ def test_status_filter_accepts_comma_list(db, tenant, branch, terminal, owner_us
     assert both["count"] == 2
     just_valid = client.get("/api/sales/invoices/?status=valid").json()
     assert just_valid["count"] == 1
+
+
+def test_summary_counts_all_invoices_of_a_status(db, tenant, branch, terminal, owner_user, product):
+    """Regression: two invoices of the same status must count as 2, not 1.
+
+    The list queryset orders by (-invoice_date, -created_at); that ordering
+    used to leak into the summary's GROUP BY, splitting same-status invoices
+    with different timestamps into separate rows that the by_status dict then
+    collapsed by key — so the "Drafts" tile showed 1 while the table showed 2.
+    """
+    # Two pending_sync (draft) invoices — distinct created_at timestamps.
+    for _ in range(2):
+        checkout.create_invoice(
+            tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=owner_user,
+            cash_session=None, customer=None,
+            cart_lines=[{"product": str(product.id), "quantity": "1", "unit_price": "100",
+                         "tax_rate": "0", "is_taxable": False}],
+            payments=[{"payment_method": "cash", "amount": "100"}],
+            client_uuid=str(uuid.uuid4()),
+        )
+
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+
+    summary = client.get("/api/sales/invoices/summary/").json()
+    assert summary["by_status"]["pending_sync"]["count"] == 2
+    assert summary["total_count"] == 2
+    # by_status counts must reconcile with the grand total.
+    assert sum(s["count"] for s in summary["by_status"].values()) == summary["total_count"]
