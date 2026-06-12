@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useDeleteProduct, useProducts, useTenantSetup } from "@/lib/queries";
+import { useDeleteProduct, useProducts } from "@/lib/queries";
 import { money } from "@/lib/utils";
 
 // Debounce search so we don't fire a request per keystroke against a
@@ -43,13 +43,10 @@ export default function ProductsList() {
   const { data, isLoading, isFetching } = useProducts(params);
   const del = useDeleteProduct();
 
-  // Digital-invoicing tenants (service providers, marriage halls) sell
-  // "items" or "services", not "products". Relabel headings + buttons
-  // to match their mental model; URLs and API contract are unchanged.
-  const { data: setup } = useTenantSetup();
-  const di = setup?.business_mode === "digital_invoicing";
-  const heading = di ? "Items" : "Products";
-  const newLabel = di ? "New item" : "New product";
+  // The catalog is labelled "Products" for every tenant (including Digital
+  // Invoicing). URLs and API contract are unchanged.
+  const heading = "Products";
+  const newLabel = "New product";
 
   const rows = data?.results ?? [];
   const total = data?.count ?? 0;

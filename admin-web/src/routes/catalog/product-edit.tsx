@@ -89,7 +89,8 @@ export default function ProductEdit() {
   const categories = useCategories();
   const { data: setup } = useTenantSetup();
   const di = setup?.business_mode === "digital_invoicing";
-  const noun = di ? "item" : "product";
+  // The catalog entity is always called a "product" in the UI (even for DI).
+  const noun = "product";
 
   // Opening stock (NEW product only): an optional starting quantity recorded as
   // an opening_balance stock movement so the product is immediately stocked —

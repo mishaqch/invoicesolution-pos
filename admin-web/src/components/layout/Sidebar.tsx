@@ -28,7 +28,6 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
 import { useModules, type ModuleKey, type Vertical } from "@/features/modules/hooks";
-import { useTenantSetup } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useSidebarStore } from "@/stores/sidebar";
@@ -73,8 +72,8 @@ const TOP: Item[] = [
 //   - "Tax rates" is a POS-only concept (per-SKU rate overrides). DI
 //     tenants pick a single sector-wide rate during setup and stick to
 //     it. Hidden via `terminals` module.
-//   - "Products" is renamed to "Items" in DI mode — services aren't
-//     "products" in the usual sense.
+//   - The catalog row is "Products" for everyone except restaurants
+//     (which see "Menu" — see withVerticalLabels).
 const CATALOG: Item[] = [
   { to: "/catalog/products", label: "Products", icon: Package },
   { to: "/catalog/categories", label: "Categories", icon: Boxes },
@@ -131,10 +130,8 @@ export function Sidebar() {
   // flight we show everything (the hook returns true on isLoading) so
   // operators don't see the menu pop in.
   const { data: modules } = useModules();
-  const { data: setup } = useTenantSetup();
   const enabled = modules?.enabled;
   const vertical = modules?.vertical;
-  const isDigitalOnly = setup?.business_mode === "digital_invoicing";
 
   function visible(items: Item[]): Item[] {
     if (!enabled) return items;
@@ -151,18 +148,9 @@ export function Sidebar() {
     );
   }
 
-  // Service-providers / wholesalers / marriage halls don't think of
-  // their offerings as "products" — they sell services, hall hours, or
-  // packages. Relabel the catalog row to "Items" so the language fits.
-  // The underlying data model and URLs stay the same.
-  function withDiLabels(items: Item[]): Item[] {
-    if (!isDigitalOnly) return items;
-    return items.map((it) =>
-      it.to === "/catalog/products" ? { ...it, label: "Items" } : it,
-    );
-  }
-
   // A restaurant's "products" are menu items — relabel for the right language.
+  // (Digital-Invoicing tenants keep "Products" — the catalog row is always
+  // "Products" except for restaurants, which see "Menu".)
   function withVerticalLabels(items: Item[]): Item[] {
     if (vertical !== "restaurant") return items;
     return items.map((it) =>
@@ -171,7 +159,7 @@ export function Sidebar() {
   }
 
   const top = visible(TOP);
-  const catalog = withVerticalLabels(withDiLabels(visible(CATALOG)));
+  const catalog = withVerticalLabels(visible(CATALOG));
   const inventory = visible(INVENTORY);
   const restaurant = visible(RESTAURANT);
   const adminItems = visible(ADMIN);
