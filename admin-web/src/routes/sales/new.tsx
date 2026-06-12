@@ -120,6 +120,11 @@ export default function NewInvoiceRoute() {
   // The form sends branch/terminal UUIDs only when modules are enabled
   // AND values have been selected. Server-side fallback handles Shape B.
   const { data: modules } = useModules();
+  // Digital-Invoicing-only tenants are back-office — they raise a tax invoice
+  // to FBR without recording a till payment. Hide the Payments card for them
+  // and submit the invoice with no payments (unpaid / on account). POS + Both
+  // keep the Payments card.
+  const isDigitalOnly = modules?.business_mode === "digital_invoicing";
   const showBranchPicker = modules
     ? modules.enabled.includes("branches")
     : true;
@@ -344,7 +349,9 @@ export default function NewInvoiceRoute() {
       setError("Add at least one line item.");
       return;
     }
-    if (Math.abs(totalTendered - totals.grand) > 0.01) {
+    // Digital-Invoicing-only tenants raise the invoice with no payment, so skip
+    // the tendered==grand check for them. POS/Both still require it to balance.
+    if (!isDigitalOnly && Math.abs(totalTendered - totals.grand) > 0.01) {
       setError(`Payment Rs ${totalTendered.toFixed(2)} doesn't match grand total Rs ${totals.grand.toFixed(2)}.`);
       return;
     }
@@ -380,9 +387,11 @@ export default function NewInvoiceRoute() {
         ...(cartDiscountPct > 0
           ? { cart_discount_pct: cartDiscountPct.toFixed(2) }
           : {}),
-        payments: payments.map((p) => ({
-          ...p, amount: String(p.amount),
-        })),
+        // DI-only tenants issue the invoice unpaid (no till payment); POS/Both
+        // send the recorded payment rows.
+        payments: isDigitalOnly
+          ? []
+          : payments.map((p) => ({ ...p, amount: String(p.amount) })),
         client_uuid: clientUuidRef.current,
         notes: notes || undefined,
         ...(debitContext
@@ -875,6 +884,9 @@ export default function NewInvoiceRoute() {
       </Card>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Payments — POS/till concept. Hidden for Digital-Invoicing-only
+            tenants, who raise the invoice unpaid (settled out-of-band). */}
+        {!isDigitalOnly && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm">Payments</CardTitle>
@@ -947,6 +959,7 @@ export default function NewInvoiceRoute() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardHeader className="pb-2">
