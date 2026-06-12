@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CustomerPicker } from "@/components/ui/customer-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
@@ -145,6 +146,10 @@ export default function NewInvoiceRoute() {
   const [branchId, setBranchId] = useState("");
   const [terminalId, setTerminalId] = useState("");
   const [customerId, setCustomerId] = useState("");
+  // The picked customer object — the searchable CustomerPicker may not have the
+  // selection in its current (search-scoped) results, so we keep the full object
+  // here for the preview + button label.
+  const [selectedCustomerObj, setSelectedCustomerObj] = useState<import("@/lib/queries").AdminCustomer | null>(null);
   const [notes, setNotes] = useState("");
   // Cart-level discount — applies on top of any per-line discounts.
   // `cartDiscountMode` controls how the input is interpreted:
@@ -428,7 +433,14 @@ export default function NewInvoiceRoute() {
   }
 
   const filteredProducts = products.data?.results ?? [];
-  const selectedCustomer = customers.data?.results?.find((c) => c.id === customerId) ?? null;
+  // Prefer the object captured when the buyer was picked (works even when the
+  // searchable picker's current results don't include it); fall back to the
+  // list for backwards compat.
+  const selectedCustomer = customerId
+    ? (selectedCustomerObj?.id === customerId
+        ? selectedCustomerObj
+        : customers.data?.results?.find((c) => c.id === customerId) ?? null)
+    : null;
   const customerName = selectedCustomer?.name ?? "Walk-in";
 
   // Buyer block for the live preview. Walk-in flows pass null
@@ -547,23 +559,27 @@ export default function NewInvoiceRoute() {
             {showCustomerPicker && (
               <div>
                 <Label>Buyer</Label>
-                <Select
+                {/* Searchable picker — customers can be in the thousands, so we
+                    search the server (/customers/?search=) rather than render
+                    every option. Walk-in is always at the top of the list. */}
+                <CustomerPicker
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
+                  selectedLabel={
+                    selectedCustomer
+                      ? `${selectedCustomer.name}${selectedCustomer.ntn ? ` · NTN ${selectedCustomer.ntn}` : selectedCustomer.cnic ? ` · CNIC ${selectedCustomer.cnic}` : ""}`
+                      : null
+                  }
+                  onChange={(id, customer) => {
+                    setCustomerId(id);
+                    setSelectedCustomerObj(customer);
+                  }}
                   disabled={!!debitContext}
-                  title={debitContext ? "Locked — buyer is inherited from the original invoice" : undefined}
-                >
-                  <option value="">
-                    {debitContext
+                  walkInLabel={
+                    debitContext
                       ? `From original: ${debitContext.buyerName ?? "Walk-in"}`
-                      : "Walk-in (unregistered)"}
-                  </option>
-                  {customers.data?.results?.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.ntn ? `· NTN ${c.ntn}` : c.cnic ? `· CNIC ${c.cnic}` : ""}
-                    </option>
-                  ))}
-                </Select>
+                      : "Walk-in (unregistered)"
+                  }
+                />
               </div>
             )}
           </CardContent>
