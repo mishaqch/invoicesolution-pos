@@ -1,5 +1,7 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+
+import { queryClient } from "@/lib/queryClient";
 
 import { AdminShell } from "@/components/layout/AdminShell";
 import { ToastProvider } from "@/components/feedback/Toast";
@@ -56,29 +58,8 @@ import ReportsIndex from "@/routes/reports";
 import ReturnDetail from "@/routes/returns/detail";
 import ReturnsList from "@/routes/returns/list";
 
-// QueryClient defaults tuned to avoid post-logout retry storms.
-//
-// React Query defaults to `retry: 3` with exponential back-off, which
-// means a single 401 (e.g. expired session) becomes 4 console errors
-// per query before the failure sticks — and with several polling
-// hooks active simultaneously, that's dozens of red lines per minute.
-// We instead:
-//   - never retry 401 (Unauthorized) or 403 (Forbidden); they're
-//     "you can't do this" answers, not transient failures
-//   - keep the default 3 retries for everything else (network blips,
-//     5xx). That preserves resilience without weaponising the retry
-//     mechanism against auth/permission failures.
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: (failureCount, error) => {
-        const status = (error as { status?: number })?.status;
-        if (status === 401 || status === 403) return false;
-        return failureCount < 3;
-      },
-    },
-  },
-});
+// The QueryClient now lives in @/lib/queryClient so the auth store can clear
+// its cache on login/logout (see queryClient.ts).
 
 export default function App() {
   return (

@@ -3,6 +3,8 @@ import { persist } from "zustand/middleware";
 
 import type { Role, Tenant, User } from "@pos/shared/types";
 
+import { queryClient } from "@/lib/queryClient";
+
 interface AuthState {
   access: string | null;
   refresh: string | null;
@@ -36,15 +38,25 @@ export const useAuthStore = create<AuthState>()(
       tenant: null,
       role: null,
 
-      signIn: ({ access, refresh, user, tenant, role }) =>
-        set({ access, refresh, user, tenant, role }),
+      signIn: ({ access, refresh, user, tenant, role }) => {
+        // Drop any cached query data from a PREVIOUS session before the new
+        // tenant's pages mount — otherwise React Query would briefly serve the
+        // prior client's products/invoices/customers (a data-isolation bug when
+        // two clients use the same browser).
+        queryClient.clear();
+        set({ access, refresh, user, tenant, role });
+      },
 
       setTokens: (access, refresh) => set({ access, refresh }),
 
       setTenant: (tenant) => set({ tenant }),
 
-      logout: () =>
-        set({ access: null, refresh: null, user: null, tenant: null, role: null }),
+      logout: () => {
+        // Clear the React Query cache so the next sign-in starts clean and no
+        // tenant data lingers in memory after sign-out.
+        queryClient.clear();
+        set({ access: null, refresh: null, user: null, tenant: null, role: null });
+      },
     }),
     {
       name: "pos-admin-auth",
