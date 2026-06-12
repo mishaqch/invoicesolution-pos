@@ -829,32 +829,14 @@ def render_invoice_pdf(invoice: Invoice) -> bytes:
         ]))
 
     # ======================================================================
-    # PAYMENT TERMS + AUTHENTICATION + DISCLAIMER (footer block)
+    # AUTHENTICATION + DISCLAIMER (footer block)
     # ======================================================================
-    # Three short paragraphs the auditor / buyer typically wants to see
-    # on a tax-compliant invoice:
-    #   1. Payment terms — when + how to pay
-    #   2. FBR authentication — how to verify the QR / invoice number
-    #   3. Computer-generated disclaimer
+    # Short paragraphs the auditor / buyer typically wants to see on a
+    # tax-compliant invoice:
+    #   1. FBR authentication — how to verify the QR / invoice number
+    #   2. Computer-generated disclaimer
 
     story.append(Spacer(1, 10))
-
-    # Payment terms — show only when this is a SALE invoice (not credit/debit notes).
-    if invoice.invoice_type == "sale":
-        story.append(Paragraph(
-            '<font color="#374151" size="7"><b>PAYMENT TERMS</b></font>',
-            micro,
-        ))
-        story.append(Paragraph(
-            '<font color="#6b7280" size="7">'
-            'Payment is due on receipt unless otherwise agreed in writing. '
-            'Make payments by cash, bank transfer, or cheque payable to '
-            f'<b>{tenant.business_name}</b>. Late payments may incur a 2% / month surcharge. '
-            'For payment queries, contact the seller using the details above.'
-            '</font>',
-            micro,
-        ))
-        story.append(Spacer(1, 6))
 
     # FBR authentication block — only when the invoice has a real FBR number.
     if invoice.fbr_invoice_number:
