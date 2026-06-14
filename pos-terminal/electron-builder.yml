@@ -35,17 +35,20 @@ directories:
   buildResources: build
 
 files:
+  # electron-vite emits everything to out/; `dist`/`dist-electron` were dead
+  # globs from an older layout (removed).
   - "out/**/*"
-  - "dist/**/*"
-  - "dist-electron/**/*"
   # Runtime assets read by the main process via __dirname-relative candidate
   # paths: the SQLite schema and the FBR thermal-receipt logo. electron-vite
   # doesn't bundle non-imported files, so they're packaged from source.
   - "electron/db/schema.sql"
   - "electron/assets/**/*"
   - "package.json"
-  - "!**/*.{md,markdown,test.js,spec.js}"
+  # Strip docs/tests/source/maps that ride along inside the shipped runtime
+  # node_modules (only the 5 runtime deps ship now — keep them lean).
+  - "!**/*.{md,markdown,test.js,spec.js,map}"
   - "!**/.eslintrc*"
+  - "!**/{test,tests,__tests__,docs,example,examples,.github}/**"
 
 asar: true
 
@@ -55,6 +58,11 @@ asarUnpack:
   - node_modules/better-sqlite3/**/*
 
 nodeGypRebuild: false
+
+# Keep electron-builder's default ("normal") compression. We deliberately do
+# NOT use "maximum": it markedly increases BUILD time (the thing we're trying to
+# keep fast) for a marginal extra download saving — and the big size win already
+# came from shipping only the 5 runtime deps (prod node_modules ~87M → ~18M).
 
 win:
   target:
@@ -78,11 +86,16 @@ mac:
   notarize: true   # uses APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID
 
 nsis:
-  oneClick: false
-  allowToChangeInstallationDirectory: true
-  perMachine: false
+  # One-click install: shop staff double-click the .exe and it installs to the
+  # per-user profile and launches — no admin prompt, no wizard, no directory
+  # picker. Simplest possible UX for a non-technical cashier. (Set oneClick:false
+  # + allowToChangeInstallationDirectory:true if IT wants the assisted wizard.)
+  oneClick: true
+  perMachine: false               # per-user → no UAC/admin elevation needed
+  runAfterFinish: true            # launch the POS right after install
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false # keep local sales/queue if they reinstall
 
 linux:
   target:

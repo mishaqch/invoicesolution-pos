@@ -18,18 +18,21 @@
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
+    "better-sqlite3": "11.3.0",
+    "electron-updater": "~6.3.4",
+    "node-thermal-printer": "~4.4.4",
+    "pngjs": "^7.0.0",
+    "qrcode": "~1.5.4"
+  },
+  "//deps": "ONLY packages the main/preload processes require() at runtime live in dependencies — those are externalized (not bundled) so electron-builder must ship them as node_modules inside the installer. Everything the RENDERER imports (react, react-dom, react-router-dom, lucide-react, i18next, react-i18next, zod, react-hook-form, @hookform/resolvers, @radix-ui/*, zustand, clsx, class-variance-authority, tailwind-merge, tailwindcss-animate) is bundled into out/renderer by Vite, so it belongs in devDependencies — that keeps electron-builder from shipping those node_modules trees a SECOND time, which roughly halves the unpacked app size and speeds packaging.",
+  "devDependencies": {
     "@hookform/resolvers": "~3.9.0",
     "@radix-ui/react-label": "~2.1.0",
     "@radix-ui/react-slot": "~1.1.0",
-    "better-sqlite3": "11.3.0",
     "class-variance-authority": "~0.7.0",
     "clsx": "~2.1.1",
-    "electron-updater": "~6.3.4",
     "i18next": "~23.15.1",
     "lucide-react": "^0.439.0",
-    "node-thermal-printer": "~4.4.4",
-    "pngjs": "^7.0.0",
-    "qrcode": "~1.5.4",
     "react": "~18.3.1",
     "react-dom": "~18.3.1",
     "react-hook-form": "~7.52.0",
@@ -38,9 +41,7 @@
     "tailwind-merge": "~2.5.2",
     "tailwindcss-animate": "~1.0.7",
     "zod": "~3.23.8",
-    "zustand": "~4.5.4"
-  },
-  "devDependencies": {
+    "zustand": "~4.5.4",
     "@types/better-sqlite3": "~7.6.11",
     "@types/node": "~20.16.0",
     "@types/react": "~18.3.5",

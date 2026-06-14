@@ -24,22 +24,32 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          # Cache the npm download cache so repeat builds skip re-downloading
+          # every package (a big chunk of the wall-clock on a cold runner).
+          cache: npm
+          cache-dependency-path: pos-terminal/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      # better-sqlite3 is a native module. `npm ci` fetches a Node-ABI prebuild;
-      # the app runs under ELECTRON's ABI, so the binary must be rebuilt for
-      # Electron or `require('better-sqlite3')` throws NODE_MODULE_VERSION at
-      # launch — the classic "installs but won't start". postinstall runs
-      # `electron-builder install-app-deps`, but we rebuild EXPLICITLY here so a
-      # silent no-op can't ship a broken binary.
-      - name: Rebuild native modules for Electron (win32-x64)
-        run: npx --yes @electron/rebuild -f -w better-sqlite3 --arch x64
+      # better-sqlite3 is a native module that must match ELECTRON's ABI, or
+      # require() throws NODE_MODULE_VERSION at launch. `electron-builder
+      # install-app-deps` (also our postinstall) DOWNLOADS the matching Electron
+      # prebuild via prebuild-install — seconds, no MSVC compile. We run it
+      # explicitly so the binary is correct before the verify step.
+      #
+      # NB: do NOT use `@electron/rebuild -f` here — the force flag compiles
+      # better-sqlite3 from source with node-gyp/MSVC, which took 20+ minutes
+      # (or stalled) on the Windows runner. The prebuild download is the fast,
+      # supported path; we only fall back to a compile if no prebuild exists.
+      - name: Fetch Electron-ABI native prebuilds
+        run: npx --no-install electron-builder install-app-deps
 
       # Fail the build NOW (not on the customer's PC) if the native binary can't
       # load under Electron. Runs better-sqlite3 in a headless Electron main
       # process; a NODE_MODULE_VERSION / wrong-arch error exits non-zero.
+      # NB: the script MUST be .cjs — package.json has "type": "module", so a
+      # .js file is treated as ESM and `require` throws "require is not defined".
       - name: Verify better-sqlite3 loads under Electron
         shell: pwsh
         run: |
@@ -58,8 +68,8 @@ jobs:
               app.exit(1);
             }
           });
-          '@ | Out-File -Encoding utf8 verify-sqlite.js
-          npx --yes electron verify-sqlite.js
+          '@ | Out-File -Encoding utf8 verify-sqlite.cjs
+          npx --no-install electron verify-sqlite.cjs
 
       - name: Build renderer + main (electron-vite)
         run: npm run build
@@ -71,8 +81,8 @@ jobs:
           CSC_KEY_PASSWORD: ""
         # No publish block in electron-builder.yml, so no auto-update metadata
         # is generated (that step crashed a no-channel artifact build).
-        # nodeGypRebuild:false in electron-builder.yml is intentional — we
-        # already rebuilt + verified the native module above; let it package
+        # nodeGypRebuild:false is intentional — install-app-deps above already
+        # placed the correct Electron-ABI prebuild; let electron-builder package
         # that exact binary rather than rebuild again.
         run: npx electron-builder --win --publish never
 
