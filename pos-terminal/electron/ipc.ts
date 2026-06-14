@@ -23,7 +23,8 @@ import {
   getPairedIdentity, getSdcUrl, isPaired, pairWithCode, setSdcUrl, unpair,
 } from "./pairing";
 import {
-  currentStatus, kickWorker, manualRetryFailed, setAuthTokens, subscribe,
+  currentStatus, expediteWorker, kickWorker, manualRetryFailed,
+  retryQueueRowById, setAuthTokens, subscribe,
 } from "./sync/manager";
 import {
   closeCashSession,
@@ -32,6 +33,7 @@ import {
   getOpenSession,
   holdInvoice,
   listInvoices,
+  listPendingSync,
   openCashSession,
   persistInvoice,
   recallInvoice,
@@ -259,8 +261,14 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
     kickWorker();
     return { ok: true };
   });
+  ipcMain.handle("sync:expedite", () => {
+    expediteWorker();
+    return { ok: true };
+  });
   ipcMain.handle("sync:status", () => currentStatus());
   ipcMain.handle("sync:retry-failed", () => ({ retried: manualRetryFailed() }));
+  ipcMain.handle("sync:list-pending", (_e, limit?: number) => listPendingSync(limit));
+  ipcMain.handle("sync:retry-row", (_e, id: number) => ({ retried: retryQueueRowById(id) }));
 
   // Push sync status changes to all renderer windows.
   subscribe((s) => {

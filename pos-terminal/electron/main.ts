@@ -5,16 +5,49 @@
  *  - Spawns the sync worker (utilityProcess) and bridges it to the renderer.
  */
 
-import { BrowserWindow, app } from "electron";
+import { BrowserWindow, app, powerMonitor } from "electron";
 import path from "node:path";
 
 import { initAutoUpdate } from "./auto-update";
 import { closeCustomerDisplay, watchDisplayChanges } from "./customer-display";
 import { openDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc";
-import { startSyncWorker, stopSyncWorker } from "./sync/manager";
+import { expediteWorker, startSyncWorker, stopSyncWorker } from "./sync/manager";
 
 const isDev = !!process.env["ELECTRON_RENDERER_URL"];
+
+// --- Reachability monitor ------------------------------------------------
+// The sync worker self-heals within ~2 min via its idle timer + capped network
+// backoff, but we want the queue to drain the INSTANT the link returns. We poll
+// the backend cheaply and, on an offline→online transition, expedite the worker
+// (reset pending backoff + retry now). powerMonitor 'resume' covers laptop wake
+// (the classic "stuck in long backoff after sleep" case); the renderer's
+// 'online' event (via IPC) is a third, free trigger.
+let reachabilityTimer: ReturnType<typeof setInterval> | null = null;
+let lastReachable = true; // assume online at boot; first failure flips it
+
+function startReachabilityMonitor(apiBase: string) {
+  const base = apiBase.replace(/\/$/, "");
+  const check = async () => {
+    let reachable = false;
+    try {
+      // HEAD the API root — any HTTP response (even 401/404) proves the link is
+      // up. Only a thrown error (DNS/timeout/refused) counts as unreachable.
+      await fetch(base, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+      reachable = true;
+    } catch {
+      reachable = false;
+    }
+    if (reachable && !lastReachable) {
+      // offline → online transition: drain the queue immediately.
+      expediteWorker();
+    }
+    lastReachable = reachable;
+  };
+  reachabilityTimer = setInterval(() => void check(), 15_000);
+  // powerMonitor: resuming from sleep almost always means a fresh network.
+  powerMonitor.on("resume", () => expediteWorker());
+}
 
 function resolveDbPath(): string {
   if (isDev) {
@@ -66,6 +99,7 @@ void app.whenReady().then(() => {
   openDb(dbPath);
   registerIpcHandlers({ apiBase });
   startSyncWorker({ dbPath, apiBase });
+  startReachabilityMonitor(apiBase);
   createWindow();
   // Open customer-facing display on a secondary monitor when present;
   // re-attempts on display hot-plug. No-op for single-display setups.
@@ -80,6 +114,10 @@ void app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
+  if (reachabilityTimer) {
+    clearInterval(reachabilityTimer);
+    reachabilityTimer = null;
+  }
   stopSyncWorker();
   closeCustomerDisplay();
 });

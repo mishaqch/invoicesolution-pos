@@ -70,6 +70,12 @@ interface PrintResult {
 
 const TIMEOUT_MS = 5000;
 
+// Printed in place of the FBR QR block when a sale was rung up offline and has
+// no FBR invoice number yet. Once it syncs and FBR validates, the receipt is
+// reprinted with the real QR + number (from Today's Invoices, or auto on the
+// success screen if the cashier is still there).
+const FBR_PENDING_NOTICE = "FBR: pending - added when online";
+
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -450,6 +456,13 @@ async function realPrint(
     printer.println(fbrNo);
     printer.bold(false);
     printer.alignLeft();
+  } else {
+    // No FBR number yet (sale rung up offline). Print a clear, professional
+    // notice instead of stopping abruptly after the totals — the receipt is a
+    // complete customer bill; the FBR QR is added when it reprints after sync.
+    printer.alignCenter();
+    printer.println(FBR_PENDING_NOTICE);
+    printer.alignLeft();
   }
 
   printer.cut();
@@ -635,6 +648,13 @@ function renderBodyText(input: ReceiptInput): string {
     lines.push(k + " ".repeat(pad) + v);
   }
   lines.push(rule);
+
+  // FBR-pending notice on the disk-fallback receipt too (offline sales).
+  const fbrNo = (input.invoice as { fbr_invoice_number?: string | null }).fbr_invoice_number;
+  if (!fbrNo) {
+    lines.push(center(FBR_PENDING_NOTICE));
+    lines.push(rule);
+  }
 
   lines.push(center("Thank you!"));
   lines.push("");

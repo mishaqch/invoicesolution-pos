@@ -251,6 +251,41 @@ export function listInvoices(opts: { held?: boolean; limit?: number } = {}) {
     .all(opts.limit ?? 50);
 }
 
+export interface PendingSyncRow {
+  id: number;
+  client_uuid: string;
+  entity_type: string;
+  status: string;
+  attempt_count: number;
+  last_error: string | null;
+  next_attempt_at: string | null;
+  created_at: string;
+  local_invoice_number: string | null;
+  grand_total: string | null;
+  invoice_date: string | null;
+  fbr_invoice_number: string | null;
+}
+
+// Rows still in flight (not yet acked 'ok'), for the operator's pending-sync
+// list. LEFT JOIN so non-invoice entities still show; failed rows surface
+// first, then newest. Read-only — retry actions go through the manager.
+export function listPendingSync(limit = 100): PendingSyncRow[] {
+  return getDb()
+    .prepare(
+      `SELECT q.id, q.client_uuid, q.entity_type, q.status, q.attempt_count,
+              q.last_error, q.next_attempt_at, q.created_at,
+              i.local_invoice_number, i.grand_total, i.invoice_date,
+              i.fbr_invoice_number
+       FROM outbound_queue q
+       LEFT JOIN invoices i
+         ON i.id = q.entity_id AND q.entity_type = 'invoice'
+       WHERE q.status IN ('pending', 'sent', 'failed')
+       ORDER BY (q.status = 'failed') DESC, datetime(q.created_at) DESC
+       LIMIT ?`,
+    )
+    .all(limit) as PendingSyncRow[];
+}
+
 export function getInvoiceWithLines(invoice_id: string) {
   const db = getDb();
   const invoice = db.prepare(`SELECT * FROM invoices WHERE id = ?`).get(invoice_id) as

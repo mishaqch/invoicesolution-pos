@@ -116,6 +116,14 @@ export function kickWorker() {
   worker.postMessage({ type: "kick" });
 }
 
+// Connectivity restored → tell the worker to reset pending rows' backoff and
+// retry immediately. Use this (not kickWorker) on online/resume transitions so
+// rows sitting in backoff don't wait out their timer once the link is back.
+export function expediteWorker() {
+  if (!worker) return;
+  worker.postMessage({ type: "expedite" });
+}
+
 export function stopSyncWorker() {
   if (!worker) return;
   worker.postMessage({ type: "stop" });
@@ -141,6 +149,20 @@ export function manualRetryFailed(): number {
        WHERE status = 'failed'`,
     )
     .run();
+  if (result.changes > 0) kickWorker();
+  return result.changes;
+}
+
+// Retry one specific queue row now (per-row "Retry" on the pending-sync list).
+// Works for both 'failed' and 'pending' rows; clears the backoff and kicks.
+export function retryQueueRowById(id: number): number {
+  const result = getDb()
+    .prepare(
+      `UPDATE outbound_queue SET status = 'pending',
+        next_attempt_at = CURRENT_TIMESTAMP, attempt_count = 0, last_error = NULL
+       WHERE id = ? AND status IN ('failed', 'pending', 'sent')`,
+    )
+    .run(id);
   if (result.changes > 0) kickWorker();
   return result.changes;
 }

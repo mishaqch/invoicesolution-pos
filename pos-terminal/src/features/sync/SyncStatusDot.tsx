@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface Status {
   counts: { pending: number; ok: number; failed: number };
@@ -38,6 +39,7 @@ export function SyncStatusDot() {
   });
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!window.api?.sync) return;
@@ -122,7 +124,9 @@ export function SyncStatusDot() {
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
-                await window.api.sync.kick();
+                // expedite (not kick): reset any backoff and retry now, so a
+                // manual "Sync now" drains the queue even mid-outage-backoff.
+                await window.api.sync.expedite();
                 setBusy(false);
               }}
               className="flex-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
@@ -144,6 +148,16 @@ export function SyncStatusDot() {
               </button>
             )}
           </div>
+
+          {(status.counts.pending > 0 || status.counts.failed > 0) && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); navigate("/sync"); }}
+              className="mt-2 w-full rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              View pending →
+            </button>
+          )}
         </div>
       )}
     </div>

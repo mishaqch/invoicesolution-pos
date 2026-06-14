@@ -44,7 +44,18 @@ interface RefreshTokenResponse {
   refreshToken?: string | null;
 }
 
-type MsgIn = InitMessage | AuthMessage | { type: "kick" } | { type: "stop" };
+type MsgIn =
+  | InitMessage
+  | AuthMessage
+  | { type: "kick" }
+  | { type: "expedite" }
+  | { type: "stop" };
+
+// Network-error backoff is capped well below the full schedule. A pure
+// connectivity outage must self-heal quickly once the link is back — even
+// without the active reconnect detection in the main process — so we never
+// let an offline spell push a sale hours into the future or fail it outright.
+const NETWORK_BACKOFF_CAP_S = 120;
 
 interface QueueRow {
   id: number;
@@ -96,6 +107,8 @@ port.on("message", (raw: unknown) => {
     kick();
   } else if (m.type === "kick") {
     kick();
+  } else if (m.type === "expedite") {
+    expedite();
   } else if (m.type === "stop") {
     stopped = true;
     kick();
@@ -212,7 +225,10 @@ async function processRow(row: QueueRow) {
       signal: AbortSignal.timeout(30_000),
     });
   } catch (err) {
-    transientFailure(row, `network: ${(err as Error).message}`);
+    // Connectivity failure (DNS / timeout / refused). Treat as offline — do
+    // NOT count it toward MAX_ATTEMPTS, and cap the backoff so the queue
+    // self-heals fast once the link returns.
+    networkFailure(row, `network: ${(err as Error).message}`);
     return;
   }
 
@@ -302,6 +318,24 @@ function transientFailure(row: QueueRow, message: string) {
   log("warn", `transient failure ${row.entity_type} ${row.entity_id}, retry in ${seconds}s: ${message}`);
 }
 
+// Connectivity outage — distinct from a 5xx server error. A sale must NEVER be
+// permanently failed just because the shop's internet was down, so we do not
+// touch attempt_count (it doesn't count toward MAX_ATTEMPTS) and we cap the
+// retry delay at NETWORK_BACKOFF_CAP_S. Combined with the 30s idle loop this
+// guarantees recovery within ~2 min of the link returning, even if the active
+// reconnect kick never fires. The row stays 'pending' forever until it sends.
+function networkFailure(row: QueueRow, message: string) {
+  const next_at = new Date(Date.now() + NETWORK_BACKOFF_CAP_S * 1000).toISOString();
+  getDb()
+    .prepare(
+      `UPDATE outbound_queue SET status = 'pending', next_attempt_at = ?, last_error = ?
+       WHERE id = ?`,
+    )
+    .run(next_at, message, row.id);
+  lastError = message;
+  log("warn", `offline — ${row.entity_type} ${row.entity_id} will retry within ${NETWORK_BACKOFF_CAP_S}s: ${message}`);
+}
+
 async function tryRefreshToken(): Promise<boolean> {
   if (!refreshToken) return false;
   try {
@@ -345,6 +379,23 @@ function kick() {
     kickPromise.resolve();
     kickPromise = null;
   }
+}
+
+// Reconnect handler: connectivity was just restored (OS online event, laptop
+// wake, or the main-process reachability poll). Pull every pending row's
+// next_attempt_at to now and clear its backoff/attempt_count so it retries
+// immediately with a fresh budget, then wake the loop. We deliberately do NOT
+// resurrect 'failed' rows — those are an explicit operator action ("Retry
+// failed") so a genuinely rejected write isn't silently retried on every blip.
+function expedite() {
+  if (db) {
+    db.prepare(
+      `UPDATE outbound_queue
+         SET next_attempt_at = datetime('now'), attempt_count = 0, last_error = NULL
+       WHERE status = 'pending'`,
+    ).run();
+  }
+  kick();
 }
 
 function waitForKickOrTimeout(ms: number): Promise<void> {

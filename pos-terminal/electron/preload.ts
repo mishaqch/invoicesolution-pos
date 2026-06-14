@@ -263,6 +263,8 @@ const api = {
     setTokens: (access: string | null, refresh: string | null): Promise<{ ok: true }> =>
       ipcRenderer.invoke("sync:set-tokens", access, refresh),
     kick: (): Promise<{ ok: true }> => ipcRenderer.invoke("sync:kick"),
+    // Reconnect: reset pending backoff + retry now (online/resume transitions).
+    expedite: (): Promise<{ ok: true }> => ipcRenderer.invoke("sync:expedite"),
     status: (): Promise<{
       counts: { pending: number; ok: number; failed: number };
       last_processed_at: string | null;
@@ -270,6 +272,22 @@ const api = {
     }> => ipcRenderer.invoke("sync:status"),
     retryFailed: (): Promise<{ retried: number }> =>
       ipcRenderer.invoke("sync:retry-failed"),
+    listPending: (limit?: number): Promise<Array<{
+      id: number;
+      client_uuid: string;
+      entity_type: string;
+      status: string;
+      attempt_count: number;
+      last_error: string | null;
+      next_attempt_at: string | null;
+      created_at: string;
+      local_invoice_number: string | null;
+      grand_total: string | null;
+      invoice_date: string | null;
+      fbr_invoice_number: string | null;
+    }>> => ipcRenderer.invoke("sync:list-pending", limit),
+    retryRow: (id: number): Promise<{ retried: number }> =>
+      ipcRenderer.invoke("sync:retry-row", id),
     onStatus: (cb: (s: {
       counts: { pending: number; ok: number; failed: number };
       last_processed_at: string | null;

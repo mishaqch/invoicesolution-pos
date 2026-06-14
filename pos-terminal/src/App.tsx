@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { ToastProvider } from "@/components/feedback/Toast";
@@ -14,12 +15,23 @@ import ReturnRoute from "@/routes/return";
 import SaleRoute from "@/routes/sale";
 import SplashRoute from "@/routes/splash";
 import SuccessRoute from "@/routes/success";
+import SyncPendingRoute from "@/routes/sync-pending";
 
 const protectedRoute = (el: React.ReactNode) => (
   <ProtectedRoute>{el}</ProtectedRoute>
 );
 
 export default function App() {
+  // Cheap renderer-side reconnect trigger: when the OS reports the network is
+  // back, tell the sync worker to expedite (drain the queue immediately rather
+  // than waiting out its backoff). The main-process reachability poll +
+  // powerMonitor are the authoritative triggers; this is a free third one.
+  useEffect(() => {
+    const onOnline = () => void window.api?.sync?.expedite?.();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, []);
+
   return (
     <HashRouter>
       <ToastProvider>
@@ -33,6 +45,7 @@ export default function App() {
         <Route path="/success" element={protectedRoute(<SuccessRoute />)} />
         <Route path="/held-sales" element={protectedRoute(<HeldSalesRoute />)} />
         <Route path="/today-invoices" element={protectedRoute(<TodayInvoicesRoute />)} />
+        <Route path="/sync" element={protectedRoute(<SyncPendingRoute />)} />
         <Route path="/return" element={protectedRoute(<ReturnRoute />)} />
         <Route path="/day-close" element={protectedRoute(<DayCloseRoute />)} />
         <Route path="/hardware" element={protectedRoute(<HardwareRoute />)} />
