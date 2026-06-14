@@ -28,6 +28,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # better-sqlite3 is a native module. `npm ci` fetches a Node-ABI prebuild;
+      # the app runs under ELECTRON's ABI, so the binary must be rebuilt for
+      # Electron or `require('better-sqlite3')` throws NODE_MODULE_VERSION at
+      # launch — the classic "installs but won't start". postinstall runs
+      # `electron-builder install-app-deps`, but we rebuild EXPLICITLY here so a
+      # silent no-op can't ship a broken binary.
+      - name: Rebuild native modules for Electron (win32-x64)
+        run: npx --yes @electron/rebuild -f -w better-sqlite3 --arch x64
+
+      # Fail the build NOW (not on the customer's PC) if the native binary can't
+      # load under Electron. Runs better-sqlite3 in a headless Electron main
+      # process; a NODE_MODULE_VERSION / wrong-arch error exits non-zero.
+      - name: Verify better-sqlite3 loads under Electron
+        shell: pwsh
+        run: |
+          @'
+          const { app } = require("electron");
+          app.whenReady().then(() => {
+            try {
+              const Database = require("better-sqlite3");
+              const db = new Database(":memory:");
+              db.prepare("select 1 as ok").get();
+              db.close();
+              console.log("better-sqlite3 OK under Electron ABI");
+              app.exit(0);
+            } catch (e) {
+              console.error("better-sqlite3 FAILED under Electron:", e);
+              app.exit(1);
+            }
+          });
+          '@ | Out-File -Encoding utf8 verify-sqlite.js
+          npx --yes electron verify-sqlite.js
+
       - name: Build renderer + main (electron-vite)
         run: npm run build
 
@@ -38,6 +71,9 @@ jobs:
           CSC_KEY_PASSWORD: ""
         # No publish block in electron-builder.yml, so no auto-update metadata
         # is generated (that step crashed a no-channel artifact build).
+        # nodeGypRebuild:false in electron-builder.yml is intentional — we
+        # already rebuilt + verified the native module above; let it package
+        # that exact binary rather than rebuild again.
         run: npx electron-builder --win --publish never
 
       - name: Locate the built .exe

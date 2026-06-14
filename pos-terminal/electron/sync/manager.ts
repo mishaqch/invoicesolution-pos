@@ -57,8 +57,10 @@ export function startSyncWorker(opts: { dbPath: string; apiBase: string }) {
   // The worker reapplies the schema on init in case of a fresh DB; the main
   // process already has a handle, so SQLite WAL allows shared reads/writes.
   const schemaCandidates = [
-    path.resolve(__dirname, "db/schema.sql"),
-    path.resolve(__dirname, "../electron/db/schema.sql"),
+    path.resolve(__dirname, "db/schema.sql"),                  // dev
+    path.resolve(__dirname, "../../electron/db/schema.sql"),   // packaged: out/main → asar root → electron/db
+    path.resolve(__dirname, "../electron/db/schema.sql"),      // legacy
+    path.resolve(process.resourcesPath ?? "", "app.asar/electron/db/schema.sql"),
   ];
   const schemaPath = schemaCandidates.find((p) => existsSync(p)) ?? schemaCandidates[0];
 

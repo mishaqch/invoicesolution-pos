@@ -60,11 +60,19 @@ function addColumnIfMissing(
 }
 
 function applySchema(connection: Database.Database) {
-  // electron-vite builds main into dist-electron/main; resolve schema relative
-  // to either the source path (dev) or the bundled location (prod).
+  // Resolve schema.sql across dev AND the packaged layout. In a packaged
+  // build __dirname is `…/app.asar/out/main`, while electron-builder's `files`
+  // glob packages the source file to `…/app.asar/electron/db/schema.sql`
+  // (i.e. two levels up from out/main, then electron/db). The old candidates
+  // missed that location, so openDb() threw at launch on Windows and the app
+  // died before showing a window. Order: dev source, packaged asar root,
+  // legacy guesses, cwd.
   const candidates = [
-    path.resolve(__dirname, "db/schema.sql"),
-    path.resolve(__dirname, "../electron/db/schema.sql"),
+    path.resolve(__dirname, "db/schema.sql"),                    // dev: electron/db
+    path.resolve(__dirname, "../../electron/db/schema.sql"),     // packaged: out/main → asar root → electron/db
+    path.resolve(__dirname, "../electron/db/schema.sql"),        // legacy layout
+    path.resolve(process.resourcesPath ?? "", "app.asar/electron/db/schema.sql"),
+    path.resolve(process.resourcesPath ?? "", "electron/db/schema.sql"),
     path.resolve(process.cwd(), "electron/db/schema.sql"),
   ];
   const schemaPath = candidates.find((p) => existsSync(p));
