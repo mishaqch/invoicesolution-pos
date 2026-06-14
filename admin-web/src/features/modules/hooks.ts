@@ -46,6 +46,7 @@ export type ModuleKey =
   | "branches"
   | "terminals"
   | "inventory"
+  | "warehouses"
   | "returns"
   | "debit_credit_notes"
   | "manual_amendments"
@@ -103,4 +104,17 @@ export function useIsPharmacy(): boolean {
 /** True when the tenant is a restaurant (so tables/menu/kitchen UI is shown). */
 export function useIsRestaurant(): boolean {
   return useVertical() === "restaurant";
+}
+
+/** The tenant's business mode ("digital_invoicing" until loaded). */
+export function useBusinessMode(): BusinessMode {
+  const { data } = useModules();
+  return data?.business_mode ?? "digital_invoicing";
+}
+
+/** True when the tenant does Digital Invoicing (DI-only or both) — the tenants
+ *  who get the multi-warehouse stock surfaces. */
+export function useIsDigitalInvoicing(): boolean {
+  const mode = useBusinessMode();
+  return mode === "digital_invoicing" || mode === "both";
 }

@@ -215,6 +215,8 @@ def process_return(
             product=d["sale_item"].product,
             variant=d["sale_item"].variant,
             branch=branch,
+            # Credit the same warehouse the sale debited (None for POS/legacy).
+            warehouse=original_invoice.warehouse,
             movement_type=d["movement_type"],
             quantity=sign * d["qty"],
             unit_cost=d["sale_item"].cost_price,

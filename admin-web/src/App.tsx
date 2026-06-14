@@ -30,6 +30,8 @@ import ModifiersAdmin from "@/routes/restaurant/modifiers";
 import FloorView from "@/routes/restaurant/floor";
 import KitchenDisplay from "@/routes/restaurant/kitchen";
 import StockByBranch from "@/routes/inventory/stock-by-branch";
+import StockByWarehouse from "@/routes/inventory/stock-by-warehouse";
+import Warehouses from "@/routes/inventory/warehouses";
 import StockTransfersList from "@/routes/inventory/transfers";
 import LoginRoute from "@/routes/login";
 import HeldSalesAdminList from "@/routes/sales/held-sales";
@@ -114,6 +116,17 @@ export default function App() {
               <Route path="adjustments" element={<Adjustments />} />
               <Route path="transfers" element={<StockTransfersList />} />
               <Route path="audits" element={<StockAuditsList />} />
+            </Route>
+
+            {/* Warehouses — Digital-Invoicing multi-godown stock. Gated by the
+                `warehouses` module (off for POS), separate from the `inventory`
+                group above so DI tenants (who lack `inventory`) can reach it. */}
+            <Route
+              path="inventory"
+              element={<RequireModule module="warehouses"><Outlet /></RequireModule>}
+            >
+              <Route path="warehouses" element={<Warehouses />} />
+              <Route path="warehouse-stock" element={<StockByWarehouse />} />
             </Route>
 
             {/* Procurement — pharmacy/wholesale. Gated by inventory module +

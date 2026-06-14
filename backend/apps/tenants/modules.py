@@ -85,6 +85,15 @@ MODULES: list[_Module] = [
                        "stock audits.",
         "forced": False,
     },
+    {
+        "key": "warehouses",
+        "label": "Warehouses (Digital Invoicing)",
+        "group": "Multi-location",
+        "description": "Per-warehouse stock for Digital-Invoicing tenants: "
+                       "godowns under a branch, opening balance + stock-in per "
+                       "warehouse, and warehouse-keyed sale deduction.",
+        "forced": False,
+    },
     # --- Operations ---
     {
         "key": "returns",

@@ -1,0 +1,201 @@
+/**
+ * Stock by warehouse (Digital-Invoicing).
+ *
+ * Per-item on-hand for one warehouse: how much you have right now. From here a
+ * distributor sets opening stock or records stock-in (a fresh arrival) per
+ * item — both post to the adjustments endpoint with the warehouse set, so the
+ * warehouse-keyed StockLevel updates and sales draw it down.
+ *
+ * POS tenants never see this (gated by the `warehouses` module + DI mode);
+ * their branch-keyed "Stock by branch" page is untouched.
+ */
+import { PackagePlus, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+
+import { useToast } from "@/components/feedback/Toast";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NumberInput } from "@/components/ui/number-input";
+import { PageHeader } from "@/components/ui/page-header";
+import { Select } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { extractApiErrorMessage } from "@/lib/api";
+import {
+  usePostAdjustment,
+  useProducts,
+  useStockLevels,
+  useWarehouses,
+} from "@/lib/queries";
+
+export default function StockByWarehouse() {
+  const warehouses = useWarehouses();
+  const products = useProducts();
+  const toast = useToast();
+
+  const whRows = warehouses.data?.results ?? [];
+  // Default to the tenant default warehouse, else the first.
+  const defaultWh = whRows.find((w) => w.is_default)?.id ?? whRows[0]?.id ?? "";
+  const [warehouse, setWarehouse] = useState<string>("");
+  const activeWh = warehouse || defaultWh;
+
+  const { data, isLoading } = useStockLevels(activeWh ? { warehouse: activeWh } : {});
+  const productLookup = useMemo(
+    () => new Map(products.data?.results.map((p) => [p.id, p]) ?? []),
+    [products.data],
+  );
+
+  const selectedWh = whRows.find((w) => w.id === activeWh);
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Stock by warehouse" />
+
+      <div className="flex w-full items-end gap-3 sm:max-w-md">
+        <div className="flex-1 space-y-1.5">
+          <Label htmlFor="wh">Warehouse</Label>
+          <Select id="wh" value={activeWh} onChange={(e) => setWarehouse(e.target.value)}>
+            {whRows.length === 0 && <option value="">No warehouses yet</option>}
+            {whRows.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name} — {w.branch_name}{w.is_default ? " (default)" : ""}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+
+      {activeWh && selectedWh && (
+        <StockInCard
+          warehouseId={activeWh}
+          branchId={selectedWh.branch}
+          onSaved={() => toast.show({ message: "Stock updated.", variant: "success" })}
+        />
+      )}
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Product</TableHead>
+              <TableHead className="hidden lg:table-cell">SKU</TableHead>
+              <TableHead className="text-right">On hand</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {!activeWh ? (
+              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
+            ) : isLoading ? (
+              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+            ) : (data?.results.length ?? 0) === 0 ? (
+              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
+            ) : (
+              data!.results.map((s) => {
+                const p = productLookup.get(s.product);
+                return (
+                  <TableRow key={s.id}>
+                    <TableCell>
+                      {p?.name ?? s.product}
+                      {p?.sku && (
+                        <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">{p.sku}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">{p?.sku}</TableCell>
+                    <TableCell className="text-right font-mono">{s.quantity}</TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+/** Inline "set opening balance / add stock" for the selected warehouse. */
+function StockInCard({
+  warehouseId,
+  branchId,
+  onSaved,
+}: {
+  warehouseId: string;
+  branchId: string;
+  onSaved: () => void;
+}) {
+  const products = useProducts();
+  const post = usePostAdjustment();
+
+  const [product, setProduct] = useState("");
+  const [movementType, setMovementType] = useState("opening_balance");
+  const [quantity, setQuantity] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    try {
+      await post.mutateAsync({
+        branch: branchId,
+        warehouse: warehouseId,
+        product,
+        movement_type: movementType,
+        quantity,
+        reason: reason || (movementType === "opening_balance" ? "Opening balance" : "Stock in"),
+      });
+      setQuantity("");
+      setReason("");
+      onSaved();
+    } catch (err) {
+      setError(extractApiErrorMessage(err));
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <PackagePlus className="h-4 w-4" /> Add / set stock
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="sw-product">Product *</Label>
+            <Select id="sw-product" value={product} onChange={(e) => setProduct(e.target.value)} required>
+              <option value="">— Select —</option>
+              {products.data?.results.map((p) => (
+                <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sw-type">Type *</Label>
+            <Select id="sw-type" value={movementType} onChange={(e) => setMovementType(e.target.value)}>
+              <option value="opening_balance">Opening balance</option>
+              <option value="adjustment_in">Stock in (add)</option>
+              <option value="adjustment_out">Stock out (remove)</option>
+              <option value="damage">Damage</option>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sw-qty">Quantity *</Label>
+            <NumberInput id="sw-qty" mode="decimal" value={quantity} onChange={setQuantity} required />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sw-reason">Reason</Label>
+            <Input id="sw-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional note" />
+          </div>
+          <div className="sm:col-span-2">
+            <Button type="submit" loading={post.isPending}>
+              <Plus className="mr-2 h-4 w-4" /> {post.isPending ? "Saving…" : "Save"}
+            </Button>
+            {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}

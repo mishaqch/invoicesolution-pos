@@ -41,6 +41,9 @@ def create_invoice(
     cart_discount_pct: Decimal | str = 0,
     payments: list[dict],
     client_uuid: UUID | str,
+    # Warehouse to deduct stock from (Digital Invoicing only). None for POS /
+    # legacy — stock is then branch-keyed exactly as before.
+    warehouse=None,
     notes: str | None = None,
     local_invoice_number: str | None = None,
     invoice_type: str = "sale",
@@ -121,6 +124,7 @@ def create_invoice(
         tenant_id=tenant_id,
         branch=branch,
         terminal=terminal,
+        warehouse=warehouse,
         cashier=cashier,
         cash_session=cash_session,
         customer=customer or (reference_invoice.customer if reference_invoice else None),
@@ -257,6 +261,7 @@ def create_invoice(
             variant=variant,
             batch=batch,
             branch=branch,
+            warehouse=warehouse,
             movement_type="sale",
             quantity=Decimal("-1") * line_quote.quantity,
             unit_cost=product.cost_price,

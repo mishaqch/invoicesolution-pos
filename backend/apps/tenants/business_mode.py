@@ -129,12 +129,14 @@ DEFAULT_MODULES_FOR_MODE: dict[str, list[str]] = {
     ],
     "digital_invoicing": [
         "sales", "fbr", "customers",
+        "warehouses",
         "debit_credit_notes", "manual_amendments",
         "reports_basic", "audit_log",
     ],
     "both": [
         "sales", "fbr", "customers",
         "branches", "terminals", "inventory", "returns",
+        "warehouses",
         "debit_credit_notes", "manual_amendments",
         "payments_advanced", "customer_display", "hardware",
         "restaurant",

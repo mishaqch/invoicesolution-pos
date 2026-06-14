@@ -27,7 +27,7 @@ import {
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 
-import { useModules, type ModuleKey, type Vertical } from "@/features/modules/hooks";
+import { useModules, type BusinessMode, type ModuleKey, type Vertical } from "@/features/modules/hooks";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 import { useSidebarStore } from "@/stores/sidebar";
@@ -49,6 +49,10 @@ interface Item {
   /** When set, the item is HIDDEN for tenants of these verticals (e.g. the
    *  warehouse-style inventory tools don't fit a restaurant). */
   hideForVerticals?: Vertical[];
+  /** When set, the item only shows for tenants in one of these business modes
+   *  (e.g. the DI-only multi-warehouse stock surfaces). Items without it show
+   *  for every business mode. */
+  requireBusinessMode?: BusinessMode[];
 }
 
 const TOP: Item[] = [
@@ -99,6 +103,15 @@ const INVENTORY: Item[] = [
   { to: "/suppliers", label: "Suppliers", icon: Truck, module: "inventory", vertical: "pharmacy" },
 ];
 
+// Warehouses (Digital-Invoicing only). Wholesalers/distributors track stock
+// per godown under a branch. Double-gated: the `warehouses` module (off for
+// POS) AND requireBusinessMode (DI/both), so POS tenants never see it even if
+// the module were ever enabled for them.
+const WAREHOUSE: Item[] = [
+  { to: "/inventory/warehouse-stock", label: "Stock", icon: Boxes, module: "warehouses", requireBusinessMode: ["digital_invoicing", "both"] },
+  { to: "/inventory/warehouses", label: "Warehouses", icon: Building2, module: "warehouses", requireBusinessMode: ["digital_invoicing", "both"] },
+];
+
 // Restaurant (F&B vertical only). All gated by the restaurant module +
 // vertical, so non-restaurant tenants never see this section.
 const RESTAURANT: Item[] = [
@@ -132,6 +145,7 @@ export function Sidebar() {
   const { data: modules } = useModules();
   const enabled = modules?.enabled;
   const vertical = modules?.vertical;
+  const businessMode = modules?.business_mode;
 
   function visible(items: Item[]): Item[] {
     if (!enabled) return items;
@@ -144,7 +158,9 @@ export function Sidebar() {
         (!it.vertical || !vertical || it.vertical === vertical) &&
         // Hide items that don't fit this vertical (e.g. warehouse inventory for
         // a restaurant). Only hide once we know the vertical.
-        (!it.hideForVerticals || !vertical || !it.hideForVerticals.includes(vertical)),
+        (!it.hideForVerticals || !vertical || !it.hideForVerticals.includes(vertical)) &&
+        // Hide business-mode-specific links (e.g. DI-only warehouse stock).
+        (!it.requireBusinessMode || !businessMode || it.requireBusinessMode.includes(businessMode)),
     );
   }
 
@@ -161,6 +177,7 @@ export function Sidebar() {
   const top = visible(TOP);
   const catalog = withVerticalLabels(visible(CATALOG));
   const inventory = visible(INVENTORY);
+  const warehouse = visible(WAREHOUSE);
   const restaurant = visible(RESTAURANT);
   const adminItems = visible(ADMIN);
 
@@ -193,6 +210,7 @@ export function Sidebar() {
         {top.length > 0 && <Group items={top} />}
         {catalog.length > 0 && <Section title="Catalog" items={catalog} />}
         {inventory.length > 0 && <Section title="Inventory" items={inventory} />}
+        {warehouse.length > 0 && <Section title="Warehouse" items={warehouse} />}
         {restaurant.length > 0 && <Section title="Restaurant" items={restaurant} />}
         {adminItems.length > 0 && <Section title="Admin" items={adminItems} />}
       </nav>

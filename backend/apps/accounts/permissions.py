@@ -171,3 +171,45 @@ class HasModule(BasePermission):
             f"This tenant does not have the '{self.module_key}' module "
             f"enabled. Contact your platform administrator."
         )
+
+
+class HasAnyModule(BasePermission):
+    """Pass if the tenant has ANY one of the given modules enabled.
+
+    Used by endpoints shared between two tenant shapes — e.g. stock levels +
+    adjustments, which POS tenants reach via the `inventory` module and
+    Digital-Invoicing tenants reach via the `warehouses` module.
+    """
+
+    module_keys: tuple[str, ...] = ()
+
+    @classmethod
+    def for_modules(cls, *module_keys: str) -> type["HasAnyModule"]:
+        return type(
+            "HasAnyModuleBound",
+            (cls,),
+            {"module_keys": tuple(module_keys)},
+        )
+
+    def has_permission(self, request, view) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id or not self.module_keys:
+            return False
+
+        from apps.tenants.models import Tenant
+        from apps.tenants.modules import is_module_enabled
+
+        try:
+            tenant = Tenant.objects.only("modules_enabled").get(pk=tenant_id)
+        except Tenant.DoesNotExist:
+            return False
+        return any(is_module_enabled(tenant, key) for key in self.module_keys)
+
+    def message(self):
+        keys = "', '".join(self.module_keys)
+        return (
+            f"This tenant has none of the required modules ('{keys}') "
+            f"enabled. Contact your platform administrator."
+        )

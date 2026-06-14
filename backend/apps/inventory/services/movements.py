@@ -17,7 +17,7 @@ from django.db import transaction
 from apps.catalog.models import Product, ProductBatch, ProductVariant
 from apps.tenants.models import Branch
 
-from ..models import StockLevel, StockMovement
+from ..models import StockLevel, StockMovement, Warehouse
 
 
 @transaction.atomic
@@ -28,6 +28,7 @@ def record_movement(
     branch: Branch,
     movement_type: str,
     quantity: Decimal,
+    warehouse: Optional[Warehouse] = None,
     variant: Optional[ProductVariant] = None,
     batch: Optional[ProductBatch] = None,
     unit_cost: Optional[Decimal] = None,
@@ -36,13 +37,21 @@ def record_movement(
     reason: str = "",
     performed_by=None,
 ) -> StockMovement:
-    """Append a movement and update the matching stock level."""
+    """Append a movement and update the matching stock level.
+
+    `warehouse` is optional and defaults to None. When None (every POS / legacy
+    caller), the stock level is keyed by (product, variant, branch) with a NULL
+    warehouse — identical to the pre-warehouse behaviour. When set (Digital
+    Invoicing), the level is keyed by (product, variant, warehouse) instead, so
+    a branch's godowns track stock independently.
+    """
     movement = StockMovement.objects.create(
         tenant_id=tenant_id,
         product=product,
         variant=variant,
         batch=batch,
         branch=branch,
+        warehouse=warehouse,
         movement_type=movement_type,
         quantity=quantity,
         unit_cost=unit_cost,
@@ -56,6 +65,7 @@ def record_movement(
         product=product,
         variant=variant,
         branch=branch,
+        warehouse=warehouse,
         defaults={"quantity": Decimal("0")},
     )
     level.quantity = (level.quantity or Decimal("0")) + quantity

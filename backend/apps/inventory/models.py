@@ -18,12 +18,75 @@ from core.models import TenantScopedModel
 from core.uuid7 import uuid7
 
 # ---------------------------------------------------------------------------
+# Warehouses
+# ---------------------------------------------------------------------------
+
+
+class Warehouse(TenantScopedModel):
+    """A stock location (godown) inside a branch.
+
+    Warehouses are a Digital-Invoicing concept: a wholesaler/distributor can
+    have several godowns under one branch and tracks stock per godown. POS
+    tenants never create warehouses — their stock stays keyed by branch
+    (StockLevel.warehouse / StockMovement.warehouse are NULL for them), so the
+    POS path is completely unaffected by this model existing.
+
+    Hierarchy: Tenant -> Branch -> Warehouse -> StockLevel.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+
+    branch = models.ForeignKey(
+        "tenants.Branch",
+        on_delete=models.PROTECT,  # a branch with stock-bearing warehouses can't vanish
+        related_name="warehouses",
+    )
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=20)
+
+    is_default = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = "warehouses"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["branch", "code"],
+                name="uniq_warehouse_branch_code",
+            ),
+            # At most one default warehouse per branch (amongst live rows).
+            models.UniqueConstraint(
+                fields=["branch"],
+                condition=models.Q(is_default=True, deleted_at__isnull=True),
+                name="uniq_warehouse_default_per_branch",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["tenant"],
+                name="idx_warehouses_tenant",
+                condition=models.Q(deleted_at__isnull=True),
+            ),
+            models.Index(fields=["branch"], name="idx_warehouses_branch"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
+
+# ---------------------------------------------------------------------------
 # Stock levels
 # ---------------------------------------------------------------------------
 
 
 class StockLevel(TenantScopedModel):
-    """Current stock per (product, optional variant, branch)."""
+    """Current stock per (product, optional variant, branch[, warehouse]).
+
+    `warehouse` is NULL for POS/legacy branch-keyed stock and set for
+    Digital-Invoicing warehouse-keyed stock. The two partial unique
+    constraints below let both shapes coexist without ever colliding.
+    """
 
     id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
 
@@ -44,6 +107,13 @@ class StockLevel(TenantScopedModel):
         on_delete=models.CASCADE,
         related_name="stock_levels",
     )
+    warehouse = models.ForeignKey(
+        "inventory.Warehouse",
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+        related_name="stock_levels",
+    )
 
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     reserved_quantity = models.DecimalField(max_digits=14, decimal_places=4, default=0)
@@ -55,13 +125,27 @@ class StockLevel(TenantScopedModel):
     class Meta:
         db_table = "stock_levels"
         constraints = [
+            # POS / legacy branch-keyed rows (warehouse NULL). Same key as the
+            # original constraint — POS behaviour is byte-for-byte unchanged.
             models.UniqueConstraint(
                 fields=["product", "variant", "branch"],
-                name="uniq_stocklevel_product_variant_branch",
+                condition=models.Q(warehouse__isnull=True),
+                name="uniq_stocklevel_pvb_no_wh",
+            ),
+            # Digital-Invoicing warehouse-keyed rows (warehouse set).
+            models.UniqueConstraint(
+                fields=["product", "variant", "warehouse"],
+                condition=models.Q(warehouse__isnull=False),
+                name="uniq_stocklevel_pvw_wh",
             ),
         ]
         indexes = [
             models.Index(fields=["branch"], name="idx_stock_branch"),
+            models.Index(
+                fields=["warehouse"],
+                name="idx_stock_warehouse",
+                condition=models.Q(warehouse__isnull=False),
+            ),
             # Partial index for low-stock added via RunSQL in migration.
         ]
 
@@ -116,6 +200,12 @@ class StockMovement(TenantScopedModel):
         null=True,
     )
     branch = models.ForeignKey("tenants.Branch", on_delete=models.PROTECT)
+    warehouse = models.ForeignKey(
+        "inventory.Warehouse",
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
+    )
 
     movement_type = models.CharField(max_length=30, choices=MOVEMENT_TYPES)
     quantity = models.DecimalField(max_digits=14, decimal_places=4)  # signed
@@ -150,6 +240,11 @@ class StockMovement(TenantScopedModel):
             models.Index(
                 fields=["branch", "-created_at"],
                 name="idx_movements_branch_date",
+            ),
+            models.Index(
+                fields=["warehouse", "-created_at"],
+                name="idx_movements_warehouse_date",
+                condition=models.Q(warehouse__isnull=False),
             ),
             models.Index(
                 fields=["reference_type", "reference_id"],

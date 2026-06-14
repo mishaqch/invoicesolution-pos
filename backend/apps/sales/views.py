@@ -309,6 +309,29 @@ class InvoiceViewSet(
         else:
             tenant = Tenant.objects.get(pk=request.tenant_id)
             branch, terminal = ensure_implicit_branch_and_terminal(tenant)
+
+        # Warehouse (Digital Invoicing). When supplied, the sale deducts stock
+        # from that warehouse; it must belong to the resolved branch. When
+        # omitted the sale is branch-keyed (legacy / POS behaviour).
+        warehouse = None
+        if v.get("warehouse"):
+            from apps.inventory.models import Warehouse
+            warehouse = (
+                Warehouse.objects.for_tenant(request.tenant_id)
+                .filter(pk=v["warehouse"], deleted_at__isnull=True)
+                .first()
+            )
+            if warehouse is None:
+                return Response(
+                    {"warehouse": "Warehouse not found."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if warehouse.branch_id != branch.id:
+                return Response(
+                    {"warehouse": "Warehouse does not belong to the invoice's branch."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         customer = (
             Customer.objects.for_tenant(request.tenant_id).filter(
                 pk=v.get("customer"),
@@ -349,6 +372,7 @@ class InvoiceViewSet(
                 tenant_id=request.tenant_id,
                 branch=branch,
                 terminal=terminal,
+                warehouse=warehouse,
                 cashier=request.user,
                 cash_session=None,
                 customer=customer,

@@ -8,9 +8,11 @@ from .views import (
     StockLevelViewSet,
     StockMovementViewSet,
     StockTransferViewSet,
+    WarehouseViewSet,
 )
 
 router = DefaultRouter()
+router.register("warehouses", WarehouseViewSet, basename="warehouse")
 router.register("stock-levels", StockLevelViewSet, basename="stocklevel")
 router.register("restock", RestockViewSet, basename="restock")
 router.register("expiry", ExpiryViewSet, basename="expiry")

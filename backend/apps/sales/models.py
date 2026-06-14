@@ -52,6 +52,14 @@ class Invoice(TenantScopedModel):
 
     branch = models.ForeignKey("tenants.Branch", on_delete=models.PROTECT)
     terminal = models.ForeignKey("tenants.Terminal", on_delete=models.PROTECT)
+    # Warehouse the sale draws stock from (Digital-Invoicing only). NULL for
+    # POS invoices and any invoice predating multi-warehouse — those deduct
+    # branch-keyed stock exactly as before. Set so cancel/return credit the
+    # same warehouse the sale debited.
+    warehouse = models.ForeignKey(
+        "inventory.Warehouse", on_delete=models.PROTECT,
+        blank=True, null=True, related_name="invoices",
+    )
     cashier = models.ForeignKey(
         "accounts.User", on_delete=models.PROTECT, related_name="invoices"
     )

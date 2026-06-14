@@ -39,6 +39,7 @@ def cancel_invoice(
             product=item.product,
             variant=item.variant,
             branch=invoice.branch,
+            warehouse=invoice.warehouse,
             movement_type="return",
             quantity=item.quantity,  # positive: returning to stock
             unit_cost=item.cost_price,
@@ -99,6 +100,7 @@ def delete_draft_invoice(invoice: Invoice, *, user=None, request=None) -> str:
             product=item.product,
             variant=item.variant,
             branch=invoice.branch,
+            warehouse=invoice.warehouse,
             movement_type="return",
             quantity=item.quantity,  # positive: returning to stock
             unit_cost=item.cost_price,
@@ -145,6 +147,7 @@ def cancel_sale_item(
         product=item.product,
         variant=item.variant,
         branch=invoice.branch,
+        warehouse=invoice.warehouse,
         movement_type="return",
         quantity=item.quantity,
         unit_cost=item.cost_price,

@@ -53,6 +53,7 @@ def test_catalog_includes_required_modules():
     must exist in the catalog. This guards against typo-driven gates."""
     expected = {
         "sales", "fbr", "customers", "branches", "terminals", "inventory",
+        "warehouses",
         "returns", "debit_credit_notes", "manual_amendments",
         "payments_advanced", "customer_display", "hardware",
         "restaurant",

@@ -11,25 +11,42 @@ from .models import (
     StockMovement,
     StockTransfer,
     StockTransferItem,
+    Warehouse,
 )
 
 
+class WarehouseSerializer(serializers.ModelSerializer):
+    # Embed the branch name so the DI UI never has to call /branches/ (that
+    # endpoint is gated behind the `branches` module, which DI tenants lack).
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+
+    class Meta:
+        model = Warehouse
+        fields = (
+            "id", "branch", "branch_name", "name", "code",
+            "is_default", "is_active", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "branch_name", "created_at", "updated_at")
+
+
 class StockLevelSerializer(serializers.ModelSerializer):
+    warehouse_name = serializers.CharField(source="warehouse.name", read_only=True)
+
     class Meta:
         model = StockLevel
         fields = (
-            "id", "product", "variant", "branch",
+            "id", "product", "variant", "branch", "warehouse", "warehouse_name",
             "quantity", "reserved_quantity", "reorder_level",
             "last_counted_at", "updated_at",
         )
-        read_only_fields = ("id", "updated_at")
+        read_only_fields = ("id", "warehouse_name", "updated_at")
 
 
 class StockMovementSerializer(serializers.ModelSerializer):
     class Meta:
         model = StockMovement
         fields = (
-            "id", "product", "variant", "batch", "branch",
+            "id", "product", "variant", "batch", "branch", "warehouse",
             "movement_type", "quantity", "unit_cost",
             "reference_type", "reference_id",
             "reason", "performed_by", "created_at",
@@ -40,6 +57,10 @@ class StockMovementSerializer(serializers.ModelSerializer):
 class AdjustmentSerializer(serializers.Serializer):
     """Body of POST /api/inventory/adjustments/."""
     branch = serializers.UUIDField()
+    # Optional warehouse — when set (Digital Invoicing), the adjustment is
+    # recorded against that warehouse's stock level. When omitted (POS), the
+    # adjustment is branch-keyed exactly as before.
+    warehouse = serializers.UUIDField(required=False, allow_null=True)
     product = serializers.UUIDField()
     variant = serializers.UUIDField(required=False, allow_null=True)
     quantity = serializers.DecimalField(max_digits=14, decimal_places=4)

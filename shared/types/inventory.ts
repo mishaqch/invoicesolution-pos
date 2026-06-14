@@ -3,10 +3,27 @@ export interface StockLevel {
   product: string;
   variant: string | null;
   branch: string;
+  /** Warehouse (Digital-Invoicing) the stock sits in; null for branch-keyed
+   *  (POS / legacy) stock. */
+  warehouse: string | null;
+  warehouse_name?: string | null;
   quantity: string;
   reserved_quantity: string;
   reorder_level: string | null;
   last_counted_at: string | null;
+  updated_at: string;
+}
+
+/** A warehouse (godown) under a branch — Digital-Invoicing stock location. */
+export interface Warehouse {
+  id: string;
+  branch: string;
+  branch_name: string;
+  name: string;
+  code: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
   updated_at: string;
 }
 

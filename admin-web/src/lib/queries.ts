@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Branch, Category, HsCode, PosProduct, Product, ProductBatch,
   StockAudit, StockLevel, StockMovement, StockTransfer,
-  TaxRate, UnitOfMeasure,
+  TaxRate, UnitOfMeasure, Warehouse,
 } from "@pos/shared/types";
 
 import { useModules, type ModuleKey } from "@/features/modules/hooks";
@@ -278,8 +278,9 @@ export function usePostAdjustment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: {
-      branch: string; product: string; variant?: string | null;
-      quantity: string; movement_type: string; reason: string;
+      branch: string; warehouse?: string | null; product: string;
+      variant?: string | null; quantity: string; movement_type: string;
+      reason: string;
     }) =>
       api<StockMovement>("/inventory/adjustments/", {
         method: "POST",
@@ -288,6 +289,70 @@ export function usePostAdjustment() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["stock-levels"] });
       qc.invalidateQueries({ queryKey: ["movements"] });
+    },
+  });
+}
+
+// ----- Warehouses (Digital-Invoicing: godowns under a branch) -----
+//
+// Gated on the `warehouses` module. Tenants without it get an empty result
+// (not a 403) so pickers render a clean "no warehouses" state.
+export function useWarehouses() {
+  const enabled = useModuleEnabled("warehouses");
+  return useQuery({
+    queryKey: ["warehouses"],
+    queryFn: () => api<Page<Warehouse>>("/inventory/warehouses/"),
+    enabled,
+    initialData: enabled
+      ? undefined
+      : ({ count: 0, next: null, previous: null, results: [] } as Page<Warehouse>),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Branches for the warehouse form. DI tenants lack the `branches` module, so
+ *  this dedicated endpoint (gated on `warehouses`) lets them list branches to
+ *  attach a warehouse to. */
+export function useWarehouseBranches() {
+  const enabled = useModuleEnabled("warehouses");
+  return useQuery({
+    queryKey: ["warehouse-branches"],
+    queryFn: () =>
+      api<{ id: string; name: string; code: string }[]>("/inventory/warehouses/branches/"),
+    enabled,
+    initialData: enabled ? undefined : [],
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useCreateWarehouse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<Warehouse>) =>
+      api<Warehouse>("/inventory/warehouses/", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["warehouses"] }),
+  });
+}
+
+export function useUpdateWarehouse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Partial<Warehouse> & { id: string }) =>
+      api<Warehouse>(`/inventory/warehouses/${id}/`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["warehouses"] }),
+  });
+}
+
+export function useDeleteWarehouse() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<void>(`/inventory/warehouses/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["warehouses"] });
+      qc.invalidateQueries({ queryKey: ["stock-levels"] });
     },
   });
 }
@@ -1614,6 +1679,9 @@ export interface ManualInvoiceInput {
   // branch + terminal (office-invoice tenants without those modules).
   branch?: string;
   terminal?: string;
+  /** Warehouse to deduct stock from (Digital Invoicing). Omitted for POS /
+   *  tenants without warehouses. */
+  warehouse?: string;
   customer?: string | null;
   cart_lines: ManualInvoiceLine[];
   cart_discount_pct?: string;

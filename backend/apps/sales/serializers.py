@@ -144,6 +144,9 @@ class CheckoutSerializer(serializers.Serializer):
     """
     branch = serializers.UUIDField(required=False, allow_null=True)
     terminal = serializers.UUIDField(required=False, allow_null=True)
+    # Warehouse to deduct stock from (Digital Invoicing). Optional — omitted by
+    # POS checkout, which stays branch-keyed.
+    warehouse = serializers.UUIDField(required=False, allow_null=True)
     cash_session = serializers.UUIDField(required=False, allow_null=True)
     customer = serializers.UUIDField(required=False, allow_null=True)
     cart_lines = CheckoutLineSerializer(many=True)

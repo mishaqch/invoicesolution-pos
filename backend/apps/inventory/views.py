@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
+from django.db import transaction
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.response import Response
 
-from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
+from apps.accounts.permissions import (
+    HasAnyModule,
+    HasModule,
+    HasRolePerm,
+    IsTenantMember,
+)
 
-# Every endpoint in this module gates on the "inventory" module.
+# Most endpoints in this module gate on the "inventory" module (POS tenants).
 _INVENTORY_GATE = HasModule.for_module("inventory")
+# Endpoints shared with Digital-Invoicing warehouse tenants accept either the
+# POS `inventory` module OR the DI `warehouses` module.
+_STOCK_GATE = HasAnyModule.for_modules("inventory", "warehouses")
+# Warehouse CRUD is DI-only.
+_WAREHOUSE_GATE = HasModule.for_module("warehouses")
 from apps.catalog.models import Product, ProductBatch, ProductVariant
 from apps.tenants.models import Branch
 
@@ -21,6 +32,7 @@ from .models import (
     StockMovement,
     StockTransfer,
     StockTransferItem,
+    Warehouse,
 )
 from .serializers import (
     AdjustmentSerializer,
@@ -30,6 +42,7 @@ from .serializers import (
     StockMovementSerializer,
     StockTransferItemSerializer,
     StockTransferSerializer,
+    WarehouseSerializer,
 )
 from .services import audits as audit_svc
 from .services import transfers as transfer_svc
@@ -51,9 +64,11 @@ class _TenantQuerySetMixin:
 
 
 class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
-    queryset = StockLevel.objects.select_related("product", "branch", "variant").all()
+    queryset = StockLevel.objects.select_related(
+        "product", "branch", "variant", "warehouse",
+    ).all()
     serializer_class = StockLevelSerializer
-    permission_classes = [_INVENTORY_GATE, IsTenantMember]
+    permission_classes = [_STOCK_GATE, IsTenantMember]
     filter_backends = [filters.OrderingFilter]
     ordering = ["product__name"]
 
@@ -64,6 +79,8 @@ class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Ge
             qs = qs.filter(product_id=p)
         if (b := params.get("branch")):
             qs = qs.filter(branch_id=b)
+        if (w := params.get("warehouse")):
+            qs = qs.filter(warehouse_id=w)
         if (low := params.get("low_stock")) and low.lower() in ("1", "true"):
             from django.db.models import F, Value
             from django.db.models.functions import Coalesce
@@ -251,9 +268,11 @@ class ExpiryViewSet(viewsets.ViewSet):
 class StockMovementViewSet(
     _TenantQuerySetMixin, mixins.ListModelMixin, viewsets.GenericViewSet
 ):
-    queryset = StockMovement.objects.select_related("product", "branch").order_by("-created_at")
+    queryset = StockMovement.objects.select_related(
+        "product", "branch", "warehouse",
+    ).order_by("-created_at")
     serializer_class = StockMovementSerializer
-    permission_classes = [_INVENTORY_GATE, IsTenantMember]
+    permission_classes = [_STOCK_GATE, IsTenantMember]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -262,6 +281,8 @@ class StockMovementViewSet(
             qs = qs.filter(product_id=p)
         if (b := params.get("branch")):
             qs = qs.filter(branch_id=b)
+        if (w := params.get("warehouse")):
+            qs = qs.filter(warehouse_id=w)
         if (mt := params.get("movement_type")):
             qs = qs.filter(movement_type=mt)
         if (start := params.get("from")):
@@ -277,7 +298,7 @@ class StockMovementViewSet(
 
 
 class AdjustmentView(viewsets.ViewSet):
-    permission_classes = [_INVENTORY_GATE, HasRolePerm.with_perm("inventory.adjust")]
+    permission_classes = [_STOCK_GATE, HasRolePerm.with_perm("inventory.adjust")]
 
     def create(self, request):
         serializer = AdjustmentSerializer(data=request.data)
@@ -288,6 +309,21 @@ class AdjustmentView(viewsets.ViewSet):
             branch = Branch.objects.for_tenant(request.tenant_id).get(pk=v["branch"])
         except Branch.DoesNotExist:
             raise NotFound("Branch not found.")
+
+        # Optional warehouse (Digital Invoicing). Must belong to the posted
+        # branch + tenant; when omitted the adjustment is branch-keyed (POS).
+        warehouse = None
+        if v.get("warehouse"):
+            try:
+                warehouse = Warehouse.objects.for_tenant(request.tenant_id).get(
+                    pk=v["warehouse"], deleted_at__isnull=True,
+                )
+            except Warehouse.DoesNotExist:
+                raise NotFound("Warehouse not found.")
+            if warehouse.branch_id != branch.id:
+                raise ValidationError(
+                    {"warehouse": "Warehouse does not belong to the selected branch."}
+                )
 
         try:
             product = Product.objects.for_tenant(request.tenant_id).get(pk=v["product"])
@@ -314,6 +350,7 @@ class AdjustmentView(viewsets.ViewSet):
             product=product,
             variant=variant,
             branch=branch,
+            warehouse=warehouse,
             movement_type=v["movement_type"],
             quantity=signed_qty,
             reason=v["reason"],
@@ -415,3 +452,84 @@ class StockAuditViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
         except Exception as e:
             raise ValidationError(getattr(e, "message_dict", {"detail": str(e)}))
         return Response(self.get_serializer(audit).data)
+
+
+# ---------------------------------------------------------------------------
+# Warehouses (Digital Invoicing) — CRUD over godowns under a branch
+# ---------------------------------------------------------------------------
+
+
+class WarehouseViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
+    """Manage warehouses (godowns) for Digital-Invoicing tenants.
+
+    Gated on the `warehouses` module, so POS tenants never reach it. Soft
+    deletes (sets deleted_at) and refuses to delete a warehouse that still
+    holds stock, so on-hand history is never orphaned.
+    """
+
+    queryset = (
+        Warehouse.objects.select_related("branch")
+        .filter(deleted_at__isnull=True)
+        .order_by("branch__name", "name")
+    )
+    serializer_class = WarehouseSerializer
+    permission_classes = [_WAREHOUSE_GATE, HasRolePerm.with_perm("inventory.adjust")]
+
+    def _validate_branch(self, branch_id):
+        try:
+            return Branch.objects.for_tenant(self.request.tenant_id).get(
+                pk=branch_id, deleted_at__isnull=True,
+            )
+        except Branch.DoesNotExist:
+            raise ValidationError({"branch": "Branch not found for this tenant."})
+
+    @action(detail=False, methods=["get"], url_path="branches")
+    def branches(self, request):
+        """List this tenant's branches so the warehouse form can attach a
+        warehouse to one. Gated on the same `warehouses` module — DI tenants
+        don't have the `branches` module, so they can't use /branches/ but
+        still need to see their (often implicit) branch here.
+        """
+        rows = (
+            Branch.objects.for_tenant(request.tenant_id)
+            .filter(deleted_at__isnull=True)
+            .order_by("name")
+            .values("id", "name", "code")
+        )
+        return Response(list(rows))
+
+    def perform_create(self, serializer):
+        branch = self._validate_branch(serializer.validated_data["branch"].id)
+        with transaction.atomic():
+            # "Set default" is exclusive within a branch — clear any prior one.
+            if serializer.validated_data.get("is_default"):
+                Warehouse.objects.filter(
+                    branch=branch, is_default=True, deleted_at__isnull=True,
+                ).update(is_default=False)
+            serializer.save(tenant_id=self.request.tenant_id)
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        becomes_default = serializer.validated_data.get("is_default")
+        with transaction.atomic():
+            if becomes_default and not instance.is_default:
+                Warehouse.objects.filter(
+                    branch=instance.branch, is_default=True, deleted_at__isnull=True,
+                ).exclude(pk=instance.pk).update(is_default=False)
+            serializer.save()
+
+    def perform_destroy(self, instance):
+        from decimal import Decimal
+
+        has_stock = StockLevel.objects.filter(
+            warehouse=instance, quantity__gt=Decimal("0"),
+        ).exists()
+        if has_stock:
+            raise ValidationError(
+                {"detail": "Cannot delete a warehouse that still holds stock. "
+                           "Move or zero out its stock first."}
+            )
+        from django.utils import timezone
+        instance.deleted_at = timezone.now()
+        instance.is_default = False
+        instance.save(update_fields=["deleted_at", "is_default", "updated_at"])

@@ -20,6 +20,7 @@ import {
   useProducts,
   useTaxRates,
   useTerminals,
+  useWarehouses,
   type ManualInvoiceLine,
   type ManualInvoicePayment,
 } from "@/lib/queries";
@@ -88,6 +89,7 @@ export default function NewInvoiceRoute() {
   const location = useLocation();
   const branches = useBranches();
   const terminals = useTerminals();
+  const warehouses = useWarehouses();
   const customers = useCustomers();
   const taxRates = useTaxRates();
   const create = useCreateManualInvoice();
@@ -145,6 +147,9 @@ export default function NewInvoiceRoute() {
 
   const [branchId, setBranchId] = useState("");
   const [terminalId, setTerminalId] = useState("");
+  // Warehouse to deduct stock from (Digital Invoicing). Shown only when the
+  // tenant has warehouses; defaults to the default warehouse.
+  const [warehouseId, setWarehouseId] = useState("");
   const [customerId, setCustomerId] = useState("");
   // The picked customer object — the searchable CustomerPicker may not have the
   // selection in its current (search-scoped) results, so we keep the full object
@@ -184,6 +189,27 @@ export default function NewInvoiceRoute() {
       setTerminalId(terminals.data.results[0].id);
     }
   }, [terminals.data, terminalId]);
+
+  // Warehouses for the (possibly implicit) invoice branch. When the tenant has
+  // no explicit branch picker, the implicit branch's warehouses still show —
+  // we filter by branchId only when a branch is actually selected.
+  const allWarehouses = warehouses.data?.results ?? [];
+  const branchWarehouses = branchId
+    ? allWarehouses.filter((w) => w.branch === branchId)
+    : allWarehouses;
+  const showWarehousePicker = branchWarehouses.length > 0;
+
+  // Default to the branch's default warehouse (else its first), re-running when
+  // the branch changes or warehouses load.
+  useEffect(() => {
+    if (!showWarehousePicker) return;
+    const stillValid = branchWarehouses.some((w) => w.id === warehouseId);
+    if (!stillValid) {
+      const def = branchWarehouses.find((w) => w.is_default) ?? branchWarehouses[0];
+      setWarehouseId(def?.id ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId, warehouses.data]);
 
   // Track whether the single payment amount has been edited manually.
   // While untouched (or matching the previous auto-fill), keep the
@@ -380,6 +406,9 @@ export default function NewInvoiceRoute() {
         // implicit defaults for the office-invoice tenant.
         ...(branchId ? { branch: branchId } : {}),
         ...(terminalId ? { terminal: terminalId } : {}),
+        // Deduct stock from the chosen warehouse (Digital Invoicing). Omitted
+        // when the tenant has no warehouses → server stays branch-keyed.
+        ...(warehouseId ? { warehouse: warehouseId } : {}),
         // Buyer is locked to the original on debit/credit notes; pass null
         // so the server copies the buyer block from reference_invoice.
         customer: debitContext ? null : (customerId || null),
@@ -550,6 +579,20 @@ export default function NewInvoiceRoute() {
                     .map((t) => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
+                </Select>
+              </div>
+            )}
+            {/* Warehouse picker — Digital Invoicing. Shows when the tenant has
+                warehouses; the sale deducts stock from the chosen one. */}
+            {showWarehousePicker && (
+              <div>
+                <Label>Deduct stock from</Label>
+                <Select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)}>
+                  {branchWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}{w.is_default ? " (default)" : ""}
+                    </option>
+                  ))}
                 </Select>
               </div>
             )}
