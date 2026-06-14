@@ -72,6 +72,15 @@ jobs:
           npx --no-install electron verify-sqlite.cjs
 
       - name: Build renderer + main (electron-vite)
+        # CRITICAL: VITE_API_URL is baked into the bundle at BUILD time (both
+        # the renderer AND the main process read it via import.meta.env). The
+        # CI runner has no .env/.env.local (gitignored), so without this the
+        # build falls through to http://localhost:8000 and the shipped exe
+        # can't reach the server — pairing fails with "Could not reach the
+        # server". Point it at the live backend. Override via repo
+        # Variables (vars.POS_API_URL) if the host ever changes.
+        env:
+          VITE_API_URL: ${{ vars.POS_API_URL || 'https://client.invoicesolution.pk' }}
         run: npm run build
 
       - name: Package Windows installer (unsigned)
