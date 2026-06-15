@@ -274,6 +274,60 @@ def assigned_scenario_codes(tenant: Tenant) -> list[str]:
     return sorted(codes)
 
 
+def pick_scenario_id(invoice, environment: str) -> str | None:
+    """Choose the PRAL scenarioId for an invoice in sandbox (None in production).
+
+    PRAL's scenarioId applies to the WHOLE invoice — every line's saleType must
+    be compatible with it, and the scenario must be one the tenant is actually
+    ASSIGNED, or PRAL rejects with errorCode 0204 ("Sale type not match with
+    provided scenario"). This is the single source of truth for BOTH the submit
+    task and the "Validate with FBR" action — keep them identical so a validate
+    can never pass a scenario a submit would fail (or vice-versa).
+
+    Selection (all-lines-of-a-kind → that scenario; mixed → standard):
+      3rd-Schedule lines (fixedNotifiedValueOrRetailPrice > 0):
+                            retail SN027  else SN008   (NEVER SN007 — that's
+                            Zero-Rated 5th Schedule, a different thing entirely)
+      Reduced-rate lines (8th Schedule):  retail SN028  else SN005
+      Standard lines:       retail SN026  else (registered SN001 / walk-in SN002)
+
+    Retail end-consumer scenarios (SN026/27/28) are only emitted for walk-in
+    (unregistered) buyers AND only when assigned to the tenant.
+    """
+    if environment != "sandbox":
+        return None  # production classifies per-line via saleType; no scenarioId.
+
+    assigned = set(assigned_scenario_codes(invoice.tenant))
+    items = list(invoice.items.all())
+
+    def _is_third_schedule(i):
+        return i.fixed_notified_value is not None and i.fixed_notified_value > 0
+
+    def _is_reduced_rate(i):
+        st = (i.sale_type or "")
+        sro = (i.sro_schedule_no or "").upper()
+        return "reduced rate" in st.lower() or "EIGHTH SCHEDULE" in sro
+
+    all_third_schedule = bool(items) and all(_is_third_schedule(i) for i in items)
+    all_reduced_rate = bool(items) and all(_is_reduced_rate(i) for i in items)
+    is_registered = (invoice.buyer_registration_type or "").lower() == "registered"
+
+    def _pick(retail_code: str, fallback_code: str) -> str:
+        # Retail end-consumer sales are unregistered by definition; only use the
+        # retail scenario for walk-ins AND when it's in the tenant's set.
+        if not is_registered and retail_code in assigned:
+            return retail_code
+        return fallback_code
+
+    if all_third_schedule:
+        return _pick("SN027", "SN008")
+    if all_reduced_rate:
+        return _pick("SN028", "SN005")
+    if is_registered:
+        return "SN001"
+    return _pick("SN026", "SN002")
+
+
 def eligible_scenarios(tenant: Tenant) -> list[ScenarioMeta]:
     """Scenarios this tenant must pass before production go-live AND
     for which we currently have a working payload-builder.

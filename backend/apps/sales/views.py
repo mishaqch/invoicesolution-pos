@@ -678,27 +678,15 @@ class InvoiceViewSet(
             )
 
         environment = token.environment
-        if environment == "sandbox":
-            # PRAL's scenarioId applies to the WHOLE invoice (every line
-            # must be compatible). SN007 demands ALL lines be 3rd-
-            # Schedule; mixed invoices must fall back to the standard
-            # scenario (SN001/SN002) and rely on per-line `saleType` +
-            # `fixedNotifiedValueOrRetailPrice` to communicate the 3rd-
-            # Schedule treatment of individual lines. See apps/fbr/
-            # tasks.py for the longer explanation.
-            items = list(invoice.items.all())
-            all_third_schedule = items and all(
-                i.fixed_notified_value is not None and i.fixed_notified_value > 0
-                for i in items
-            )
-            if all_third_schedule:
-                scenario_id = "SN007"
-            elif (invoice.buyer_registration_type or "").lower() == "registered":
-                scenario_id = "SN001"
-            else:
-                scenario_id = "SN002"
-        else:
-            scenario_id = None
+        # Use the SAME scenario picker as the submit task (apps/fbr/scenarios.
+        # pick_scenario_id) so validate and submit can never disagree. The old
+        # inline picker here hard-coded SN007 for 3rd-Schedule invoices — but
+        # SN007 is "Zero-Rated Goods (5th Schedule)", not 3rd Schedule, and it
+        # ignored the tenant's assigned-scenario set, so PRAL rejected it with
+        # errorCode 0204 ("Sale type not match with provided scenario SN007").
+        from apps.fbr.scenarios import pick_scenario_id
+
+        scenario_id = pick_scenario_id(invoice, environment)
         payload = build_invoice_payload(invoice, environment=environment, scenario_id=scenario_id)
 
         client = FbrClient(

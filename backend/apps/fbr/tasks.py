@@ -141,74 +141,33 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
     # Hard-coding SN001 was a sandbox-only bug — PRAL rejects SN001 with
     # errorCode 0205 when the buyer NTN isn't in PRAL's registered-buyer
     # table. See feedback_pral_sandbox_quirks.md.
+    # Choose the sandbox scenarioId (None in production). Shared with the
+    # "Validate with FBR" action so validate + submit always agree — see
+    # scenarios.pick_scenario_id for the full selection rules. (Production
+    # classifies per-line via saleType, so scenario_id is None there.)
+    from apps.fbr.scenarios import pick_scenario_id
+
+    scenario_id = pick_scenario_id(invoice, environment)
+
+    # If the invoice mixes line types, PRAL's sandbox may reject the chosen
+    # scenario for the odd line. Log so we can spot it in support.
     if environment == "sandbox":
-        # PRAL's scenarioId applies to the WHOLE invoice — every line's
-        # saleType must be compatible with the chosen scenarioId. A scenario
-        # like SN008 ("3rd Schedule Goods") expects EVERY line to be a
-        # 3rd-Schedule item; a mixed invoice (sugar + rice) gets errorCode
-        # 0204 ("Sale type not match with provided scenario").
-        #
-        # We pick the scenarioId from (a) the line mix and (b) the buyer,
-        # preferring the RETAIL/end-consumer scenarios (SN026/SN027/SN028)
-        # when the tenant is actually assigned them — a POS selling to walk-in
-        # shoppers reports under the retailer-end-consumer rules, not the
-        # generic B2B SN001/SN002. We only emit a retail scenarioId if it's in
-        # the tenant's assigned set, so we never send PRAL a scenario it didn't
-        # assign (which it would reject in sandbox).
-        #
-        # Selection (all-lines-of-a-kind → that scenario; mixed → standard):
-        #   3rd-Schedule lines:   retail SN027  else SN008
-        #   Reduced-rate lines:   retail SN028  else SN005
-        #   Standard lines:       retail SN026  else (registered SN001 / walk-in SN002)
-        #
-        # Production ignores scenarioId entirely (PRAL classifies per-line via
-        # saleType), so this matters for sandbox testing accuracy; production
-        # sends scenario_id=None below.
-        from apps.fbr.scenarios import assigned_scenario_codes
-
-        assigned = set(assigned_scenario_codes(invoice.tenant))
         items = list(invoice.items.all())
-
-        def _is_third_schedule(i):
-            return i.fixed_notified_value is not None and i.fixed_notified_value > 0
-
-        def _is_reduced_rate(i):
-            st = (i.sale_type or "")
-            sro = (i.sro_schedule_no or "").upper()
-            return "reduced rate" in st.lower() or "EIGHTH SCHEDULE" in sro
-
-        has_any_third_schedule = any(_is_third_schedule(i) for i in items)
-        all_third_schedule = bool(items) and all(_is_third_schedule(i) for i in items)
-        all_reduced_rate = bool(items) and all(_is_reduced_rate(i) for i in items)
-        is_registered = (invoice.buyer_registration_type or "").lower() == "registered"
-
-        def _pick(retail_code: str, fallback_code: str) -> str:
-            # Retail end-consumer sales are unregistered by definition; only
-            # use the retail scenario for walk-ins AND when it's assigned.
-            if not is_registered and retail_code in assigned:
-                return retail_code
-            return fallback_code
-
-        if all_third_schedule:
-            scenario_id = _pick("SN027", "SN008")
-        elif all_reduced_rate:
-            scenario_id = _pick("SN028", "SN005")
-        elif is_registered:
-            scenario_id = "SN001"
-        else:
-            scenario_id = _pick("SN026", "SN002")
-
-        # If the invoice mixes line types, PRAL's sandbox may reject the
-        # chosen scenario for the odd line. Log so we can spot it in support.
-        if has_any_third_schedule and not all_third_schedule:
+        has_any_third = any(
+            i.fixed_notified_value is not None and i.fixed_notified_value > 0
+            for i in items
+        )
+        all_third = bool(items) and all(
+            i.fixed_notified_value is not None and i.fixed_notified_value > 0
+            for i in items
+        )
+        if has_any_third and not all_third:
             logger.info(
                 "Mixed-content invoice %s: submitting under %s; "
                 "sandbox may reject the 3rd-Schedule lines if PRAL "
                 "enforces per-line scenario-saleType matching.",
                 invoice_id, scenario_id,
             )
-    else:
-        scenario_id = None
     payload = build_invoice_payload(
         invoice, environment=environment, scenario_id=scenario_id,
     )
