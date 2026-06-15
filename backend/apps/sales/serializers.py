@@ -115,6 +115,9 @@ class CheckoutLineSerializer(serializers.Serializer):
     # absent and falls back to the product's catalog values.
     hs_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     uom_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Optional per-line FBR sale-type override. When absent, checkout falls back
+    # to the product's sale_type (then the standard-rate default).
+    sale_type = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class CheckoutPaymentSerializer(serializers.Serializer):

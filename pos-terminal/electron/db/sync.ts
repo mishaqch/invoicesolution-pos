@@ -24,6 +24,7 @@ interface PosProductRow {
   min_sale_price: string | null;
   max_discount_pct: string | null;
   is_third_schedule: boolean;
+  sale_type?: string;
   is_weighable: boolean;
   is_batch_tracked: boolean;
   image_url: string;
@@ -122,11 +123,11 @@ export async function syncCatalog(opts: {
     INSERT INTO products (
       id, category_id, sku, barcode, name, name_ur, uom_code, tax_rate_id,
       hs_code, is_taxable, sale_price, retail_price, min_sale_price, max_discount_pct,
-      is_third_schedule, is_weighable, is_batch_tracked, image_url, is_active, updated_at, deleted_at
+      is_third_schedule, sale_type, is_weighable, is_batch_tracked, image_url, is_active, updated_at, deleted_at
     ) VALUES (
       @id, @category, @sku, @barcode, @name, @name_ur, @uom, @tax_rate,
       @hs_code, @is_taxable, @sale_price, @retail_price, @min_sale_price, @max_discount_pct,
-      @is_third_schedule, @is_weighable, @is_batch_tracked, @image_url, @is_active, @updated_at, @deleted_at
+      @is_third_schedule, @sale_type, @is_weighable, @is_batch_tracked, @image_url, @is_active, @updated_at, @deleted_at
     )
     ON CONFLICT(id) DO UPDATE SET
       category_id=excluded.category_id, sku=excluded.sku, barcode=excluded.barcode,
@@ -134,7 +135,7 @@ export async function syncCatalog(opts: {
       tax_rate_id=excluded.tax_rate_id, hs_code=excluded.hs_code, is_taxable=excluded.is_taxable,
       sale_price=excluded.sale_price, retail_price=excluded.retail_price,
       min_sale_price=excluded.min_sale_price, max_discount_pct=excluded.max_discount_pct,
-      is_third_schedule=excluded.is_third_schedule,
+      is_third_schedule=excluded.is_third_schedule, sale_type=excluded.sale_type,
       is_weighable=excluded.is_weighable, is_batch_tracked=excluded.is_batch_tracked,
       image_url=excluded.image_url,
       is_active=excluded.is_active, updated_at=excluded.updated_at,
@@ -167,6 +168,7 @@ export async function syncCatalog(opts: {
         hs_code: (p as { hs_code?: string | null }).hs_code ?? null,
         is_taxable: p.is_taxable ? 1 : 0,
         is_third_schedule: (p as { is_third_schedule?: boolean }).is_third_schedule ? 1 : 0,
+        sale_type: (p as { sale_type?: string }).sale_type ?? "Goods at standard rate (default)",
         is_weighable: p.is_weighable ? 1 : 0,
         is_batch_tracked: (p as { is_batch_tracked?: boolean }).is_batch_tracked ? 1 : 0,
         is_active: p.is_active ? 1 : 0,

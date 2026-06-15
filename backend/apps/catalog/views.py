@@ -63,6 +63,20 @@ class UnitOfMeasureViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
     pagination_class = None
 
 
+class SaleTypeViewSet(viewsets.ViewSet):
+    """Read-only FBR sale-type (PRAL transtypecode) catalog for the product +
+    invoice UoM/Sale-Type pickers. Returns [{value, label, group}] from the
+    canonical apps.fbr.sale_types list — `value` is the exact PRAL string to
+    submit, `label` is the friendly display text, `group` is common|specialised.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        from apps.fbr.sale_types import sale_type_options
+        return Response(sale_type_options())
+
+
 class HsCodeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     queryset = HsCode.objects.all()
     serializer_class = HsCodeSerializer

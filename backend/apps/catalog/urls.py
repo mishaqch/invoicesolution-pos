@@ -7,12 +7,14 @@ from .views import (
     ProductBatchViewSet,
     ProductVariantViewSet,
     ProductViewSet,
+    SaleTypeViewSet,
     TaxRateViewSet,
     UnitOfMeasureViewSet,
 )
 
 router = DefaultRouter()
 router.register("uoms", UnitOfMeasureViewSet, basename="uom")
+router.register("sale-types", SaleTypeViewSet, basename="saletype")
 router.register("hs-codes", HsCodeViewSet, basename="hscode")
 router.register("tax-rates", TaxRateViewSet, basename="taxrate")
 router.register("categories", CategoryViewSet, basename="category")

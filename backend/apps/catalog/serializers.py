@@ -107,7 +107,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "hs_code", "uom", "tax_rate", "is_taxable",
             "cost_price", "sale_price", "retail_price",
             "min_sale_price", "max_discount_pct",
-            "is_third_schedule",
+            "is_third_schedule", "sale_type",
             "reorder_level", "reorder_quantity",
             "is_serialized", "is_batch_tracked", "is_weighable", "has_variants",
             "image_url", "is_active",
@@ -116,6 +116,8 @@ class ProductSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at", "deleted_at")
 
     def validate(self, attrs):
+        from apps.fbr.sale_types import is_valid_sale_type
+
         instance = self.instance
         sale_price = attrs.get("sale_price", instance.sale_price if instance else None)
         min_sale = attrs.get("min_sale_price", instance.min_sale_price if instance else None)
@@ -123,6 +125,20 @@ class ProductSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"sale_price": "sale_price cannot be below min_sale_price."}
             )
+        # Sale type must be a real PRAL transtypecode (defends the wire format —
+        # a bad string would be rejected with errorCode 0204).
+        sale_type = attrs.get(
+            "sale_type", instance.sale_type if instance else None,
+        )
+        if sale_type is not None and not is_valid_sale_type(sale_type):
+            raise serializers.ValidationError({
+                "sale_type": "Unknown FBR sale type. Pick one from /catalog/sale-types/."
+            })
+        # The "3rd Schedule Goods" sale type implies 3rd-Schedule handling
+        # (retail-price taxation), so keep the mechanical flag in sync — this is
+        # what drives the retail_price snapshot at checkout + the check below.
+        if sale_type == "3rd Schedule Goods":
+            attrs["is_third_schedule"] = True
         # 3rd-Schedule items must have a retail_price set — PRAL
         # rejects the invoice line otherwise (errorCode 0122).
         is_third = attrs.get(
@@ -173,7 +189,7 @@ class ProductPosSerializer(serializers.ModelSerializer):
             # FBR — without it, scanned-sale fiscalization is rejected.
             "uom", "tax_rate", "hs_code", "is_taxable",
             "sale_price", "retail_price", "min_sale_price", "max_discount_pct",
-            "is_third_schedule",
+            "is_third_schedule", "sale_type",
             # is_batch_tracked tells the terminal a sale of this product must be
             # rung against a specific batch (FEFO) so expiry-sensitive stock is
             # depleted nearest-expiry-first.

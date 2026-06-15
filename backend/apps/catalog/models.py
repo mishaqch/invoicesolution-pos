@@ -219,6 +219,23 @@ class Product(TenantScopedModel):
             "set when this is on."
         ),
     )
+
+    # FBR sale type (PRAL transtypecode) — classifies how FBR taxes this item
+    # on the invoice. Verbatim PRAL string (see apps.fbr.sale_types). Flows to
+    # SaleItem.sale_type → the invoice payload's "saleType". `is_third_schedule`
+    # stays the mechanical flag that drives retail-price snapshotting; selecting
+    # the "3rd Schedule Goods" sale type forces is_third_schedule on (see
+    # ProductSerializer.validate). Default = standard rate, so existing products
+    # are unchanged.
+    sale_type = models.CharField(
+        max_length=50,
+        default="Goods at standard rate (default)",
+        help_text=(
+            "How FBR taxes this item (Standard, 3rd Schedule, Reduced, "
+            "Zero-rated, Exempt, Electric Vehicle, …). Must match PRAL's "
+            "transtypecode list exactly; pick from the dropdown."
+        ),
+    )
     min_sale_price = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     max_discount_pct = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
 

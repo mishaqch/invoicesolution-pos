@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   Branch, Category, HsCode, PosProduct, Product, ProductBatch,
-  StockAudit, StockLevel, StockMovement, StockTransfer,
+  SaleTypeOption, StockAudit, StockLevel, StockMovement, StockTransfer,
   TaxRate, UnitOfMeasure, Warehouse,
 } from "@pos/shared/types";
 
@@ -44,6 +44,14 @@ export function useUoms() {
   return useQuery({
     queryKey: ["uoms"],
     queryFn: () => api<UnitOfMeasure[]>("/catalog/uoms/"),
+    staleTime: 1000 * 60 * 60,
+  });
+}
+
+export function useSaleTypes() {
+  return useQuery({
+    queryKey: ["sale-types"],
+    queryFn: () => api<SaleTypeOption[]>("/catalog/sale-types/"),
     staleTime: 1000 * 60 * 60,
   });
 }

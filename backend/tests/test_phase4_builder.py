@@ -191,7 +191,9 @@ def test_payload_uom_mapped_to_verbose_enum(
     payload = build_invoice_payload(
         invoice, environment="sandbox", scenario_id="SN001",
     )
-    assert payload["items"][0]["uoM"] == "Kilograms"
+    # PRAL accepts the short form "KG" (not "Kilograms" — the long plural is
+    # rejected with errorCode 0099). Tracks the real /pdi/v1/uom value.
+    assert payload["items"][0]["uoM"] == "KG"
 
 
 @pytest.mark.django_db

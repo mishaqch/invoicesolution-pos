@@ -18,6 +18,7 @@ import {
   usePostAdjustment,
   useProduct,
   useProductBatches,
+  useSaleTypes,
   useStockLevels,
   useTaxRates,
   useTenantSetup,
@@ -60,6 +61,9 @@ interface FormValues {
   // cigarettes / mobile phones / tea etc. retail_price must be set
   // when this is on (backend serializer enforces this).
   is_third_schedule: boolean;
+  // FBR sale type (PRAL transtypecode) — how FBR taxes this item. Verbatim
+  // PRAL string; flows to the invoice line's saleType. Default = standard rate.
+  sale_type: string;
   // Pharmacy / date-sensitive goods: when on, stock is tracked per batch
   // (batch number + expiry). Surfaced only for pharmacy tenants. Enables the
   // Batches card on edit and FEFO batch selection at the terminal.
@@ -75,6 +79,7 @@ const blank: FormValues = {
   is_active: true, description: "",
   hs_code: "",
   is_third_schedule: false,
+  sale_type: "Goods at standard rate (default)",
   is_batch_tracked: false,
 };
 
@@ -85,6 +90,16 @@ export default function ProductEdit() {
 
   const { data: existing } = useProduct(isNew ? undefined : id);
   const uoms = useUoms();
+  const saleTypes = useSaleTypes();
+  // Partition the FBR sale-type options into the grouped dropdown (common
+  // retail types first, sector-specific under a second optgroup).
+  const saleTypeGroups = useMemo(() => {
+    const all = saleTypes.data ?? [];
+    return {
+      common: all.filter((s) => s.group === "common"),
+      specialised: all.filter((s) => s.group === "specialised"),
+    };
+  }, [saleTypes.data]);
   const taxRates = useTaxRates();
   const categories = useCategories();
 
@@ -187,6 +202,7 @@ export default function ProductEdit() {
         description: existing.description,
         hs_code: existing.hs_code ?? "",
         is_third_schedule: existing.is_third_schedule ?? false,
+        sale_type: existing.sale_type ?? "Goods at standard rate (default)",
         is_batch_tracked: existing.is_batch_tracked ?? false,
       });
     }
@@ -370,6 +386,40 @@ export default function ProductEdit() {
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </Select>
+            </Field>
+            <Field label="FBR sale type" id="sale_type">
+              <Select
+                id="sale_type"
+                value={values.sale_type}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  set("sale_type", v);
+                  // "3rd Schedule Goods" taxes on retail price, so mirror the
+                  // mechanical flag (also enforced server-side). Don't auto-
+                  // clear it when switching away — leave that to the operator.
+                  if (v === "3rd Schedule Goods") set("is_third_schedule", true);
+                }}
+              >
+                {saleTypeGroups.common.length > 0 && (
+                  <optgroup label="Common">
+                    {saleTypeGroups.common.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {saleTypeGroups.specialised.length > 0 && (
+                  <optgroup label="Specialised / sector-specific">
+                    {saleTypeGroups.specialised.map((s) => (
+                      <option key={s.value} value={s.value}>{s.label}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                How FBR taxes this item on the invoice. Defaults to Standard
+                rate. Pick 3rd Schedule for goods taxed on printed retail price;
+                Exempt / Zero-rated still need the matching tax rate set above.
+              </p>
             </Field>
             <label className="flex items-center gap-2 text-sm">
               <input

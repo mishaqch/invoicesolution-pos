@@ -217,15 +217,35 @@ def create_invoice(
         # builder doesn't need to re-fetch Product (which can be soft-
         # deleted or have its retail_price changed after the sale).
         #
-        # Non-3rd-Schedule lines get the default sale_type string —
-        # SaleItem.sale_type is NOT NULL with a CharField default, so
-        # passing None violates the constraint.
-        if product.is_third_schedule and product.retail_price is not None:
+        # FBR sale type resolution (3-tier, validated against PRAL's list so a
+        # stale/free-typed string can never reach PRAL → errorCode 0204):
+        #   1. an explicit cart-line override (manual / per-line select),
+        #   2. else the product's configured sale_type,
+        #   3. else the standard-rate default.
+        # Tier 2 means existing POS terminals — which don't send sale_type —
+        # automatically pick up product.sale_type without an exe rebuild.
+        from apps.fbr.sale_types import DEFAULT_SALE_TYPE, is_valid_sale_type
+
+        line_st = (line_input.get("sale_type") or "").strip()
+        product_st = getattr(product, "sale_type", "") or ""
+        if is_valid_sale_type(line_st):
+            sale_type = line_st
+        elif is_valid_sale_type(product_st):
+            sale_type = product_st
+        else:
+            sale_type = DEFAULT_SALE_TYPE
+
+        # 3rd-Schedule snapshot: tax is on the printed retail price, so freeze
+        # retail_price * qty onto the SaleItem (the builder keys its retail math
+        # off fixed_notified_value). Trigger on EITHER the mechanical flag or the
+        # "3rd Schedule Goods" sale type, and force the saleType string to match
+        # so PRAL's flag/string pairing is consistent (avoids error 0122).
+        is_third = product.is_third_schedule or sale_type == "3rd Schedule Goods"
+        if is_third and product.retail_price is not None:
             fixed_notified = product.retail_price * line_quote.quantity
             sale_type = "3rd Schedule Goods"
         else:
             fixed_notified = None
-            sale_type = "Goods at standard rate (default)"
 
         SaleItem.objects.create(
             invoice=invoice,

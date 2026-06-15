@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS products (
   min_sale_price   TEXT,
   max_discount_pct TEXT,
   is_third_schedule INTEGER NOT NULL DEFAULT 0,
+  sale_type        TEXT NOT NULL DEFAULT 'Goods at standard rate (default)',
   is_weighable     INTEGER NOT NULL DEFAULT 0,
   is_batch_tracked INTEGER NOT NULL DEFAULT 0,
   image_url        TEXT,

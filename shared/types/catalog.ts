@@ -63,6 +63,9 @@ export interface Product {
   // Goods" (instead of sale_price-based math). Required by PRAL for
   // sugar / drinks / biscuits / cigarettes / mobile phones etc.
   is_third_schedule: boolean;
+  /** FBR sale type (PRAL transtypecode), e.g. "Goods at standard rate
+   *  (default)". Verbatim PRAL string; drives the invoice line's saleType. */
+  sale_type: string;
   reorder_level: string | null;
   reorder_quantity: string | null;
   is_serialized: boolean;
@@ -78,3 +81,11 @@ export interface Product {
 
 /** What the POS terminal receives from /api/catalog/sync/ — no cost_price. */
 export type PosProduct = Omit<Product, "cost_price" | "description" | "is_serialized" | "is_batch_tracked" | "has_variants" | "reorder_level" | "reorder_quantity" | "created_at">;
+
+/** An FBR sale-type option for the product/invoice dropdown. `value` is the
+ *  exact PRAL string to submit; `label` is friendly display text. */
+export interface SaleTypeOption {
+  value: string;
+  label: string;
+  group: "common" | "specialised";
+}
