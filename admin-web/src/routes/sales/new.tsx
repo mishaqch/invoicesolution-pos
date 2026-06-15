@@ -102,20 +102,25 @@ export default function NewInvoiceRoute() {
   const uomOptions = useMemo(() => {
     const seen = new Map<string, { code: string; label: string }>();
     for (const u of uoms.data ?? []) {
-      const label = u.fbr_uom || u.name_en;
-      if (!seen.has(label)) seen.set(label, { code: u.code, label });
+      const fbr = u.fbr_uom || u.name_en;
+      const label = u.fbr_uom_label || fbr;
+      if (!seen.has(fbr)) seen.set(fbr, { code: u.code, label });
     }
+    const PCS = "Numbers, pieces, units";
     return Array.from(seen.values()).sort((a, b) => {
-      const pcs = "Numbers, pieces, units";
-      if (a.label === pcs) return -1;
-      if (b.label === pcs) return 1;
+      if (a.label === PCS) return -1;
+      if (b.label === PCS) return 1;
       return a.label.localeCompare(b.label);
     });
   }, [uoms.data]);
   const codeToOptionCode = useMemo(() => {
     const rows = uoms.data ?? [];
     const fbrByCode = new Map(rows.map((u) => [u.code, u.fbr_uom || u.name_en]));
-    const repByFbr = new Map(uomOptions.map((o) => [o.label, o.code]));
+    const repByFbr = new Map<string, string>();
+    for (const u of rows) {
+      const fbr = u.fbr_uom || u.name_en;
+      if (!repByFbr.has(fbr)) repByFbr.set(fbr, u.code);
+    }
     const m = new Map<string, string>();
     for (const u of rows) {
       const fbr = fbrByCode.get(u.code);
@@ -123,7 +128,7 @@ export default function NewInvoiceRoute() {
       if (rep) m.set(u.code, rep);
     }
     return m;
-  }, [uoms.data, uomOptions]);
+  }, [uoms.data]);
 
   // The product API returns `tax_rate` as the TaxRate row's UUID (FK),
   // but the invoice serializer expects a numeric percentage like "18".

@@ -98,9 +98,32 @@ INVOICE_TYPE_FBR_MAP: dict[str, str] = {
 WALK_IN_NTN_CNIC = "0000000000000"  # 13 zeros — PRAL convention.
 
 
+# Friendly DISPLAY label for each FBR uoM string — shown in the product/invoice
+# UoM dropdowns. This is presentation ONLY: the value actually submitted to FBR
+# is the UOM_FBR_MAP string (the key here), never this label. So "KG" is shown
+# as "Kilogram" but still sent to PRAL as "KG". Any FBR string without an entry
+# here displays as-is (e.g. "Dozen", "Bag", "Gram", "Numbers, pieces, units").
+UOM_DISPLAY_LABELS: dict[str, str] = {
+    "KG":            "Kilogram",
+    "MT":            "Metric Ton",
+    "40KG":          "40 KG",
+    "SqY":           "Square Yard",
+    "KWH":           "Kilowatt Hour (kWh)",
+    "MMBTU":         "Million BTU (MMBTU)",
+    "1000 kWh":      "1000 kWh",
+    "Mega Watt":     "Mega Watt (MW)",
+}
+
+
 def map_uom(code: str) -> str:
     """Return the FBR-shaped uoM string. Unknown codes fall back to PCS."""
     return UOM_FBR_MAP.get((code or "").upper(), "Numbers, pieces, units")
+
+
+def uom_display_label(code: str) -> str:
+    """Friendly label for a UoM code's FBR unit (presentation only)."""
+    fbr = map_uom(code)
+    return UOM_DISPLAY_LABELS.get(fbr, fbr)
 
 
 def format_rate(percentage: Decimal | str | int | float) -> str:

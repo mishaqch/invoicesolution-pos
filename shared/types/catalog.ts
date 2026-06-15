@@ -7,6 +7,9 @@ export interface UnitOfMeasure {
    *  units"). Several local codes can share one fbr_uom; the product form
    *  groups the dropdown by this. */
   fbr_uom?: string;
+  /** Friendly DISPLAY label for the fbr_uom (e.g. "Kilogram" for "KG").
+   *  Presentation only — submission still uses fbr_uom. */
+  fbr_uom_label?: string;
 }
 
 export interface HsCode {

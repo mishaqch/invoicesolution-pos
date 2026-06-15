@@ -19,16 +19,25 @@ class UnitOfMeasureSerializer(serializers.ModelSerializer):
     # The exact unit string FBR/PRAL accepts for this code (e.g. PCS/BOX/TIN
     # all → "Numbers, pieces, units"). Single source of truth: fbr.builder.
     # The product form groups the dropdown by this so each FBR unit appears
-    # once, shown by its full FBR name.
+    # once. `fbr_uom_label` is the friendly DISPLAY text (e.g. "Kilogram" for
+    # the "KG" FBR unit) — presentation only; submission always uses fbr_uom.
     fbr_uom = serializers.SerializerMethodField()
+    fbr_uom_label = serializers.SerializerMethodField()
 
     class Meta:
         model = UnitOfMeasure
-        fields = ("code", "name_en", "name_ur", "is_decimal_quantity", "fbr_uom")
+        fields = (
+            "code", "name_en", "name_ur", "is_decimal_quantity",
+            "fbr_uom", "fbr_uom_label",
+        )
 
     def get_fbr_uom(self, obj) -> str:
         from apps.fbr.builder import map_uom
         return map_uom(obj.code)
+
+    def get_fbr_uom_label(self, obj) -> str:
+        from apps.fbr.builder import uom_display_label
+        return uom_display_label(obj.code)
 
 
 class HsCodeSerializer(serializers.ModelSerializer):

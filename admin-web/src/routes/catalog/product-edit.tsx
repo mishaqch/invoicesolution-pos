@@ -94,18 +94,21 @@ export default function ProductEdit() {
   // the same FBR unit, so we dedupe by fbr_uom and keep a single representative
   // code as the stored value. "Numbers, pieces, units" is pinned first (the
   // common retail default). Falls back to name_en if fbr_uom isn't present yet.
+  // Dedupe by the real FBR unit (fbr_uom) so each FBR unit appears once; show
+  // the friendly label (fbr_uom_label, e.g. "Kilogram") as the visible text.
   const uomOptions = useMemo(() => {
     const rows = uoms.data ?? [];
     const seen = new Map<string, { code: string; label: string }>();
     for (const u of rows) {
-      const label = u.fbr_uom || u.name_en;
-      if (!seen.has(label)) seen.set(label, { code: u.code, label });
+      const fbr = u.fbr_uom || u.name_en;
+      const label = u.fbr_uom_label || fbr;
+      if (!seen.has(fbr)) seen.set(fbr, { code: u.code, label });
     }
     const list = Array.from(seen.values());
+    const PCS = "Numbers, pieces, units";
     list.sort((a, b) => {
-      const pcs = "Numbers, pieces, units";
-      if (a.label === pcs) return -1;
-      if (b.label === pcs) return 1;
+      if (a.label === PCS) return -1;
+      if (b.label === PCS) return 1;
       return a.label.localeCompare(b.label);
     });
     return list;
@@ -117,7 +120,11 @@ export default function ProductEdit() {
   const codeToOptionCode = useMemo(() => {
     const rows = uoms.data ?? [];
     const fbrByCode = new Map(rows.map((u) => [u.code, u.fbr_uom || u.name_en]));
-    const repByFbr = new Map(uomOptions.map((o) => [o.label, o.code]));
+    const repByFbr = new Map<string, string>();
+    for (const u of rows) {
+      const fbr = u.fbr_uom || u.name_en;
+      if (!repByFbr.has(fbr)) repByFbr.set(fbr, u.code);
+    }
     const m = new Map<string, string>();
     for (const u of rows) {
       const fbr = fbrByCode.get(u.code);
@@ -125,7 +132,7 @@ export default function ProductEdit() {
       if (rep) m.set(u.code, rep);
     }
     return m;
-  }, [uoms.data, uomOptions]);
+  }, [uoms.data]);
   const { data: setup } = useTenantSetup();
   const di = setup?.business_mode === "digital_invoicing";
   // The catalog entity is always called a "product" in the UI (even for DI).
