@@ -183,12 +183,6 @@ export default function ProductEdit() {
   // 3rd-Schedule (retail-price taxation) is now driven entirely by the FBR
   // sale type — there's no separate checkbox. Derive the flag from it.
   const isThirdSchedule = values.sale_type === "3rd Schedule Goods";
-  // Reduced-rate / zero / exempt goods carry an SRO reference (PRAL requires it
-  // for reduced-rate). Surface the SRO fields for those sale types.
-  const needsSro =
-    values.sale_type === "Goods at Reduced Rate" ||
-    values.sale_type === "Goods at zero-rate" ||
-    values.sale_type === "Exempt goods";
 
   useEffect(() => {
     if (existing) {
@@ -386,6 +380,33 @@ export default function ProductEdit() {
                 search ~7,900 codes by code or description.
               </p>
             </Field>
+            {/* SRO reference, directly under the HS code. Optional — only
+                reduced-rate / SRO-notified goods need it; ordinary goods leave
+                it blank. */}
+            <Field label="SRO schedule (optional)" id="sro_schedule_no">
+              <Input
+                id="sro_schedule_no"
+                value={values.sro_schedule_no}
+                onChange={(e) => set("sro_schedule_no", e.target.value)}
+                placeholder="e.g. EIGHTH SCHEDULE Table 1"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Only for goods notified under an SRO (e.g. reduced-rate 1% goods
+                → "EIGHTH SCHEDULE Table 1"). Leave blank for ordinary goods.
+              </p>
+            </Field>
+            <Field label="SRO item serial no (optional)" id="sro_item_serial_no">
+              <Input
+                id="sro_item_serial_no"
+                value={values.sro_item_serial_no}
+                onChange={(e) => set("sro_item_serial_no", e.target.value)}
+                placeholder="e.g. 70"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                The item's serial within that SRO schedule. Required by FBR when
+                an SRO schedule is set.
+              </p>
+            </Field>
             <Field label="Unit of measure *" id="uom">
               <Select
                 id="uom"
@@ -433,34 +454,6 @@ export default function ProductEdit() {
                 Exempt / Zero-rated still need the matching tax rate set above.
               </p>
             </Field>
-            {needsSro && (
-              <>
-                <Field label="SRO schedule" id="sro_schedule_no">
-                  <Input
-                    id="sro_schedule_no"
-                    value={values.sro_schedule_no}
-                    onChange={(e) => set("sro_schedule_no", e.target.value)}
-                    placeholder="EIGHTH SCHEDULE Table 1"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    FBR SRO schedule for reduced-rate goods. PRAL needs this on
-                    the invoice line (e.g. reduced-rate 1% → "EIGHTH SCHEDULE
-                    Table 1").
-                  </p>
-                </Field>
-                <Field label="SRO item serial no" id="sro_item_serial_no">
-                  <Input
-                    id="sro_item_serial_no"
-                    value={values.sro_item_serial_no}
-                    onChange={(e) => set("sro_item_serial_no", e.target.value)}
-                    placeholder="e.g. 70"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    The item's serial number within that SRO schedule.
-                  </p>
-                </Field>
-              </>
-            )}
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
