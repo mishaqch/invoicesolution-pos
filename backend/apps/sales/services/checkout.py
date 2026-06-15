@@ -267,6 +267,16 @@ def create_invoice(
             line_total=line_quote.line_total.amount,
             fixed_notified_value=fixed_notified,
             sale_type=sale_type,
+            # FBR SRO reference (reduced-rate / 8th-Schedule lines need it, or
+            # PRAL rejects). Cart-line override → product's configured SRO.
+            sro_schedule_no=(
+                line_input.get("sro_schedule_no")
+                or getattr(product, "sro_schedule_no", "") or None
+            ),
+            sro_item_serial_no=(
+                line_input.get("sro_item_serial_no")
+                or getattr(product, "sro_item_serial_no", "") or None
+            ),
             # Restaurant snapshot (empty/None for other verticals). Modifier
             # price deltas are already folded into unit_price by the caller, so
             # totals + tax are correct; this list is for the receipt + KOT only.

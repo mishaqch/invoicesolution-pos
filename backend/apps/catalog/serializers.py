@@ -107,7 +107,7 @@ class ProductSerializer(serializers.ModelSerializer):
             "hs_code", "uom", "tax_rate", "is_taxable",
             "cost_price", "sale_price", "retail_price",
             "min_sale_price", "max_discount_pct",
-            "is_third_schedule", "sale_type",
+            "is_third_schedule", "sale_type", "sro_schedule_no", "sro_item_serial_no",
             "reorder_level", "reorder_quantity",
             "is_serialized", "is_batch_tracked", "is_weighable", "has_variants",
             "image_url", "is_active",
@@ -189,7 +189,7 @@ class ProductPosSerializer(serializers.ModelSerializer):
             # FBR — without it, scanned-sale fiscalization is rejected.
             "uom", "tax_rate", "hs_code", "is_taxable",
             "sale_price", "retail_price", "min_sale_price", "max_discount_pct",
-            "is_third_schedule", "sale_type",
+            "is_third_schedule", "sale_type", "sro_schedule_no", "sro_item_serial_no",
             # is_batch_tracked tells the terminal a sale of this product must be
             # rung against a specific batch (FEFO) so expiry-sensitive stock is
             # depleted nearest-expiry-first.

@@ -33,12 +33,14 @@ def terminal(db, tenant, branch):
     )
 
 
-def _product(tenant, *, sale_type="Goods at standard rate (default)", third=False, retail=None):
+def _product(tenant, *, sale_type="Goods at standard rate (default)", third=False, retail=None,
+             sro_schedule="", sro_serial=""):
     uom = UnitOfMeasure.objects.get(code="PCS")
     return Product.objects.create(
         tenant=tenant, name="X", sku=f"X-{uuid.uuid4().hex[:8]}", uom=uom,
         sale_price=Decimal("100"), is_taxable=True, sale_type=sale_type,
         is_third_schedule=third, retail_price=retail,
+        sro_schedule_no=sro_schedule, sro_item_serial_no=sro_serial,
     )
 
 
@@ -116,3 +118,22 @@ def test_third_schedule_sale_type_snapshots_retail(db, tenant, branch, terminal,
     assert item.sale_type == "3rd Schedule Goods"
     # retail_price * qty was snapshotted onto the line for the FBR retail math.
     assert item.fixed_notified_value == Decimal("250")
+
+
+def test_reduced_rate_sro_flows_product_to_builder(db, tenant, branch, terminal, owner_user):
+    """Reduced-rate (8th Schedule): the product's SRO schedule + serial must
+    reach the FBR payload, or PRAL rejects the line."""
+    p = _product(
+        tenant, sale_type="Goods at Reduced Rate",
+        sro_schedule="EIGHTH SCHEDULE Table 1", sro_serial="70",
+    )
+    inv = _sale(tenant, branch, terminal, owner_user, p)
+    item = inv.items.first()
+    assert item.sale_type == "Goods at Reduced Rate"
+    assert item.sro_schedule_no == "EIGHTH SCHEDULE Table 1"
+    assert item.sro_item_serial_no == "70"
+    payload = build_item(item)
+    assert payload["sroScheduleNo"] == "EIGHTH SCHEDULE Table 1"
+    assert payload["sroItemSerialNo"] == "70"
+    # extraTax must be empty string for reduced-rate (PRAL rejects 0).
+    assert payload["extraTax"] == ""

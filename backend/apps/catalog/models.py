@@ -236,6 +236,21 @@ class Product(TenantScopedModel):
             "transtypecode list exactly; pick from the dropdown."
         ),
     )
+
+    # FBR SRO reference — required for reduced-rate (8th Schedule) and some
+    # exempt/zero lines: PRAL needs the schedule name + the item's serial within
+    # that schedule, or it rejects the line. e.g. reduced-rate 1% goods send
+    # sroScheduleNo="EIGHTH SCHEDULE Table 1" + sroItemSerialNo="70". Snapshotted
+    # onto SaleItem at checkout. Blank for ordinary standard-rate goods.
+    sro_schedule_no = models.CharField(
+        max_length=50, blank=True, default="",
+        help_text='FBR SRO schedule, e.g. "EIGHTH SCHEDULE Table 1". Needed for reduced-rate goods.',
+    )
+    sro_item_serial_no = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="The item's serial number within that SRO schedule, e.g. 70.",
+    )
+
     min_sale_price = models.DecimalField(max_digits=14, decimal_places=4, blank=True, null=True)
     max_discount_pct = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
 

@@ -66,6 +66,10 @@ export interface Product {
   /** FBR sale type (PRAL transtypecode), e.g. "Goods at standard rate
    *  (default)". Verbatim PRAL string; drives the invoice line's saleType. */
   sale_type: string;
+  /** FBR SRO reference for reduced-rate / 8th-Schedule goods. e.g.
+   *  schedule "EIGHTH SCHEDULE Table 1" + item serial "70". */
+  sro_schedule_no?: string;
+  sro_item_serial_no?: string;
   reorder_level: string | null;
   reorder_quantity: string | null;
   is_serialized: boolean;

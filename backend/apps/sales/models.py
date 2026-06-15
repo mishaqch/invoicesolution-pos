@@ -250,7 +250,9 @@ class SaleItem(models.Model):
     fixed_notified_value = models.DecimalField(
         max_digits=14, decimal_places=4, blank=True, null=True,
     )
-    sro_schedule_no = models.CharField(max_length=20, blank=True, null=True)
+    # 50 chars: real PRAL schedule names are long, e.g. "EIGHTH SCHEDULE
+    # Table 1" (23). The old 20 truncated/failed on reduced-rate lines.
+    sro_schedule_no = models.CharField(max_length=50, blank=True, null=True)
     sro_item_serial_no = models.CharField(max_length=20, blank=True, null=True)
 
     line_total = models.DecimalField(max_digits=14, decimal_places=4)

@@ -118,6 +118,10 @@ class CheckoutLineSerializer(serializers.Serializer):
     # Optional per-line FBR sale-type override. When absent, checkout falls back
     # to the product's sale_type (then the standard-rate default).
     sale_type = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Optional per-line SRO override (reduced-rate / 8th-Schedule). Falls back to
+    # the product's configured SRO when absent.
+    sro_schedule_no = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    sro_item_serial_no = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class CheckoutPaymentSerializer(serializers.Serializer):
