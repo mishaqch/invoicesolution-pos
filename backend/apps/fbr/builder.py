@@ -63,15 +63,29 @@ UOM_FBR_MAP: dict[str, str] = {
     "MM":      "Meter",
     "SQM":     "Square Metre",
     "SQF":     "Square Foot",
+    "SQFT":    "Square Foot",
+    "FT":      "Square Foot",   # PRAL has no linear-foot row; closest is sq ft.
     "SQY":     "SqY",
     "MT":      "MT",            # metric ton
     "40KG":    "40KG",
     "CUBIC_M": "Cubic Metre",
+    "CBM":     "Cubic Metre",
     "GALLON":  "Gallon",
     "POUND":   "Pound",
+    "LB":      "Pound",
     "CARAT":   "Carat",
     "KWH":     "KWH",
+    "MWH":     "1000 kWh",
+    "MW":      "Mega Watt",
     "MMBTU":   "MMBTU",
+    "BBL":     "Barrels",
+    "BOL":     "Bill of lading",
+    "LOGS":    "Timber Logs",
+    "1000U":   "Thousand Unit",
+    # Generic / unmapped local codes that legitimately mean "each":
+    "NO":      "Numbers, pieces, units",
+    "SET":     "Numbers, pieces, units",
+    "OTHER":   "Numbers, pieces, units",
 }
 
 INVOICE_TYPE_FBR_MAP: dict[str, str] = {

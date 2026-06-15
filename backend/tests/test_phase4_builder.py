@@ -107,10 +107,16 @@ def test_format_rate(inp, expected):
 
 
 def test_map_uom_known():
+    # PRAL accepts SHORT fixed strings — "KG" not "Kilograms", "Liter" not
+    # "Liters" (the long plural is rejected with errorCode 0099). These track
+    # the real /pdi/v1/uom values, not the older long forms.
     assert map_uom("PCS") == "Numbers, pieces, units"
-    assert map_uom("KG") == "Kilograms"
-    assert map_uom("LTR") == "Liters"
+    assert map_uom("KG") == "KG"
+    assert map_uom("LTR") == "Liter"
     assert map_uom("DOZEN") == "Dozen"
+    # Codes that all collapse to the generic "each" FBR unit, and a remapped one.
+    assert map_uom("BOX") == "Numbers, pieces, units"
+    assert map_uom("LB") == "Pound"
 
 
 def test_map_uom_unknown_falls_back_to_pcs():
@@ -118,7 +124,7 @@ def test_map_uom_unknown_falls_back_to_pcs():
 
 
 def test_map_uom_case_insensitive():
-    assert map_uom("kg") == "Kilograms"
+    assert map_uom("kg") == "KG"
 
 
 # ---------------------------------------------------------------------------

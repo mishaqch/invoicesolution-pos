@@ -3,6 +3,10 @@ export interface UnitOfMeasure {
   name_en: string;
   name_ur: string;
   is_decimal_quantity: boolean;
+  /** Exact unit string FBR/PRAL accepts for this code (e.g. "Numbers, pieces,
+   *  units"). Several local codes can share one fbr_uom; the product form
+   *  groups the dropdown by this. */
+  fbr_uom?: string;
 }
 
 export interface HsCode {

@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -87,6 +87,45 @@ export default function ProductEdit() {
   const uoms = useUoms();
   const taxRates = useTaxRates();
   const categories = useCategories();
+
+  // Present the UoM dropdown as the units FBR actually recognises: one option
+  // per distinct FBR unit, shown by its full FBR name ("Numbers, pieces,
+  // units", "KG", "Liter"…). Many local codes (PCS/BOX/BOTTLE/TIN…) collapse to
+  // the same FBR unit, so we dedupe by fbr_uom and keep a single representative
+  // code as the stored value. "Numbers, pieces, units" is pinned first (the
+  // common retail default). Falls back to name_en if fbr_uom isn't present yet.
+  const uomOptions = useMemo(() => {
+    const rows = uoms.data ?? [];
+    const seen = new Map<string, { code: string; label: string }>();
+    for (const u of rows) {
+      const label = u.fbr_uom || u.name_en;
+      if (!seen.has(label)) seen.set(label, { code: u.code, label });
+    }
+    const list = Array.from(seen.values());
+    list.sort((a, b) => {
+      const pcs = "Numbers, pieces, units";
+      if (a.label === pcs) return -1;
+      if (b.label === pcs) return 1;
+      return a.label.localeCompare(b.label);
+    });
+    return list;
+  }, [uoms.data]);
+
+  // Map any stored product code → the representative code we render, so editing
+  // an existing product whose code (e.g. "BOX") was deduped away still shows
+  // the right option selected (its FBR unit's representative).
+  const codeToOptionCode = useMemo(() => {
+    const rows = uoms.data ?? [];
+    const fbrByCode = new Map(rows.map((u) => [u.code, u.fbr_uom || u.name_en]));
+    const repByFbr = new Map(uomOptions.map((o) => [o.label, o.code]));
+    const m = new Map<string, string>();
+    for (const u of rows) {
+      const fbr = fbrByCode.get(u.code);
+      const rep = fbr ? repByFbr.get(fbr) : undefined;
+      if (rep) m.set(u.code, rep);
+    }
+    return m;
+  }, [uoms.data, uomOptions]);
   const { data: setup } = useTenantSetup();
   const di = setup?.business_mode === "digital_invoicing";
   // The catalog entity is always called a "product" in the UI (even for DI).
@@ -306,9 +345,14 @@ export default function ProductEdit() {
               </p>
             </Field>
             <Field label="Unit of measure *" id="uom">
-              <Select id="uom" value={values.uom} onChange={(e) => set("uom", e.target.value)} required>
-                {uoms.data?.map((u) => (
-                  <option key={u.code} value={u.code}>{u.code} — {u.name_en}</option>
+              <Select
+                id="uom"
+                value={codeToOptionCode.get(values.uom) ?? values.uom}
+                onChange={(e) => set("uom", e.target.value)}
+                required
+              >
+                {uomOptions.map((o) => (
+                  <option key={o.code} value={o.code}>{o.label}</option>
                 ))}
               </Select>
             </Field>

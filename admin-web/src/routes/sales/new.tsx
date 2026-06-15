@@ -20,6 +20,7 @@ import {
   useProducts,
   useTaxRates,
   useTerminals,
+  useUoms,
   useWarehouses,
   type ManualInvoiceLine,
   type ManualInvoicePayment,
@@ -92,7 +93,37 @@ export default function NewInvoiceRoute() {
   const warehouses = useWarehouses();
   const customers = useCustomers();
   const taxRates = useTaxRates();
+  const uoms = useUoms();
   const create = useCreateManualInvoice();
+
+  // FBR units for the per-line UoM dropdown: one option per distinct FBR unit,
+  // full FBR name, "Numbers, pieces, units" pinned first. Same logic as the
+  // product form so the unit shown here is exactly what FBR receives.
+  const uomOptions = useMemo(() => {
+    const seen = new Map<string, { code: string; label: string }>();
+    for (const u of uoms.data ?? []) {
+      const label = u.fbr_uom || u.name_en;
+      if (!seen.has(label)) seen.set(label, { code: u.code, label });
+    }
+    return Array.from(seen.values()).sort((a, b) => {
+      const pcs = "Numbers, pieces, units";
+      if (a.label === pcs) return -1;
+      if (b.label === pcs) return 1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [uoms.data]);
+  const codeToOptionCode = useMemo(() => {
+    const rows = uoms.data ?? [];
+    const fbrByCode = new Map(rows.map((u) => [u.code, u.fbr_uom || u.name_en]));
+    const repByFbr = new Map(uomOptions.map((o) => [o.label, o.code]));
+    const m = new Map<string, string>();
+    for (const u of rows) {
+      const fbr = fbrByCode.get(u.code);
+      const rep = fbr ? repByFbr.get(fbr) : undefined;
+      if (rep) m.set(u.code, rep);
+    }
+    return m;
+  }, [uoms.data, uomOptions]);
 
   // The product API returns `tax_rate` as the TaxRate row's UUID (FK),
   // but the invoice serializer expects a numeric percentage like "18".
@@ -879,11 +910,20 @@ export default function NewInvoiceRoute() {
                         />
                       </td>
                       <td className="px-3 py-2">
-                        <Input
-                          value={line.uom_code}
+                        <Select
+                          value={codeToOptionCode.get(line.uom_code) ?? line.uom_code}
                           onChange={(e) => updateLine(idx, { uom_code: e.target.value })}
-                          className="h-8 w-16 text-xs"
-                        />
+                          className="h-8 w-40 text-xs"
+                        >
+                          {/* Keep the current value selectable even if not in
+                              the deduped list (older data). */}
+                          {!uomOptions.some((o) => o.code === (codeToOptionCode.get(line.uom_code) ?? line.uom_code)) && line.uom_code && (
+                            <option value={line.uom_code}>{line.uom_code}</option>
+                          )}
+                          {uomOptions.map((o) => (
+                            <option key={o.code} value={o.code}>{o.label}</option>
+                          ))}
+                        </Select>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <NumberInput
