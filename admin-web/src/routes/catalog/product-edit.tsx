@@ -55,12 +55,6 @@ interface FormValues {
   // this value off the product at sale time. Free-text wasn't a viable
   // UX so we use an autocomplete against the live ~7,900-code catalog.
   hs_code: string;
-  // Pakistan 3rd-Schedule flag. When on, FBR submission uses retail_price
-  // as the taxable base (saleType="3rd Schedule Goods") instead of
-  // sale_price. Required by PRAL for sugar / drinks / biscuits /
-  // cigarettes / mobile phones / tea etc. retail_price must be set
-  // when this is on (backend serializer enforces this).
-  is_third_schedule: boolean;
   // FBR sale type (PRAL transtypecode) — how FBR taxes this item. Verbatim
   // PRAL string; flows to the invoice line's saleType. Default = standard rate.
   sale_type: string;
@@ -78,7 +72,6 @@ const blank: FormValues = {
   min_sale_price: "", reorder_level: "",
   is_active: true, description: "",
   hs_code: "",
-  is_third_schedule: false,
   sale_type: "Goods at standard rate (default)",
   is_batch_tracked: false,
 };
@@ -182,6 +175,10 @@ export default function ProductEdit() {
   const [values, setValues] = useState<FormValues>(blank);
   const [error, setError] = useState<string | null>(null);
 
+  // 3rd-Schedule (retail-price taxation) is now driven entirely by the FBR
+  // sale type — there's no separate checkbox. Derive the flag from it.
+  const isThirdSchedule = values.sale_type === "3rd Schedule Goods";
+
   useEffect(() => {
     if (existing) {
       setValues({
@@ -201,8 +198,13 @@ export default function ProductEdit() {
         is_active: existing.is_active,
         description: existing.description,
         hs_code: existing.hs_code ?? "",
-        is_third_schedule: existing.is_third_schedule ?? false,
-        sale_type: existing.sale_type ?? "Goods at standard rate (default)",
+        // Back-compat: a product flagged 3rd-Schedule before sale_type existed
+        // may still carry the standard-rate default — surface it as 3rd
+        // Schedule in the dropdown so saving doesn't silently drop the flag.
+        sale_type:
+          existing.is_third_schedule && !existing.sale_type
+            ? "3rd Schedule Goods"
+            : (existing.sale_type ?? "Goods at standard rate (default)"),
         is_batch_tracked: existing.is_batch_tracked ?? false,
       });
     }
@@ -228,13 +230,14 @@ export default function ProductEdit() {
     // 3rd-Schedule items must have a retail_price set (the value PRAL
     // uses as the taxable base). Catch it client-side so the operator
     // sees the requirement near the field they need to fix, rather
-    // than after a roundtrip.
-    if (values.is_third_schedule) {
+    // than after a roundtrip. "3rd Schedule" is now chosen via the FBR
+    // sale type dropdown (no separate checkbox).
+    if (isThirdSchedule) {
       const retail = Number(values.retail_price);
       if (!values.retail_price || Number.isNaN(retail) || retail <= 0) {
         setError(
-          "Retail price is required and must be > 0 when '3rd Schedule "
-          + "item' is on. PRAL charges tax on retail price for 3rd-"
+          "Retail price is required and must be > 0 when the FBR sale type "
+          + "is '3rd Schedule'. PRAL charges tax on retail price for 3rd-"
           + "Schedule goods (sugar, biscuits, drinks, cigarettes, mobile "
           + "phones, tea). Set the Retail price above before saving.",
         );
@@ -249,6 +252,9 @@ export default function ProductEdit() {
       retail_price: values.retail_price || null,
       min_sale_price: values.min_sale_price || null,
       reorder_level: values.reorder_level || null,
+      // Derived from the sale type — keeps the mechanical flag in sync with
+      // the dropdown (the backend also enforces this).
+      is_third_schedule: isThirdSchedule,
     };
     try {
       if (isNew) {
@@ -391,14 +397,7 @@ export default function ProductEdit() {
               <Select
                 id="sale_type"
                 value={values.sale_type}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  set("sale_type", v);
-                  // "3rd Schedule Goods" taxes on retail price, so mirror the
-                  // mechanical flag (also enforced server-side). Don't auto-
-                  // clear it when switching away — leave that to the operator.
-                  if (v === "3rd Schedule Goods") set("is_third_schedule", true);
-                }}
+                onChange={(e) => set("sale_type", e.target.value)}
               >
                 {saleTypeGroups.common.length > 0 && (
                   <optgroup label="Common">
@@ -429,24 +428,18 @@ export default function ProductEdit() {
               />
               Taxable
             </label>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="mt-0.5"
-                checked={values.is_third_schedule}
-                onChange={(e) => set("is_third_schedule", e.target.checked)}
-              />
-              <span>
-                <span className="font-medium">3rd Schedule item</span>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Tick for goods taxed on retail price (MRP) rather than
-                  sale price — sugar, biscuits, carbonated drinks,
-                  cigarettes, mobile phones, tea, infant milk. Requires
-                  Retail price to be set above. Without this, PRAL
-                  rejects the invoice line with error 0122.
-                </p>
-              </span>
-            </label>
+            {/* The separate "3rd Schedule item" checkbox was removed — it's now
+                the "3rd Schedule (taxed on retail price)" option in the FBR sale
+                type dropdown above. Selecting it derives is_third_schedule (see
+                submit) and requires a Retail price. */}
+            {isThirdSchedule && (
+              <p className="text-xs text-muted-foreground">
+                3rd Schedule: FBR taxes this on the printed retail price (MRP),
+                so <span className="font-medium">Retail price above is required</span>.
+                Common 3rd-Schedule goods: sugar, biscuits, drinks, cigarettes,
+                mobile phones, tea.
+              </p>
+            )}
           </CardContent>
         </Card>
 
