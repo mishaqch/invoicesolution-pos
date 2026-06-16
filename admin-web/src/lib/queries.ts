@@ -234,6 +234,17 @@ export function useStockLevels(params: Record<string, string> = {}) {
   });
 }
 
+export function useDeleteStockLevel() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Backend only allows deleting a stock row whose on-hand is 0 (the movement
+    // ledger keeps the history). Removes the now-empty line from the list.
+    mutationFn: (id: string) =>
+      api<void>(`/inventory/stock-levels/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["stock-levels"] }),
+  });
+}
+
 export interface RestockRow {
   product_id: string;
   name: string;

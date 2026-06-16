@@ -23,6 +23,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { extractApiErrorMessage } from "@/lib/api";
 import {
+  useDeleteStockLevel,
   usePostAdjustment,
   useProducts,
   useStockLevels,
@@ -66,6 +67,7 @@ export default function StockByWarehouse() {
   // the backend now treats as an ABSOLUTE set (idempotent) — so "edit" corrects
   // the on-hand to a typed value and "remove" sets it to 0.
   const post = usePostAdjustment();
+  const delStock = useDeleteStockLevel();
 
   async function editQuantity(productId: string, name: string, current: string) {
     if (!selectedWh) return;
@@ -88,16 +90,21 @@ export default function StockByWarehouse() {
     }
   }
 
-  async function removeStock(productId: string, name: string) {
+  async function removeStock(s: { id: string; product: string; quantity: string }, name: string) {
     if (!selectedWh) return;
-    if (!window.confirm(`Set "${name}" stock to 0 in this warehouse? (Recorded as a stock correction; history is kept.)`)) return;
+    if (!window.confirm(`Remove "${name}" from this warehouse's stock list? (Any on-hand is zeroed; the movement history is kept for audit.)`)) return;
     try {
-      await post.mutateAsync({
-        branch: selectedWh.branch, warehouse: activeWh, product: productId,
-        movement_type: "opening_balance", quantity: "0",
-        reason: "Stock removed (set to 0)",
-      });
-      toast.show({ message: `Stock for "${name}" set to 0.`, variant: "info" });
+      // Zero it first if it still holds stock (the delete endpoint refuses a
+      // non-zero row), then delete the now-empty line so it leaves the list.
+      if (Number(s.quantity) !== 0) {
+        await post.mutateAsync({
+          branch: selectedWh.branch, warehouse: activeWh, product: s.product,
+          movement_type: "opening_balance", quantity: "0",
+          reason: "Stock removed (set to 0)",
+        });
+      }
+      await delStock.mutateAsync(s.id);
+      toast.show({ message: `"${name}" removed from this warehouse.`, variant: "info" });
     } catch (err) {
       toast.show({ message: extractApiErrorMessage(err), variant: "destructive" });
     }
@@ -180,8 +187,8 @@ export default function StockByWarehouse() {
                           onClick={() => editQuantity(s.product, name, s.quantity)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="sm" title="Set stock to 0"
-                          onClick={() => removeStock(s.product, name)}>
+                        <Button variant="ghost" size="sm" title="Remove from stock list"
+                          onClick={() => removeStock(s, name)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>

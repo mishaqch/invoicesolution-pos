@@ -336,3 +336,24 @@ def test_opening_balance_then_sale_then_set_to_zero(db, tenant, branch, terminal
         "quantity": "0", "reason": "Removed", "movement_type": "opening_balance",
     }, format="json")
     assert StockLevel.objects.get(warehouse=wh).quantity == Decimal("0")
+
+
+def test_delete_stock_level_only_when_zero(db, tenant, branch, owner_user, product):
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    record_movement(tenant_id=tenant.id, product=product, branch=branch, warehouse=wh,
+                    movement_type="opening_balance", quantity=Decimal("5"))
+    level = StockLevel.objects.get(warehouse=wh)
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+
+    # Refuse to delete while it still holds stock.
+    r = client.delete(f"/api/inventory/stock-levels/{level.id}/")
+    assert r.status_code == 400
+    assert StockLevel.objects.filter(pk=level.id).exists()
+
+    # Zero it, then delete succeeds and the row is gone from the list.
+    level.quantity = Decimal("0"); level.save(update_fields=["quantity"])
+    r2 = client.delete(f"/api/inventory/stock-levels/{level.id}/")
+    assert r2.status_code == 204
+    assert not StockLevel.objects.filter(pk=level.id).exists()

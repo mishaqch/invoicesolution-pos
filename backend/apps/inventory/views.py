@@ -63,7 +63,12 @@ class _TenantQuerySetMixin:
 # ---------------------------------------------------------------------------
 
 
-class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
+class StockLevelViewSet(
+    _TenantQuerySetMixin,
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
     queryset = StockLevel.objects.select_related(
         "product", "branch", "variant", "warehouse",
     ).all()
@@ -71,6 +76,13 @@ class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Ge
     permission_classes = [_STOCK_GATE, IsTenantMember]
     filter_backends = [filters.OrderingFilter]
     ordering = ["product__name"]
+
+    def get_permissions(self):
+        # Deleting a stock row is a mutation — require the adjust perm (list
+        # stays open to any tenant member).
+        if self.action == "destroy":
+            return [_STOCK_GATE(), HasRolePerm.with_perm("inventory.adjust")()]
+        return super().get_permissions()
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -86,6 +98,20 @@ class StockLevelViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Ge
             from django.db.models.functions import Coalesce
             qs = qs.filter(quantity__lte=Coalesce(F("reorder_level"), Value(0)))
         return qs
+
+    def perform_destroy(self, instance):
+        # Remove the on-hand row from the list. Only allowed when it's at zero —
+        # the StockMovement ledger (append-only) keeps the history, so deleting
+        # the cached level row is safe and just hides a now-empty line. Refuse to
+        # delete a row that still holds stock, so real inventory can't vanish.
+        from decimal import Decimal
+
+        if (instance.quantity or Decimal("0")) != Decimal("0"):
+            raise ValidationError({
+                "detail": "Set the on-hand quantity to 0 before removing this "
+                          "stock line (it still holds stock)."
+            })
+        instance.delete()
 
 
 # ---------------------------------------------------------------------------
