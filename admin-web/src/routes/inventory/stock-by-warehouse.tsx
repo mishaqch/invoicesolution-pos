@@ -29,6 +29,20 @@ import {
   useWarehouses,
 } from "@/lib/queries";
 
+/** Short, column-friendly label for the verbose PRAL saleType string. */
+function shortSaleType(s: string | null | undefined): string {
+  if (!s) return "—";
+  const map: Record<string, string> = {
+    "Goods at standard rate (default)": "Standard",
+    "3rd Schedule Goods": "3rd Schedule",
+    "Goods at Reduced Rate": "Reduced",
+    "Goods at zero-rate": "Zero-rated",
+    "Exempt goods": "Exempt",
+    "Electric Vehicle": "Electric Vehicle",
+  };
+  return map[s] ?? s;
+}
+
 export default function StockByWarehouse() {
   const warehouses = useWarehouses();
   const products = useProducts();
@@ -80,28 +94,43 @@ export default function StockByWarehouse() {
             <TableRow>
               <TableHead>Product</TableHead>
               <TableHead className="hidden lg:table-cell">SKU</TableHead>
+              <TableHead className="hidden md:table-cell">HS code</TableHead>
+              <TableHead className="hidden lg:table-cell">UoM</TableHead>
+              <TableHead className="hidden xl:table-cell">Sale type</TableHead>
               <TableHead className="text-right">On hand</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {!activeWh ? (
-              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
             ) : isLoading ? (
-              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : (data?.results.length ?? 0) === 0 ? (
-              <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
             ) : (
               data!.results.map((s) => {
+                // FBR fields come straight from the stock row now (the API embeds
+                // the product's hs_code / uom / sale_type), falling back to the
+                // product lookup for name/sku on older payloads.
                 const p = productLookup.get(s.product);
+                const name = s.product_name ?? p?.name ?? s.product;
+                const sku = s.product_sku ?? p?.sku ?? "";
+                const fbrMissing = !s.hs_code;
                 return (
                   <TableRow key={s.id}>
                     <TableCell>
-                      {p?.name ?? s.product}
-                      {p?.sku && (
-                        <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">{p.sku}</span>
+                      {name}
+                      {sku && (
+                        <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">{sku}</span>
+                      )}
+                      {fbrMissing && (
+                        <span className="block text-[11px] text-warning-soft-foreground">No HS code — set it on the product before invoicing</span>
                       )}
                     </TableCell>
-                    <TableCell className="hidden font-mono text-xs lg:table-cell">{p?.sku}</TableCell>
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">{sku}</TableCell>
+                    <TableCell className="hidden font-mono text-xs md:table-cell">{s.hs_code || "—"}</TableCell>
+                    <TableCell className="hidden text-xs lg:table-cell">{s.uom || "—"}</TableCell>
+                    <TableCell className="hidden text-xs xl:table-cell">{shortSaleType(s.sale_type)}</TableCell>
                     <TableCell className="text-right font-mono">{s.quantity}</TableCell>
                   </TableRow>
                 );

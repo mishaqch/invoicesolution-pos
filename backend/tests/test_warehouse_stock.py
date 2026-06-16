@@ -245,3 +245,44 @@ def test_pos_sale_unchanged_no_warehouse(db, tenant, branch, terminal, owner_use
     assert sale_mv.warehouse_id is None
     # No warehouse-keyed level leaked into existence.
     assert not StockLevel.objects.filter(warehouse__isnull=False).exists()
+
+
+# ---------------------------------------------------------------------------
+# New: warehouse city/address + stock FBR fields (HS/UoM/sale_type).
+# ---------------------------------------------------------------------------
+
+
+def test_warehouse_city_address_roundtrip(db, tenant, branch, owner_user):
+    _enable_module(tenant, "warehouses")
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    resp = client.post("/api/inventory/warehouses/", {
+        "branch": str(branch.id), "name": "Lahore Godown", "code": "LHR",
+        "city": "Lahore", "address": "Band Road",
+    }, format="json")
+    assert resp.status_code == 201, resp.content
+    body = resp.json()
+    assert body["city"] == "Lahore"
+    assert body["address"] == "Band Road"
+
+
+def test_stock_level_exposes_product_fbr_fields(db, tenant, branch, owner_user, product):
+    _enable_module(tenant, "warehouses")
+    # Give the product FBR metadata.
+    product.hs_code_id = None  # product fixture has no hs by default
+    product.sale_type = "Goods at Reduced Rate"
+    product.save(update_fields=["sale_type"])
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    record_movement(tenant_id=tenant.id, product=product, branch=branch, warehouse=wh,
+                    movement_type="opening_balance", quantity=Decimal("5"))
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    rows = client.get(f"/api/inventory/stock-levels/?warehouse={wh.id}").json()["results"]
+    assert rows, "expected a stock row"
+    r = rows[0]
+    # FBR fields embedded on the stock row.
+    assert r["product_name"] == product.name
+    assert r["product_sku"] == product.sku
+    assert r["uom"] == product.uom_id
+    assert r["sale_type"] == "Goods at Reduced Rate"
+    assert "hs_code" in r

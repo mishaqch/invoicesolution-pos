@@ -1,6 +1,13 @@
 export interface StockLevel {
   id: string;
   product: string;
+  /** FBR-relevant product metadata (read-only) so the stock view can show
+   *  HS code / UoM / sale type without a separate products fetch. */
+  product_name?: string;
+  product_sku?: string;
+  hs_code?: string | null;
+  uom?: string | null;
+  sale_type?: string | null;
   variant: string | null;
   branch: string;
   /** Warehouse (Digital-Invoicing) the stock sits in; null for branch-keyed
@@ -21,6 +28,9 @@ export interface Warehouse {
   branch_name: string;
   name: string;
   code: string;
+  /** Optional location, so multi-location DI tenants can tell godowns apart. */
+  city?: string;
+  address?: string;
   is_default: boolean;
   is_active: boolean;
   created_at: string;

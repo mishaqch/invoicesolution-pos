@@ -24,6 +24,7 @@ class WarehouseSerializer(serializers.ModelSerializer):
         model = Warehouse
         fields = (
             "id", "branch", "branch_name", "name", "code",
+            "city", "address",
             "is_default", "is_active", "created_at", "updated_at",
         )
         read_only_fields = ("id", "branch_name", "created_at", "updated_at")
@@ -31,15 +32,27 @@ class WarehouseSerializer(serializers.ModelSerializer):
 
 class StockLevelSerializer(serializers.ModelSerializer):
     warehouse_name = serializers.CharField(source="warehouse.name", read_only=True)
+    # FBR-relevant product metadata, read-only, so the stock view can show HS
+    # code / UoM / sale type per item without a separate products fetch + lookup.
+    product_name = serializers.CharField(source="product.name", read_only=True)
+    product_sku = serializers.CharField(source="product.sku", read_only=True)
+    hs_code = serializers.CharField(source="product.hs_code_id", read_only=True)
+    uom = serializers.CharField(source="product.uom_id", read_only=True)
+    sale_type = serializers.CharField(source="product.sale_type", read_only=True)
 
     class Meta:
         model = StockLevel
         fields = (
-            "id", "product", "variant", "branch", "warehouse", "warehouse_name",
+            "id", "product", "product_name", "product_sku",
+            "hs_code", "uom", "sale_type",
+            "variant", "branch", "warehouse", "warehouse_name",
             "quantity", "reserved_quantity", "reorder_level",
             "last_counted_at", "updated_at",
         )
-        read_only_fields = ("id", "warehouse_name", "updated_at")
+        read_only_fields = (
+            "id", "warehouse_name", "product_name", "product_sku",
+            "hs_code", "uom", "sale_type", "updated_at",
+        )
 
 
 class StockMovementSerializer(serializers.ModelSerializer):

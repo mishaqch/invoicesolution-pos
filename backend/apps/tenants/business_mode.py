@@ -129,6 +129,11 @@ DEFAULT_MODULES_FOR_MODE: dict[str, list[str]] = {
     ],
     "digital_invoicing": [
         "sales", "fbr", "customers",
+        # branches: DI tenants need branch management so a multi-location
+        # wholesaler/distributor can model Lahore / Karachi / … each holding
+        # warehouses (Branch → Warehouse → Stock). The Branches page renders a
+        # DI-scoped view (no POS terminal / FBR-POS-ID clutter).
+        "branches",
         "warehouses",
         "debit_credit_notes", "manual_amendments",
         "reports_basic", "audit_log",

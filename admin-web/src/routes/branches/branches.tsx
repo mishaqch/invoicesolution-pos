@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useIsImsSdc } from "@/features/modules/hooks";
+import { useIsDigitalInvoicing, useIsImsSdc } from "@/features/modules/hooks";
 import { useToast } from "@/components/feedback/Toast";
 import { extractApiErrorMessage } from "@/lib/api";
 import {
@@ -36,6 +36,11 @@ export default function BranchesList() {
   const { data, isLoading } = useBranches();
   const { data: posStatus } = useFbrPosStatus();
   const imsSdc = useIsImsSdc();
+  // Digital-Invoicing tenants submit to FBR through the central DI-API token at
+  // the tenant level — there's no per-branch POS registration. So hide the
+  // whole "FBR POS" column + per-branch token editor for them; a DI branch is
+  // purely an organisational unit (name / code / city) that holds warehouses.
+  const di = useIsDigitalInvoicing();
   const create = useCreateBranch();
   const [v, setV] = useState({
     name: "", code: "", address: "", city: "", province: "PUNJAB" as const,
@@ -46,6 +51,10 @@ export default function BranchesList() {
   const posByBranch = new Map<string, FbrPosBranch>(
     (posStatus?.branches ?? []).map((p) => [p.branch_id, p]),
   );
+
+  // Column count for empty/loading rows. Base columns: Name, Code, City,
+  // Province, Active, actions = 6. + FBR POS (non-DI). + Token (non-DI, non-IMS).
+  const colCount = 6 + (di ? 0 : 1) + (!di && !imsSdc ? 1 : 0);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -99,18 +108,19 @@ export default function BranchesList() {
               <TableHead className="hidden lg:table-cell">Code</TableHead>
               <TableHead className="hidden md:table-cell">City</TableHead>
               <TableHead className="hidden xl:table-cell">Province</TableHead>
-              <TableHead>FBR POS</TableHead>
-              {/* DI-API per-branch token is irrelevant to IMS/SDC tenants. */}
-              {!imsSdc && <TableHead className="hidden lg:table-cell">Token</TableHead>}
+              {/* FBR POS registration is a POS concept — hidden for Digital
+                  Invoicing (those submit via the central DI-API token). */}
+              {!di && <TableHead>FBR POS</TableHead>}
+              {!di && !imsSdc && <TableHead className="hidden lg:table-cell">Token</TableHead>}
               <TableHead className="hidden md:table-cell">Active</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={imsSdc ? 7 : 8} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={colCount} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : branches.length === 0 ? (
-              <TableRow><TableCell colSpan={imsSdc ? 7 : 8} className="text-center text-muted-foreground">No branches yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={colCount} className="text-center text-muted-foreground">No branches yet.</TableCell></TableRow>
             ) : (
               branches.map((b) => (
                 <BranchRow
@@ -118,6 +128,8 @@ export default function BranchesList() {
                   branch={b}
                   pos={posByBranch.get(b.id)}
                   imsSdc={imsSdc}
+                  di={di}
+                  colCount={colCount}
                   expanded={editing === b.id}
                   onToggle={() => setEditing(editing === b.id ? null : b.id)}
                 />
@@ -134,12 +146,16 @@ function BranchRow({
   branch,
   pos,
   imsSdc,
+  di,
+  colCount,
   expanded,
   onToggle,
 }: {
   branch: Branch;
   pos?: FbrPosBranch;
   imsSdc: boolean;
+  di: boolean;
+  colCount: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -156,16 +172,18 @@ function BranchRow({
         <TableCell className="hidden font-mono text-xs lg:table-cell">{branch.code}</TableCell>
         <TableCell className="hidden md:table-cell">{branch.city}</TableCell>
         <TableCell className="hidden xl:table-cell">{branch.province}</TableCell>
-        <TableCell>
-          {registered ? (
-            <Badge variant="success" className="gap-1">
-              <CheckCircle2 className="h-3 w-3" /> POS {branch.fbr_pos_id}
-            </Badge>
-          ) : (
-            <Badge variant="muted">Not registered</Badge>
-          )}
-        </TableCell>
-        {!imsSdc && (
+        {!di && (
+          <TableCell>
+            {registered ? (
+              <Badge variant="success" className="gap-1">
+                <CheckCircle2 className="h-3 w-3" /> POS {branch.fbr_pos_id}
+              </Badge>
+            ) : (
+              <Badge variant="muted">Not registered</Badge>
+            )}
+          </TableCell>
+        )}
+        {!di && !imsSdc && (
           <TableCell className="hidden lg:table-cell">
             {!hasToken ? (
               <Badge variant="muted">No token</Badge>
@@ -178,14 +196,17 @@ function BranchRow({
         )}
         <TableCell className="hidden md:table-cell">{branch.is_active ? "Yes" : "No"}</TableCell>
         <TableCell>
-          <Button variant="ghost" size="sm" onClick={onToggle}>
-            <Settings2 className="mr-1 h-4 w-4" /> FBR POS
-          </Button>
+          {/* DI branches have no per-branch FBR POS registration to edit. */}
+          {!di && (
+            <Button variant="ghost" size="sm" onClick={onToggle}>
+              <Settings2 className="mr-1 h-4 w-4" /> FBR POS
+            </Button>
+          )}
         </TableCell>
       </TableRow>
-      {expanded && (
+      {!di && expanded && (
         <TableRow>
-          <TableCell colSpan={imsSdc ? 7 : 8} className="bg-muted/30">
+          <TableCell colSpan={colCount} className="bg-muted/30">
             <FbrPosEditor branch={branch} pos={pos} onDone={onToggle} />
           </TableCell>
         </TableRow>

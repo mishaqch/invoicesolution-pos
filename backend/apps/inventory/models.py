@@ -44,6 +44,11 @@ class Warehouse(TenantScopedModel):
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=20)
 
+    # Optional location, so a multi-location DI tenant can tell godowns apart
+    # ("Main Godown — Lahore" vs "Cold Store — Karachi"). Not sent to FBR.
+    city = models.CharField(max_length=100, blank=True, default="")
+    address = models.TextField(blank=True, default="")
+
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     deleted_at = models.DateTimeField(blank=True, null=True)

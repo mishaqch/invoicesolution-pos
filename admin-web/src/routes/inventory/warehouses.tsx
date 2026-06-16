@@ -38,6 +38,8 @@ export default function Warehouses() {
   const [branch, setBranch] = useState("");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [city, setCity] = useState("");
+  const [address, setAddress] = useState("");
   const [isDefault, setIsDefault] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,9 +50,11 @@ export default function Warehouses() {
     e.preventDefault();
     setError(null);
     try {
-      await create.mutateAsync({ branch, name, code, is_default: isDefault });
+      await create.mutateAsync({ branch, name, code, city, address, is_default: isDefault });
       setName("");
       setCode("");
+      setCity("");
+      setAddress("");
       setIsDefault(false);
       toast.show({ message: "Warehouse added.", variant: "success" });
     } catch (err) {
@@ -102,6 +106,14 @@ export default function Warehouses() {
               <Label htmlFor="wh-code">Code *</Label>
               <Input id="wh-code" value={code} onChange={(e) => setCode(e.target.value)} required placeholder="e.g. LHR-1" />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="wh-city">City</Label>
+              <Input id="wh-city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Lahore" />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="wh-address">Address</Label>
+              <Input id="wh-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="optional" />
+            </div>
             <div className="flex items-end">
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
@@ -125,25 +137,27 @@ export default function Warehouses() {
               <TableHead>Warehouse</TableHead>
               <TableHead className="hidden md:table-cell">Branch</TableHead>
               <TableHead className="hidden lg:table-cell">Code</TableHead>
+              <TableHead className="hidden md:table-cell">City</TableHead>
               <TableHead>Default</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : warehouses.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">No warehouses yet.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No warehouses yet.</TableCell></TableRow>
             ) : (
               warehouses.map((w) => (
                 <TableRow key={w.id}>
                   <TableCell>
                     {w.name}
                     <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">{w.code}</span>
-                    <span className="block text-[11px] text-muted-foreground md:hidden">{w.branch_name}</span>
+                    <span className="block text-[11px] text-muted-foreground md:hidden">{w.branch_name}{w.city ? ` · ${w.city}` : ""}</span>
                   </TableCell>
                   <TableCell className="hidden md:table-cell">{w.branch_name}</TableCell>
                   <TableCell className="hidden font-mono text-xs lg:table-cell">{w.code}</TableCell>
+                  <TableCell className="hidden md:table-cell">{w.city || "—"}</TableCell>
                   <TableCell>
                     {w.is_default ? (
                       <Badge variant="success" className="gap-1"><Star className="h-3 w-3" /> Default</Badge>
