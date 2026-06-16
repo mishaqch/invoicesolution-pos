@@ -9,7 +9,7 @@
  * POS tenants never see this (gated by the `warehouses` module + DI mode);
  * their branch-keyed "Stock by branch" page is untouched.
  */
-import { PackagePlus, Plus } from "lucide-react";
+import { PackagePlus, Pencil, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { useToast } from "@/components/feedback/Toast";
@@ -62,6 +62,47 @@ export default function StockByWarehouse() {
 
   const selectedWh = whRows.find((w) => w.id === activeWh);
 
+  // Per-row stock edit / remove. Both post an opening_balance adjustment, which
+  // the backend now treats as an ABSOLUTE set (idempotent) — so "edit" corrects
+  // the on-hand to a typed value and "remove" sets it to 0.
+  const post = usePostAdjustment();
+
+  async function editQuantity(productId: string, name: string, current: string) {
+    if (!selectedWh) return;
+    const input = window.prompt(`Set on-hand quantity for "${name}":`, current);
+    if (input === null) return;
+    const qty = input.trim();
+    if (qty === "" || Number.isNaN(Number(qty)) || Number(qty) < 0) {
+      toast.show({ message: "Enter a valid non-negative number.", variant: "destructive" });
+      return;
+    }
+    try {
+      await post.mutateAsync({
+        branch: selectedWh.branch, warehouse: activeWh, product: productId,
+        movement_type: "opening_balance", quantity: qty,
+        reason: "Manual stock correction",
+      });
+      toast.show({ message: `Stock for "${name}" set to ${qty}.`, variant: "success" });
+    } catch (err) {
+      toast.show({ message: extractApiErrorMessage(err), variant: "destructive" });
+    }
+  }
+
+  async function removeStock(productId: string, name: string) {
+    if (!selectedWh) return;
+    if (!window.confirm(`Set "${name}" stock to 0 in this warehouse? (Recorded as a stock correction; history is kept.)`)) return;
+    try {
+      await post.mutateAsync({
+        branch: selectedWh.branch, warehouse: activeWh, product: productId,
+        movement_type: "opening_balance", quantity: "0",
+        reason: "Stock removed (set to 0)",
+      });
+      toast.show({ message: `Stock for "${name}" set to 0.`, variant: "info" });
+    } catch (err) {
+      toast.show({ message: extractApiErrorMessage(err), variant: "destructive" });
+    }
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader title="Stock by warehouse" />
@@ -98,15 +139,16 @@ export default function StockByWarehouse() {
               <TableHead className="hidden lg:table-cell">UoM</TableHead>
               <TableHead className="hidden xl:table-cell">Sale type</TableHead>
               <TableHead className="text-right">On hand</TableHead>
+              <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {!activeWh ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
             ) : isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : (data?.results.length ?? 0) === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
             ) : (
               data!.results.map((s) => {
                 // FBR fields come straight from the stock row now (the API embeds
@@ -132,6 +174,18 @@ export default function StockByWarehouse() {
                     <TableCell className="hidden text-xs lg:table-cell">{s.uom || "—"}</TableCell>
                     <TableCell className="hidden text-xs xl:table-cell">{shortSaleType(s.sale_type)}</TableCell>
                     <TableCell className="text-right font-mono">{s.quantity}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" title="Correct on-hand quantity"
+                          onClick={() => editQuantity(s.product, name, s.quantity)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" title="Set stock to 0"
+                          onClick={() => removeStock(s.product, name)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })

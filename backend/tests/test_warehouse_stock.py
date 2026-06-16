@@ -286,3 +286,53 @@ def test_stock_level_exposes_product_fbr_fields(db, tenant, branch, owner_user, 
     assert r["uom"] == product.uom_id
     assert r["sale_type"] == "Goods at Reduced Rate"
     assert "hs_code" in r
+
+
+# ---------------------------------------------------------------------------
+# Opening balance is an ABSOLUTE set (idempotent) — not a blind add.
+# ---------------------------------------------------------------------------
+
+
+def test_opening_balance_is_idempotent_set_not_add(db, tenant, branch, owner_user, product):
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+
+    def opening(qty):
+        return client.post("/api/inventory/adjustments/", {
+            "branch": str(branch.id), "warehouse": str(wh.id), "product": str(product.id),
+            "quantity": qty, "reason": "Opening", "movement_type": "opening_balance",
+        }, format="json")
+
+    # First opening balance → 100.
+    assert opening("100").status_code == 201
+    assert StockLevel.objects.get(warehouse=wh).quantity == Decimal("100")
+
+    # Re-entering the SAME opening balance must NOT double it (was the footgun).
+    r2 = opening("100")
+    assert r2.status_code in (200, 201)
+    assert StockLevel.objects.get(warehouse=wh).quantity == Decimal("100")
+
+    # Entering a NEW opening balance SETS to the new value (correct downward too).
+    assert opening("60").status_code == 201
+    assert StockLevel.objects.get(warehouse=wh).quantity == Decimal("60")
+
+
+def test_opening_balance_then_sale_then_set_to_zero(db, tenant, branch, terminal, owner_user, product):
+    """Edit-to-zero (the stock 'remove' action) works via opening_balance=0."""
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    client.post("/api/inventory/adjustments/", {
+        "branch": str(branch.id), "warehouse": str(wh.id), "product": str(product.id),
+        "quantity": "50", "reason": "Opening", "movement_type": "opening_balance",
+    }, format="json")
+    assert StockLevel.objects.get(warehouse=wh).quantity == Decimal("50")
+    # Remove → set to 0.
+    client.post("/api/inventory/adjustments/", {
+        "branch": str(branch.id), "warehouse": str(wh.id), "product": str(product.id),
+        "quantity": "0", "reason": "Removed", "movement_type": "opening_balance",
+    }, format="json")
+    assert StockLevel.objects.get(warehouse=wh).quantity == Decimal("0")

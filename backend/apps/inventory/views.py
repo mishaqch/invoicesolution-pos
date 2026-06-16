@@ -339,11 +339,45 @@ class AdjustmentView(viewsets.ViewSet):
             except ProductVariant.DoesNotExist:
                 raise NotFound("Variant not found.")
 
-        # Sign convention: explicit adjustment_in/adjustment_out from caller.
-        # Quantity is always recorded as a signed delta.
-        signed_qty = v["quantity"]
-        if v["movement_type"] in ("adjustment_out", "damage", "expiry") and signed_qty > 0:
-            signed_qty = -signed_qty
+        mt = v["movement_type"]
+        entered = v["quantity"]
+
+        if mt == "opening_balance":
+            # Opening balance is the ABSOLUTE target on-hand, not a delta. The
+            # ledger only stores deltas (record_movement adds), so re-entering
+            # the same opening balance would otherwise DOUBLE the stock. Compute
+            # the delta from the current on-hand to the entered target and record
+            # that — so opening balance is idempotent ("set to N", run as many
+            # times as you like). Negative deltas are fine (correcting downward).
+            from decimal import Decimal
+
+            from django.db.models import Q
+
+            current = (
+                StockLevel.objects.filter(
+                    tenant_id=request.tenant_id, product=product, variant=variant,
+                )
+                .filter(
+                    Q(warehouse=warehouse) if warehouse is not None
+                    else Q(branch=branch, warehouse__isnull=True)
+                )
+                .values_list("quantity", flat=True)
+                .first()
+            ) or Decimal("0")
+            signed_qty = entered - current
+            if signed_qty == 0:
+                # Nothing to change — return the current level without writing a
+                # no-op movement into the append-only ledger.
+                return Response(
+                    {"detail": "Opening balance already matches on-hand; no change.",
+                     "quantity": str(entered)},
+                    status=status.HTTP_200_OK,
+                )
+        else:
+            # Sign convention: outflow types are stored negative.
+            signed_qty = entered
+            if mt in ("adjustment_out", "damage", "expiry") and signed_qty > 0:
+                signed_qty = -signed_qty
 
         movement = record_movement(
             tenant_id=request.tenant_id,
@@ -351,7 +385,7 @@ class AdjustmentView(viewsets.ViewSet):
             variant=variant,
             branch=branch,
             warehouse=warehouse,
-            movement_type=v["movement_type"],
+            movement_type=mt,
             quantity=signed_qty,
             reason=v["reason"],
             performed_by=request.user,
