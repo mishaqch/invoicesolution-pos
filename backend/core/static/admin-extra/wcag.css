@@ -22,17 +22,24 @@
     }
 }
 
-:where(a, button, input, select, textarea, summary, [tabindex]):not(#nav-filter):focus-visible {
+:where(a, button, input, select, textarea, summary, [tabindex]):not(#nav-filter):not(#searchbar):focus-visible {
     outline: 3px solid rgb(22 163 74) !important;
     outline-offset: 2px !important;
     border-radius: 4px;
 }
 
-/* The sidebar search (#nav-filter) sits inside an Unfold wrapper that already
- * shows a focus state on the OUTER div — so a ring on the input too is a double
- * indicator. Suppress the input's own outline; the wrapper owns the cue. */
+/* Both admin search boxes sit inside an Unfold wrapper that already shows a
+ * focus state on the OUTER div (focus-within ring). A ring on the input too is
+ * a DOUBLE indicator — so suppress the input's own outline/ring and let the
+ * wrapper own the cue.
+ *   #nav-filter — the sidebar app/model search
+ *   #searchbar  — the per-list changelist search (the q box)
+ * Excluded from the focus-visible rule above AND hard-suppressed here so neither
+ * our WCAG ring nor Unfold's transparent input:focus outline shows on them. */
 #nav-filter:focus,
-#nav-filter:focus-visible {
+#nav-filter:focus-visible,
+#searchbar:focus,
+#searchbar:focus-visible {
     outline: none !important;
     box-shadow: none !important;
 }
