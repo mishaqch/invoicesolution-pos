@@ -119,6 +119,24 @@ class ProductSerializer(serializers.ModelSerializer):
         from apps.fbr.sale_types import is_valid_sale_type
 
         instance = self.instance
+        # Friendly SKU-uniqueness check (per tenant, LIVE products only) so a
+        # duplicate SKU returns a clean 400 instead of crashing with a 500 from
+        # the DB unique constraint. Soft-deleted products don't count — their
+        # SKU is free to reuse.
+        sku = attrs.get("sku", instance.sku if instance else None)
+        request = self.context.get("request")
+        tenant_id = getattr(request, "tenant_id", None) if request else None
+        if sku and tenant_id:
+            dupe = Product.objects.filter(
+                tenant_id=tenant_id, sku=sku, deleted_at__isnull=True,
+            )
+            if instance is not None:
+                dupe = dupe.exclude(pk=instance.pk)
+            if dupe.exists():
+                raise serializers.ValidationError({
+                    "sku": f"A product with SKU '{sku}' already exists. Use a different SKU."
+                })
+
         sale_price = attrs.get("sale_price", instance.sale_price if instance else None)
         min_sale = attrs.get("min_sale_price", instance.min_sale_price if instance else None)
         if sale_price is not None and min_sale is not None and sale_price < min_sale:

@@ -282,8 +282,14 @@ class Product(TenantScopedModel):
     class Meta:
         db_table = "products"
         constraints = [
+            # Unique SKU per tenant — but only among LIVE products. A
+            # soft-deleted product (deleted_at set) must free up its SKU so the
+            # operator can re-create one with the same SKU; without the
+            # condition, the old unique constraint raised an IntegrityError
+            # (surfacing as a 500) when reusing a deleted product's SKU.
             models.UniqueConstraint(
                 fields=["tenant", "sku"],
+                condition=models.Q(deleted_at__isnull=True),
                 name="uniq_product_tenant_sku",
             ),
         ]
