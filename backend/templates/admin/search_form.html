@@ -1,21 +1,24 @@
 {% load i18n static %}
 
-{# Project override of unfold/templates/admin/search_form.html.
-   Fixes two UX issues with the default Django/unfold changelist search:
-     1. "Clearing the box doesn't go back to normal" — clearing the text now
-        shows a ✕ button that resets to the unfiltered list, AND emptying the
-        field (backspacing to nothing) auto-submits, which drops ?q= and
-        restores the full list. (Previously an empty box wasn't re-submitted,
-        so the page stayed filtered.)
-     2. "Doesn't respond smoothly while typing" — a short debounce fires the
-        search a moment after you STOP typing, so it feels live without
-        full-reloading on every keystroke. Search still runs on Enter / the
-        magnifier. Emptying resets immediately.
+{% comment %}
+Project override of unfold/templates/admin/search_form.html.
+Fixes two UX issues with the default Django/unfold changelist search:
+  1. Clearing the box now shows a clear (x) button that resets to the
+     unfiltered list, AND emptying the field auto-submits (drops ?q=) to
+     restore the full list. Previously an empty box was not re-submitted, so
+     the page stayed filtered.
+  2. A short debounce fires the search a moment after you STOP typing, so it
+     feels live without full-reloading on every keystroke. Search still runs
+     on Enter / the magnifier; emptying resets immediately.
 
-   Implementation note: we keep a SINGLE x-data on the <form> that spreads
-   unfold's own searchForm() (so its `/` shortcut + $refs.searchInput keep
-   working) and adds our q-model + debounce/clear helpers. Do NOT add a second
-   nested x-data — that would shadow $refs.searchInput and break the shortcut. #}
+Implementation: a SINGLE x-data on the form spreads unfold's own searchForm()
+(so its "/" shortcut + $refs.searchInput keep working) plus our q-model +
+debounce/clear helpers. Do NOT add a second nested x-data — it would shadow
+$refs.searchInput and break the shortcut.
+
+NB: this must be a comment block (not a multi-line hash comment), which can
+leak its contents onto the page — that leak is the bug this commit fixes.
+{% endcomment %}
 
 {% if cl.search_fields %}
     <div id="toolbar">
