@@ -1,4 +1,4 @@
-import { CheckCircle2, Info, Loader2, Plus, Settings2, XCircle } from "lucide-react";
+import { CheckCircle2, Info, Loader2, Pencil, Plus, Settings2, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,7 @@ import {
   useBranches,
   useCreateBranch,
   useDeactivateBranchToken,
+  useDeleteBranch,
   useFbrPosStatus,
   useSetBranchToken,
   useTestFbrToken,
@@ -42,11 +43,26 @@ export default function BranchesList() {
   // purely an organisational unit (name / code / city) that holds warehouses.
   const di = useIsDigitalInvoicing();
   const create = useCreateBranch();
+  const del = useDeleteBranch();
+  const toast = useToast();
   const [v, setV] = useState({
     name: "", code: "", address: "", city: "", province: "PUNJAB" as const,
   });
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+
+  async function onDeleteBranch(b: Branch) {
+    if (!window.confirm(
+      `Delete branch "${b.name}"? Its warehouses must be empty/removed first. `
+      + "Past invoices keep this branch for audit (it's hidden, not erased).",
+    )) return;
+    try {
+      await del.mutateAsync(b.id);
+      toast.show({ message: `Branch "${b.name}" deleted.`, variant: "info" });
+    } catch (err) {
+      toast.show({ message: extractApiErrorMessage(err), variant: "destructive" });
+    }
+  }
 
   const posByBranch = new Map<string, FbrPosBranch>(
     (posStatus?.branches ?? []).map((p) => [p.branch_id, p]),
@@ -132,6 +148,7 @@ export default function BranchesList() {
                   colCount={colCount}
                   expanded={editing === b.id}
                   onToggle={() => setEditing(editing === b.id ? null : b.id)}
+                  onDelete={() => onDeleteBranch(b)}
                 />
               ))
             )}
@@ -150,6 +167,7 @@ function BranchRow({
   colCount,
   expanded,
   onToggle,
+  onDelete,
 }: {
   branch: Branch;
   pos?: FbrPosBranch;
@@ -158,6 +176,7 @@ function BranchRow({
   colCount: number;
   expanded: boolean;
   onToggle: () => void;
+  onDelete: () => void;
 }) {
   const registered = !!branch.fbr_pos_id;
   const hasToken = !!pos?.has_branch_token;
@@ -196,22 +215,102 @@ function BranchRow({
         )}
         <TableCell className="hidden md:table-cell">{branch.is_active ? "Yes" : "No"}</TableCell>
         <TableCell>
-          {/* DI branches have no per-branch FBR POS registration to edit. */}
-          {!di && (
-            <Button variant="ghost" size="sm" onClick={onToggle}>
-              <Settings2 className="mr-1 h-4 w-4" /> FBR POS
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {di ? (
+              // DI branches: plain edit + delete (no per-branch FBR POS).
+              <>
+                <Button variant="ghost" size="sm" onClick={onToggle} title="Edit branch">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={onDelete} title="Delete branch">
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={onToggle}>
+                <Settings2 className="mr-1 h-4 w-4" /> FBR POS
+              </Button>
+            )}
+          </div>
         </TableCell>
       </TableRow>
-      {!di && expanded && (
+      {expanded && (
         <TableRow>
           <TableCell colSpan={colCount} className="bg-muted/30">
-            <FbrPosEditor branch={branch} pos={pos} onDone={onToggle} />
+            {di ? (
+              <BranchEditor branch={branch} onDone={onToggle} />
+            ) : (
+              <FbrPosEditor branch={branch} pos={pos} onDone={onToggle} />
+            )}
           </TableCell>
         </TableRow>
       )}
     </>
+  );
+}
+
+/**
+ * Plain branch editor for Digital-Invoicing tenants — name / code / city /
+ * province / address / active. No FBR-POS fields (DI submits via the central
+ * DI-API token, not per-branch POS).
+ */
+function BranchEditor({
+  branch,
+  onDone,
+}: {
+  branch: Branch;
+  onDone: () => void;
+}) {
+  const update = useUpdateBranch();
+  const toast = useToast();
+  const [v, setV] = useState({
+    name: branch.name,
+    code: branch.code,
+    city: branch.city ?? "",
+    address: branch.address ?? "",
+    province: (branch.province ?? "PUNJAB") as (typeof PROVINCES)[number],
+    is_active: branch.is_active,
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    setError(null);
+    try {
+      await update.mutateAsync({ id: branch.id, ...v });
+      toast.show({ message: `Branch "${v.name}" updated.`, variant: "success" });
+      onDone();
+    } catch (err) {
+      setError(extractApiErrorMessage(err));
+    }
+  }
+
+  return (
+    <div className="space-y-3 py-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Name *"><Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
+        <Field label="Code *"><Input value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} /></Field>
+        <Field label="City"><Input value={v.city} onChange={(e) => setV({ ...v, city: e.target.value })} /></Field>
+        <Field label="Province">
+          <Select value={v.province} onChange={(e) => setV({ ...v, province: e.target.value as typeof v.province })}>
+            {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+          </Select>
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Address"><Input value={v.address} onChange={(e) => setV({ ...v, address: e.target.value })} /></Field>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={v.is_active} onChange={(e) => setV({ ...v, is_active: e.target.checked })} />
+          Active
+        </label>
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div className="flex gap-2">
+        <Button size="sm" onClick={save} loading={update.isPending}>
+          {update.isPending ? "Saving…" : "Save changes"}
+        </Button>
+        <Button variant="outline" size="sm" onClick={onDone}>Cancel</Button>
+      </div>
+    </div>
   );
 }
 

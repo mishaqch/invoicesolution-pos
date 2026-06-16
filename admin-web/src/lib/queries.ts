@@ -180,6 +180,21 @@ export function useUpdateBranch() {
   });
 }
 
+export function useDeleteBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Server soft-deletes (sets deleted_at) — a branch is referenced by
+    // immutable audit tables, so it's hidden, not hard-removed.
+    mutationFn: (id: string) =>
+      api<void>(`/branches/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["branches"] });
+      // Warehouse forms list branches via this endpoint too.
+      qc.invalidateQueries({ queryKey: ["warehouse-branches"] });
+    },
+  });
+}
+
 // ----- Terminal pairing mutations (AdminTerminal type lives further below) -----
 export function useCreateTerminal() {
   const qc = useQueryClient();
