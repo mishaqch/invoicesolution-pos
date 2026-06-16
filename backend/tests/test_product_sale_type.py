@@ -120,6 +120,21 @@ def test_third_schedule_sale_type_snapshots_retail(db, tenant, branch, terminal,
     assert item.fixed_notified_value == Decimal("250")
 
 
+def test_third_schedule_tax_computed_on_retail_not_inclusive(db, tenant, branch, terminal, owner_user):
+    """Regression for PRAL errorCode 0102. 3rd-Schedule tax = retail * rate / 100
+    (tax charged ON the retail price), NOT extracted as tax-inclusive
+    (retail/(1+rate)). The inclusive math sent 15.25 for a 100 retail @18% and
+    PRAL rejected it; the correct value is 18.00."""
+    p = _product(tenant, sale_type="3rd Schedule Goods", third=True, retail=Decimal("100"))
+    inv = _sale(tenant, branch, terminal, owner_user, p)
+    payload = build_item(inv.items.first())
+    assert payload["fixedNotifiedValueOrRetailPrice"] == 100.0
+    assert payload["rate"] == "18%"
+    assert payload["salesTaxApplicable"] == 18.0          # 100 * 18% — matches PRAL
+    assert payload["valueSalesExcludingST"] == 100.0       # full retail, NOT 84.75
+    assert payload["totalValues"] == 118.0                 # retail + tax
+
+
 def test_reduced_rate_sro_flows_product_to_builder(db, tenant, branch, terminal, owner_user):
     """Reduced-rate (8th Schedule): the product's SRO schedule + serial must
     reach the FBR payload, or PRAL rejects the line."""

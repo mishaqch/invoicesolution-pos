@@ -161,20 +161,20 @@ def build_item(item: SaleItem) -> dict[str, Any]:
     qty_dec = item.quantity
     qty_int = qty_dec.to_integral_value() if qty_dec == qty_dec.to_integral() else qty_dec
 
-    # 3rd-Schedule (retail-price-fixed) lines have different math:
-    # tax is charged on the MRP, not on the seller's actual revenue.
-    # PRAL enforces this with errorCode 0122 if we send sale-price math
-    # for a 3rd-Schedule item. When SaleItem.fixed_notified_value is
-    # populated (checkout snapshots Product.retail_price * qty when the
-    # product is marked is_third_schedule), we recompute the wire
-    # values from the retail price:
-    #   fixedNotifiedValueOrRetailPrice = retail_price * qty
-    #   valueSalesExcludingST           = retail / (1 + rate/100)
-    #   salesTaxApplicable              = fixedNotified - valueExcl
-    #   totalValues                     = fixedNotified
-    # The on-receipt totals (line_total + tax_amount on the SaleItem)
-    # remain untouched — they're what the customer paid. The wire
-    # values are FBR's view of the transaction.
+    # 3rd-Schedule (retail-price-fixed) lines have different math: tax is
+    # charged ON the MRP for the given rate, not extracted from it as
+    # tax-inclusive. This is the PRAL rule (settled across sandbox iterations —
+    # see scenarios.build_sn008) and the literal text of errorCode 0102:
+    # "the Fixed/Notified Value or Retail Price is used to calculate the Sales
+    # Tax Amount for the provided rate."
+    #   fixedNotifiedValueOrRetailPrice = retail_price * qty   (the MRP base)
+    #   salesTaxApplicable              = retail * rate / 100  (tax ON retail)
+    #   valueSalesExcludingST           = retail               (full retail —
+    #                                     PRAL rejects 0/empty here; do NOT
+    #                                     divide by (1+rate) — that gave 0102)
+    #   totalValues                     = retail + salesTaxApplicable
+    # The on-receipt totals (line_total + tax_amount on the SaleItem) remain
+    # untouched — they're what the customer paid. These are FBR's view.
     is_retail_priced = (
         item.fixed_notified_value is not None
         and item.fixed_notified_value > 0
@@ -182,14 +182,9 @@ def build_item(item: SaleItem) -> dict[str, Any]:
     if is_retail_priced:
         retail_total = Decimal(item.fixed_notified_value)
         rate_pct = Decimal(item.tax_rate or 0)
-        # Reverse-compute the pre-tax retail value. retail = excl + (excl * rate),
-        # so excl = retail / (1 + rate/100).
-        if rate_pct > 0:
-            value_excl_st = (retail_total / (Decimal(1) + rate_pct / Decimal(100)))
-        else:
-            value_excl_st = retail_total
-        sales_tax = retail_total - value_excl_st
-        total_values = retail_total
+        sales_tax = (retail_total * rate_pct / Decimal(100))
+        value_excl_st = retail_total
+        total_values = retail_total + sales_tax
         sale_type = item.sale_type or "3rd Schedule Goods"
     else:
         value_excl_st = (
