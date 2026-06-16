@@ -1880,6 +1880,18 @@ export interface DashboardData {
     today_refunds: number;
     avg_ticket: string;
   };
+  totals?: {
+    business_mode: "pos" | "digital_invoicing" | "both";
+    products_active: number;
+    customers: number;
+    invoices_total: number;
+    invoices_month_count: number;
+    invoices_month_gross: string;
+    stock_items: number;
+    low_stock_count: number;
+    stock_value: string;
+    warehouses: number;
+  };
   sparkline: { date: string; gross: string }[];
   recent_invoices: Array<{
     id: string; local_invoice_number: string; branch: string;

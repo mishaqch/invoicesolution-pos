@@ -408,12 +408,77 @@ def dashboard_view(request):
         .first()
     )
 
+    # ── Entity overview totals (dashboard cards) ──────────────────────────
+    # Lightweight aggregate counts the dashboard cards read directly, so the
+    # client doesn't fetch 4 list endpoints just for their `.count`. All
+    # tenant-scoped; mode-irrelevant cards are hidden client-side.
+    from decimal import Decimal as _D
+
+    from django.db.models import DecimalField, F
+    from django.db.models.functions import Coalesce
+
+    from apps.catalog.models import Product
+    from apps.customers.models import Customer
+    from apps.inventory.models import Warehouse
+    from apps.tenants.models import Tenant
+
+    tenant = Tenant.objects.only("business_mode").get(pk=tenant_id)
+    month_start = today.replace(day=1)
+
+    products_active = (
+        Product.objects.for_tenant(tenant_id)
+        .filter(deleted_at__isnull=True, is_active=True)
+        .count()
+    )
+    customers_total = (
+        Customer.objects.for_tenant(tenant_id).filter(deleted_at__isnull=True).count()
+    )
+
+    invoices_qs = Invoice.objects.for_tenant(tenant_id).filter(status__in=COUNTED_STATUSES)
+    invoices_total = invoices_qs.count()
+    month_agg = invoices_qs.filter(invoice_date__gte=month_start).aggregate(
+        c=Count("id"), gross=Sum("grand_total"),
+    )
+
+    # Stock: on-hand lines, count at/below reorder, total value at cost.
+    stock_qs = StockLevel.objects.for_tenant(tenant_id)
+    stock_items = stock_qs.filter(quantity__gt=0).count()
+    low_stock_count = stock_qs.filter(
+        reorder_level__isnull=False, quantity__lte=F("reorder_level"),
+    ).count()
+    stock_value = stock_qs.aggregate(
+        v=Coalesce(
+            Sum(
+                F("quantity") * F("product__cost_price"),
+                output_field=DecimalField(max_digits=18, decimal_places=4),
+            ),
+            _D("0"),
+            output_field=DecimalField(max_digits=18, decimal_places=4),
+        ),
+    )["v"]
+
+    warehouses_total = (
+        Warehouse.objects.for_tenant(tenant_id).filter(deleted_at__isnull=True).count()
+    )
+
     return Response({
         "kpis": {
             "today_gross": str(today_gross),
             "today_count": today_count,
             "today_refunds": today_refunds,
             "avg_ticket": str(avg_ticket),
+        },
+        "totals": {
+            "business_mode": tenant.business_mode,
+            "products_active": products_active,
+            "customers": customers_total,
+            "invoices_total": invoices_total,
+            "invoices_month_count": month_agg["c"] or 0,
+            "invoices_month_gross": str(month_agg["gross"] or _D("0")),
+            "stock_items": stock_items,
+            "low_stock_count": low_stock_count,
+            "stock_value": str(stock_value or _D("0")),
+            "warehouses": warehouses_total,
         },
         "sparkline": sparkline,
         "recent_invoices": recent_invoices,
