@@ -140,6 +140,20 @@ def format_rate(percentage: Decimal | str | int | float) -> str:
     return f"{normalized:f}%"
 
 
+def format_line_rate(percentage, sale_type: str | None) -> str:
+    """The PRAL `rate` string for a line, given its saleType.
+
+    Most sale types use the numeric percentage ("18%", "1%", "0%"), BUT exempt
+    goods must send the literal "Exempt" — PRAL rejects "0%" for an
+    "Exempt goods" line with errorCode 0046 ("Provided Rate is not correct for
+    selected Sales Type"). Zero-rated goods keep "0%" (saleType
+    "Goods at zero-rate"). This matches the SN006/SN007 scenario payloads.
+    """
+    if (sale_type or "").strip().lower() == "exempt goods":
+        return "Exempt"
+    return format_rate(percentage)
+
+
 def _to_money_number(d: Decimal | None) -> float:
     """Money fields go on the wire as numbers (not strings).
 
@@ -198,7 +212,7 @@ def build_item(item: SaleItem) -> dict[str, Any]:
     return {
         "hsCode": item.hs_code or "",
         "productDescription": item.product_name,
-        "rate": format_rate(item.tax_rate),
+        "rate": format_line_rate(item.tax_rate, sale_type),
         "uoM": map_uom(item.uom_code),
         "quantity": float(qty_int) if isinstance(qty_int, Decimal) else int(qty_int),
         "totalValues": _to_money_number(total_values),

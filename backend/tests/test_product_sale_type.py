@@ -152,3 +152,38 @@ def test_reduced_rate_sro_flows_product_to_builder(db, tenant, branch, terminal,
     assert payload["sroItemSerialNo"] == "70"
     # extraTax must be empty string for reduced-rate (PRAL rejects 0).
     assert payload["extraTax"] == ""
+
+
+def test_exempt_line_sends_rate_Exempt_not_zero_pct(db, tenant, branch, terminal, owner_user):
+    """PRAL errorCode 0046: an 'Exempt goods' line must send rate 'Exempt', not
+    '0%'. Zero-rated keeps '0%'."""
+    from apps.fbr.builder import build_item
+    p = _product(tenant, sale_type="Exempt goods")
+    # Force a 0 tax rate on the line (exempt).
+    inv = checkout.create_invoice(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=owner_user,
+        cash_session=None, customer=None,
+        cart_lines=[{"product": str(p.id), "quantity": "1", "unit_price": "100",
+                     "tax_rate": "0", "is_taxable": False}],
+        payments=[{"payment_method": "cash", "amount": "100"}],
+        client_uuid=str(uuid.uuid4()),
+    )
+    payload = build_item(inv.items.first())
+    assert payload["saleType"] == "Exempt goods"
+    assert payload["rate"] == "Exempt"
+
+
+def test_zero_rate_line_keeps_zero_pct(db, tenant, branch, terminal, owner_user):
+    from apps.fbr.builder import build_item
+    p = _product(tenant, sale_type="Goods at zero-rate")
+    inv = checkout.create_invoice(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=owner_user,
+        cash_session=None, customer=None,
+        cart_lines=[{"product": str(p.id), "quantity": "1", "unit_price": "100",
+                     "tax_rate": "0", "is_taxable": False}],
+        payments=[{"payment_method": "cash", "amount": "100"}],
+        client_uuid=str(uuid.uuid4()),
+    )
+    payload = build_item(inv.items.first())
+    assert payload["saleType"] == "Goods at zero-rate"
+    assert payload["rate"] == "0%"
