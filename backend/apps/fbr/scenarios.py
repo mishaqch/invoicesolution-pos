@@ -285,6 +285,8 @@ def pick_scenario_id(invoice, environment: str) -> str | None:
     can never pass a scenario a submit would fail (or vice-versa).
 
     Selection (all-lines-of-a-kind → that scenario; mixed → standard):
+      Exempt lines (saleType "Exempt goods"):   SN006 (6th Schedule)
+      Zero-rate lines (saleType "Goods at zero-rate"): SN007 (5th Schedule)
       3rd-Schedule lines (fixedNotifiedValueOrRetailPrice > 0):
                             retail SN027  else SN008   (NEVER SN007 — that's
                             Zero-Rated 5th Schedule, a different thing entirely)
@@ -292,13 +294,23 @@ def pick_scenario_id(invoice, environment: str) -> str | None:
       Standard lines:       retail SN026  else (registered SN001 / walk-in SN002)
 
     Retail end-consumer scenarios (SN026/27/28) are only emitted for walk-in
-    (unregistered) buyers AND only when assigned to the tenant.
+    (unregistered) buyers AND only when assigned to the tenant. Exempt/zero pick
+    SN006/SN007 only when assigned (their saleType is incompatible with any
+    standard scenario, so a standard fallback would be rejected with 0204 — we'd
+    rather send the correct code; if it isn't assigned the tenant must be granted
+    it in FBR).
     """
     if environment != "sandbox":
         return None  # production classifies per-line via saleType; no scenarioId.
 
     assigned = set(assigned_scenario_codes(invoice.tenant))
     items = list(invoice.items.all())
+
+    def _is_exempt(i):
+        return (i.sale_type or "").strip().lower() == "exempt goods"
+
+    def _is_zero_rate(i):
+        return (i.sale_type or "").strip().lower() == "goods at zero-rate"
 
     def _is_third_schedule(i):
         return i.fixed_notified_value is not None and i.fixed_notified_value > 0
@@ -308,6 +320,8 @@ def pick_scenario_id(invoice, environment: str) -> str | None:
         sro = (i.sro_schedule_no or "").upper()
         return "reduced rate" in st.lower() or "EIGHTH SCHEDULE" in sro
 
+    all_exempt = bool(items) and all(_is_exempt(i) for i in items)
+    all_zero_rate = bool(items) and all(_is_zero_rate(i) for i in items)
     all_third_schedule = bool(items) and all(_is_third_schedule(i) for i in items)
     all_reduced_rate = bool(items) and all(_is_reduced_rate(i) for i in items)
     is_registered = (invoice.buyer_registration_type or "").lower() == "registered"
@@ -319,6 +333,14 @@ def pick_scenario_id(invoice, environment: str) -> str | None:
             return retail_code
         return fallback_code
 
+    # Exempt / zero-rate first — their saleType matches ONLY SN006 / SN007, so
+    # they can never use a standard/retail scenario. Prefer the correct code
+    # when assigned; otherwise fall through (and PRAL will tell the operator the
+    # scenario isn't assigned, which is the real problem to fix in FBR).
+    if all_exempt and "SN006" in assigned:
+        return "SN006"
+    if all_zero_rate and "SN007" in assigned:
+        return "SN007"
     if all_third_schedule:
         return _pick("SN027", "SN008")
     if all_reduced_rate:

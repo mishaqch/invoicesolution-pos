@@ -111,3 +111,28 @@ def test_standard_walk_in_prefers_retail_sn026_when_assigned(db, tenant, branch,
     inv = _invoice(tenant, branch, terminal, owner_user)  # walk-in
     _add_item(inv, _product(tenant))
     assert pick_scenario_id(inv, "sandbox") == "SN026"
+
+
+def test_exempt_goods_picks_sn006_not_standard(db, tenant, branch, terminal, owner_user):
+    """Exempt line (saleType 'Exempt goods') must pick SN006, not fall through to
+    a standard scenario (SN026/SN002) which PRAL rejects with 0204."""
+    _assign(tenant, ["SN001", "SN002", "SN006", "SN026"])
+    inv = _invoice(tenant, branch, terminal, owner_user)  # walk-in
+    _add_item(inv, _product(tenant), sale_type="Exempt goods")
+    assert pick_scenario_id(inv, "sandbox") == "SN006"
+
+
+def test_zero_rate_goods_picks_sn007(db, tenant, branch, terminal, owner_user):
+    _assign(tenant, ["SN001", "SN002", "SN007", "SN026"])
+    inv = _invoice(tenant, branch, terminal, owner_user)
+    _add_item(inv, _product(tenant), sale_type="Goods at zero-rate")
+    assert pick_scenario_id(inv, "sandbox") == "SN007"
+
+
+def test_exempt_without_sn006_falls_through(db, tenant, branch, terminal, owner_user):
+    # If SN006 isn't assigned we don't fabricate it — fall through (operator must
+    # get SN006 granted in FBR). Just assert we don't crash + return a string.
+    _assign(tenant, ["SN001", "SN002", "SN026"])
+    inv = _invoice(tenant, branch, terminal, owner_user)
+    _add_item(inv, _product(tenant), sale_type="Exempt goods")
+    assert pick_scenario_id(inv, "sandbox") in ("SN026", "SN002")
