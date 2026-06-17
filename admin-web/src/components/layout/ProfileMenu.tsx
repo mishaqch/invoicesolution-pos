@@ -72,7 +72,7 @@ export function ProfileMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
+          className="absolute right-0 z-[60] mt-2 w-64 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
         >
           {/* Identity block */}
           <div className="flex items-start gap-3 border-b px-4 py-3">

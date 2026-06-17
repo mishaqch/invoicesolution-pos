@@ -27,7 +27,7 @@ export function TopBar() {
   const toggleSidebar = useSidebarStore((s) => s.toggle);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur-sm">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b bg-background/95 px-4 backdrop-blur-sm">
       <div className="flex min-w-0 items-center gap-2.5">
         {/* Hamburger — opens the nav drawer on mobile; hidden on desktop where
             the sidebar is always visible. */}
