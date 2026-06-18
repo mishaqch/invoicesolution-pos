@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
 import { PageHeader } from "@/components/ui/page-header";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { extractApiErrorMessage } from "@/lib/api";
@@ -302,17 +303,21 @@ function StockInCard({
         <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="sw-product">Product *</Label>
-            <Select id="sw-product" value={product} onChange={(e) => setProduct(e.target.value)} required>
-              <option value="">— Select —</option>
-              {products.data?.results.map((p) => {
+            <SearchableSelect
+              id="sw-product"
+              value={product}
+              onChange={setProduct}
+              required
+              placeholder="Search by name or SKU…"
+              options={(products.data?.results ?? []).map((p) => {
                 const incomplete = missingFbr(p).length > 0;
-                return (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.sku}){incomplete ? " — FBR details incomplete" : ""}
-                  </option>
-                );
+                return {
+                  value: p.id,
+                  label: `${p.name} (${p.sku})${incomplete ? " — FBR details incomplete" : ""}`,
+                  keywords: p.sku,
+                };
               })}
-            </Select>
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="sw-type">Type *</Label>

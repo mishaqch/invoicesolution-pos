@@ -272,7 +272,7 @@ export function FbrDetailsPanel({
 
       <div className="flex items-center gap-3 sm:col-span-2">
         <Button type="submit" loading={update.isPending}>
-          {update.isPending ? "Saving…" : "Save FBR details"}
+          {update.isPending ? "Saving…" : "Save Details"}
         </Button>
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
