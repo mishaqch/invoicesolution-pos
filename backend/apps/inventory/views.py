@@ -48,6 +48,33 @@ from .services import audits as audit_svc
 from .services import transfers as transfer_svc
 from .services.movements import record_movement
 
+# Stock-IN movement types — these BRING stock in for sale, so the item must be
+# FBR-ready (HS code, UoM, sale type set) before it can be stocked. Outflow
+# types (adjustment_out / damage / expiry) are intentionally NOT gated: you must
+# always be able to reduce/write off stock, even for an incomplete product.
+_STOCK_IN_TYPES = frozenset(
+    {"opening_balance", "adjustment_in", "purchase", "transfer_in"}
+)
+
+
+def _missing_fbr_fields(product) -> list[str]:
+    """Which FBR-identity fields a product is still missing.
+
+    Every invoice line submitted to PRAL carries hsCode, uoM and a saleType; a
+    product without them produces an invoice FBR rejects (e.g. errorCode 0052 /
+    0204). We gate stock-IN on these three so an item can't be stocked-for-sale
+    until its fiscal identity is complete — surfacing the gap at stock-in (where
+    the owner is already in the FBR cockpit) rather than at submission time.
+    """
+    missing = []
+    if not product.hs_code_id:
+        missing.append("HS code")
+    if not product.uom_id:
+        missing.append("Unit of measure")
+    if not (product.sale_type or "").strip():
+        missing.append("FBR sale type")
+    return missing
+
 
 class _TenantQuerySetMixin:
     def get_queryset(self):  # type: ignore[override]
@@ -288,6 +315,93 @@ class ExpiryViewSet(viewsets.ViewSet):
         return Response({"count": total, "page": page, "page_size": page_size, "results": results})
 
 
+class FbrReadinessViewSet(viewsets.ViewSet):
+    """GET /api/inventory/fbr-readiness/ — products not yet invoice-ready.
+
+    Lists live products whose FBR fiscal identity is incomplete, so an invoice
+    line for them would be rejected by PRAL. Each row says exactly what's
+    missing so the owner can clear the backlog in one place (and the stock-in
+    gate stops blocking them). Same paginated-list shape as Restock/Expiry.
+
+    A product is "not ready" when any of these is true:
+      - no HS code            (PRAL errorCode 0052)
+      - no UoM                (every line carries uoM)
+      - no/blank sale type    (PRAL errorCode 0204)
+      - an SRO schedule is set but the item serial is blank (FBR pairs them)
+      - 3rd-Schedule but no retail price > 0 (PRAL errorCode 0122)
+
+    Gated on EITHER module (POS `inventory` or DI `warehouses`) because both
+    kinds of tenant submit to FBR. Query params: ?q=<name/sku>, ?page/?page_size.
+    """
+
+    permission_classes = [_STOCK_GATE, IsTenantMember]
+
+    def list(self, request):
+        from decimal import Decimal
+
+        from django.db.models import Q
+
+        tenant_id = getattr(request, "tenant_id", None)
+        if not tenant_id:
+            return Response({"count": 0, "results": []})
+
+        # "Incomplete" = any required FBR field missing. Express as an OR of the
+        # individual gaps so the DB does the filtering (no full-table Python loop).
+        incomplete = (
+            Q(hs_code__isnull=True)
+            | Q(uom__isnull=True)
+            | Q(sale_type__isnull=True)
+            | Q(sale_type="")
+            # SRO schedule set but serial blank (or vice-versa is fine — serial
+            # alone isn't required), so flag schedule-without-serial.
+            | (~Q(sro_schedule_no="") & Q(sro_item_serial_no=""))
+            # 3rd-Schedule needs a retail price > 0.
+            | (Q(is_third_schedule=True) & (Q(retail_price__isnull=True) | Q(retail_price__lte=Decimal("0"))))
+        )
+        products = (
+            Product.objects.filter(
+                tenant_id=tenant_id, deleted_at__isnull=True, is_active=True,
+            )
+            .filter(incomplete)
+            .select_related("uom")
+            .order_by("name")
+        )
+        if (q := request.query_params.get("q")):
+            products = products.filter(Q(name__icontains=q) | Q(sku__icontains=q))
+
+        try:
+            page = max(1, int(request.query_params.get("page", "1")))
+            page_size = min(200, max(1, int(request.query_params.get("page_size", "50"))))
+        except ValueError:
+            page, page_size = 1, 50
+        total = products.count()
+        rows = products[(page - 1) * page_size: page * page_size]
+
+        results = []
+        for p in rows:
+            missing = []
+            if not p.hs_code_id:
+                missing.append("HS code")
+            if not p.uom_id:
+                missing.append("Unit of measure")
+            if not (p.sale_type or "").strip():
+                missing.append("FBR sale type")
+            if (p.sro_schedule_no or "").strip() and not (p.sro_item_serial_no or "").strip():
+                missing.append("SRO item serial no")
+            if p.is_third_schedule and not (p.retail_price and p.retail_price > Decimal("0")):
+                missing.append("Retail price")
+            results.append({
+                "product_id": str(p.id),
+                "name": p.name,
+                "sku": p.sku,
+                "hs_code": p.hs_code_id,
+                "uom": p.uom.code if p.uom_id else None,
+                "sale_type": p.sale_type or None,
+                "missing": missing,
+            })
+        return Response({"count": total, "page": page, "page_size": page_size, "results": results})
+
+
 # ---------------------------------------------------------------------------
 
 
@@ -367,6 +481,24 @@ class AdjustmentView(viewsets.ViewSet):
 
         mt = v["movement_type"]
         entered = v["quantity"]
+
+        # FBR-readiness gate: a product can't be stocked FOR SALE until its
+        # fiscal identity (HS code, UoM, sale type) is complete. Only applies to
+        # stock-IN (and only when the entered quantity actually adds stock —
+        # setting an opening balance to 0 or correcting downward is allowed so
+        # the owner is never trapped). Manage the missing fields from the
+        # "FBR details" panel on this same Stock screen.
+        if mt in _STOCK_IN_TYPES:
+            adds_stock = mt != "opening_balance" or entered > 0
+            if adds_stock and (missing := _missing_fbr_fields(product)):
+                raise ValidationError({
+                    "detail": (
+                        f"“{product.name}” is missing required FBR details: "
+                        f"{', '.join(missing)}. Set them via “FBR details” on "
+                        f"this product before adding stock for sale."
+                    ),
+                    "missing_fbr_fields": missing,
+                })
 
         if mt == "opening_balance":
             # Opening balance is the ABSOLUTE target on-hand, not a delta. The

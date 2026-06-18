@@ -14,7 +14,7 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.catalog.models import Product, UnitOfMeasure
+from apps.catalog.models import HsCode, Product, UnitOfMeasure
 from apps.inventory.models import StockLevel, StockMovement, Warehouse
 from apps.inventory.services.movements import record_movement
 from apps.sales.services import checkout
@@ -44,8 +44,12 @@ def terminal(db, tenant, branch):
 @pytest.fixture
 def product(db, tenant):
     uom = UnitOfMeasure.objects.get(code="PCS")
+    # FBR-ready by default (HS + UoM + a sale type) so the stock-in gate lets it
+    # through. Tests that exercise the gate create a deliberately-incomplete
+    # product instead.
+    hs, _ = HsCode.objects.get_or_create(code="8471.3000", defaults={"description": "Test goods"})
     return Product.objects.create(
-        tenant=tenant, name="Widget", sku="W-1", uom=uom,
+        tenant=tenant, name="Widget", sku="W-1", uom=uom, hs_code=hs,
         sale_price=Decimal("100"), is_taxable=False,
     )
 
@@ -268,10 +272,17 @@ def test_warehouse_city_address_roundtrip(db, tenant, branch, owner_user):
 
 def test_stock_level_exposes_product_fbr_fields(db, tenant, branch, owner_user, product):
     _enable_module(tenant, "warehouses")
-    # Give the product FBR metadata.
+    # Give the product the FULL FBR fiscal identity — the Stock screen is the
+    # cockpit that shows/edits all of it, so the serializer must embed every
+    # field (HS, UoM, sale type, SRO schedule + serial, retail price, etc.).
     product.hs_code_id = None  # product fixture has no hs by default
+    product.description = "Sona Urea 50kg bag"
     product.sale_type = "Goods at Reduced Rate"
-    product.save(update_fields=["sale_type"])
+    product.sro_schedule_no = "EIGHTH SCHEDULE Table 1"
+    product.sro_item_serial_no = "70"
+    product.save(update_fields=[
+        "description", "sale_type", "sro_schedule_no", "sro_item_serial_no",
+    ])
     wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
     record_movement(tenant_id=tenant.id, product=product, branch=branch, warehouse=wh,
                     movement_type="opening_balance", quantity=Decimal("5"))
@@ -280,12 +291,19 @@ def test_stock_level_exposes_product_fbr_fields(db, tenant, branch, owner_user, 
     rows = client.get(f"/api/inventory/stock-levels/?warehouse={wh.id}").json()["results"]
     assert rows, "expected a stock row"
     r = rows[0]
-    # FBR fields embedded on the stock row.
+    # FBR fields embedded on the stock row — the whole fiscal identity, mirrored
+    # from the product (the single source of truth, edited via PATCH /products/).
     assert r["product_name"] == product.name
     assert r["product_sku"] == product.sku
+    assert r["product_description"] == "Sona Urea 50kg bag"
     assert r["uom"] == product.uom_id
     assert r["sale_type"] == "Goods at Reduced Rate"
+    assert r["sro_schedule_no"] == "EIGHTH SCHEDULE Table 1"
+    assert r["sro_item_serial_no"] == "70"
     assert "hs_code" in r
+    assert "tax_rate" in r
+    assert "retail_price" in r
+    assert "is_third_schedule" in r
 
 
 # ---------------------------------------------------------------------------
@@ -357,3 +375,167 @@ def test_delete_stock_level_only_when_zero(db, tenant, branch, owner_user, produ
     r2 = client.delete(f"/api/inventory/stock-levels/{level.id}/")
     assert r2.status_code == 204
     assert not StockLevel.objects.filter(pk=level.id).exists()
+
+
+# ---------------------------------------------------------------------------
+# FBR-readiness gate on stock-IN (Phase 2): a product can't be stocked for sale
+# until its fiscal identity (HS code, UoM, sale type) is complete. Outflow and
+# downward corrections stay allowed so stock is never trapped.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def incomplete_product(db, tenant):
+    """A product missing its HS code — not FBR-ready, so stock-in is blocked."""
+    uom = UnitOfMeasure.objects.get(code="PCS")
+    return Product.objects.create(
+        tenant=tenant, name="Unclassified", sku="U-1", uom=uom,
+        sale_price=Decimal("50"), is_taxable=False,  # no hs_code
+    )
+
+
+def test_stock_in_blocked_when_fbr_fields_missing(db, tenant, branch, owner_user, incomplete_product):
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    resp = client.post("/api/inventory/adjustments/", {
+        "branch": str(branch.id), "warehouse": str(wh.id),
+        "product": str(incomplete_product.id),
+        "quantity": "10", "reason": "Opening", "movement_type": "opening_balance",
+    }, format="json")
+    assert resp.status_code == 400
+    body = resp.json()
+    assert "HS code" in body["missing_fbr_fields"]
+    # Nothing was stocked.
+    assert not StockLevel.objects.filter(warehouse=wh, product=incomplete_product).exists()
+
+
+def test_adjustment_in_also_gated(db, tenant, branch, owner_user, incomplete_product):
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    resp = client.post("/api/inventory/adjustments/", {
+        "branch": str(branch.id), "warehouse": str(wh.id),
+        "product": str(incomplete_product.id),
+        "quantity": "3", "reason": "stock in", "movement_type": "adjustment_in",
+    }, format="json")
+    assert resp.status_code == 400
+    assert "missing_fbr_fields" in resp.json()
+
+
+def test_stock_in_allowed_once_fbr_complete(db, tenant, branch, owner_user, incomplete_product):
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    # Complete the fiscal identity (mirrors saving the "FBR details" panel).
+    hs, _ = HsCode.objects.get_or_create(code="3102.1000", defaults={"description": "Urea"})
+    incomplete_product.hs_code = hs
+    incomplete_product.save(update_fields=["hs_code"])
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    resp = client.post("/api/inventory/adjustments/", {
+        "branch": str(branch.id), "warehouse": str(wh.id),
+        "product": str(incomplete_product.id),
+        "quantity": "10", "reason": "Opening", "movement_type": "opening_balance",
+    }, format="json")
+    assert resp.status_code == 201
+    assert StockLevel.objects.get(warehouse=wh, product=incomplete_product).quantity == Decimal("10")
+
+
+def test_outflow_not_gated_even_when_incomplete(db, tenant, branch, owner_user, incomplete_product):
+    """Damage/adjustment_out must work regardless of FBR completeness — stock
+    that somehow got in (e.g. legacy) must always be removable."""
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    # Seed stock via the service (bypasses the API gate, like legacy data).
+    record_movement(tenant_id=tenant.id, product=incomplete_product, branch=branch,
+                    warehouse=wh, movement_type="opening_balance", quantity=Decimal("5"))
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    resp = client.post("/api/inventory/adjustments/", {
+        "branch": str(branch.id), "warehouse": str(wh.id),
+        "product": str(incomplete_product.id),
+        "quantity": "2", "reason": "broke", "movement_type": "damage",
+    }, format="json")
+    assert resp.status_code == 201
+    assert StockLevel.objects.get(warehouse=wh, product=incomplete_product).quantity == Decimal("3")
+
+
+def test_opening_balance_to_zero_not_gated(db, tenant, branch, owner_user, incomplete_product):
+    """Setting opening balance to 0 (the 'remove' action) is a downward set, not
+    an add — must be allowed even when FBR fields are incomplete."""
+    _enable_module(tenant, "warehouses")
+    wh = Warehouse.objects.create(tenant=tenant, branch=branch, name="A", code="A")
+    record_movement(tenant_id=tenant.id, product=incomplete_product, branch=branch,
+                    warehouse=wh, movement_type="opening_balance", quantity=Decimal("8"))
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    resp = client.post("/api/inventory/adjustments/", {
+        "branch": str(branch.id), "warehouse": str(wh.id),
+        "product": str(incomplete_product.id),
+        "quantity": "0", "reason": "Removed", "movement_type": "opening_balance",
+    }, format="json")
+    assert resp.status_code in (200, 201)
+    assert StockLevel.objects.get(warehouse=wh, product=incomplete_product).quantity == Decimal("0")
+
+
+# ---------------------------------------------------------------------------
+# FBR readiness list (Phase 3): products with an incomplete fiscal identity.
+# ---------------------------------------------------------------------------
+
+
+def test_fbr_readiness_lists_only_incomplete(db, tenant, branch, owner_user, product, incomplete_product):
+    """Lists products missing FBR fields, says what's missing, and excludes the
+    invoice-ready ones (the `product` fixture is complete)."""
+    _enable_module(tenant, "warehouses")
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    body = client.get("/api/inventory/fbr-readiness/").json()
+    ids = {r["product_id"] for r in body["results"]}
+    assert str(incomplete_product.id) in ids       # missing HS code
+    assert str(product.id) not in ids              # fully FBR-ready
+    row = next(r for r in body["results"] if r["product_id"] == str(incomplete_product.id))
+    assert "HS code" in row["missing"]
+
+
+def test_fbr_readiness_flags_sro_schedule_without_serial(db, tenant, branch, owner_user):
+    _enable_module(tenant, "warehouses")
+    uom = UnitOfMeasure.objects.get(code="PCS")
+    hs, _ = HsCode.objects.get_or_create(code="8711.6020", defaults={"description": "x"})
+    p = Product.objects.create(
+        tenant=tenant, name="SRO no serial", sku="SRO-1", uom=uom, hs_code=hs,
+        sale_price=Decimal("10"), sale_type="Goods at Reduced Rate",
+        sro_schedule_no="EIGHTH SCHEDULE Table 1", sro_item_serial_no="",
+    )
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    body = client.get("/api/inventory/fbr-readiness/").json()
+    row = next(r for r in body["results"] if r["product_id"] == str(p.id))
+    assert "SRO item serial no" in row["missing"]
+
+
+def test_fbr_readiness_flags_third_schedule_without_retail(db, tenant, branch, owner_user):
+    _enable_module(tenant, "warehouses")
+    uom = UnitOfMeasure.objects.get(code="PCS")
+    hs, _ = HsCode.objects.get_or_create(code="1701.9900", defaults={"description": "sugar"})
+    p = Product.objects.create(
+        tenant=tenant, name="Sugar no retail", sku="SG-1", uom=uom, hs_code=hs,
+        sale_price=Decimal("100"), sale_type="3rd Schedule Goods",
+        is_third_schedule=True, retail_price=None,
+    )
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    body = client.get("/api/inventory/fbr-readiness/").json()
+    row = next(r for r in body["results"] if r["product_id"] == str(p.id))
+    assert "Retail price" in row["missing"]
+
+
+def test_fbr_readiness_search_filters(db, tenant, branch, owner_user, incomplete_product):
+    _enable_module(tenant, "warehouses")
+    client = APIClient()
+    _auth(client, owner_user, tenant)
+    hit = client.get("/api/inventory/fbr-readiness/?q=Unclassified").json()
+    assert any(r["product_id"] == str(incomplete_product.id) for r in hit["results"])
+    miss = client.get("/api/inventory/fbr-readiness/?q=zzz-nope").json()
+    assert miss["count"] == 0

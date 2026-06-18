@@ -1,13 +1,21 @@
 export interface StockLevel {
   id: string;
   product: string;
-  /** FBR-relevant product metadata (read-only) so the stock view can show
-   *  HS code / UoM / sale type without a separate products fetch. */
+  /** FBR-relevant product metadata (read-only) so the stock view doubles as the
+   *  FBR cockpit — it shows the full fiscal identity per item without a separate
+   *  products fetch. These mirror Product (the single source of truth); the
+   *  Stock screen edits them by PATCHing the product, never storing a 2nd copy. */
   product_name?: string;
   product_sku?: string;
+  product_description?: string;
   hs_code?: string | null;
   uom?: string | null;
   sale_type?: string | null;
+  sro_schedule_no?: string | null;
+  sro_item_serial_no?: string | null;
+  tax_rate?: string | null;
+  retail_price?: string | null;
+  is_third_schedule?: boolean;
   variant: string | null;
   branch: string;
   /** Warehouse (Digital-Invoicing) the stock sits in; null for branch-keyed

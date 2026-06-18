@@ -21,6 +21,7 @@ import DashboardRoute from "@/routes/dashboard";
 import Adjustments from "@/routes/inventory/adjustments";
 import StockAuditsList from "@/routes/inventory/audits";
 import ExpiryList from "@/routes/inventory/expiry";
+import FbrReadinessList from "@/routes/inventory/fbr-readiness";
 import Movements from "@/routes/inventory/movements";
 import RestockList from "@/routes/inventory/restock";
 import SuppliersList from "@/routes/suppliers/list";
@@ -128,6 +129,18 @@ export default function App() {
               <Route path="warehouses" element={<Warehouses />} />
               <Route path="warehouse-stock" element={<StockByWarehouse />} />
             </Route>
+
+            {/* FBR readiness — products with an incomplete fiscal identity.
+                Shared by POS (`inventory`) and Digital-Invoicing (`warehouses`)
+                tenants, so it's gated any-of rather than living in either group. */}
+            <Route
+              path="inventory/fbr-readiness"
+              element={
+                <RequireModule anyOf={["inventory", "warehouses"]}>
+                  <FbrReadinessList />
+                </RequireModule>
+              }
+            />
 
             {/* Procurement — pharmacy/wholesale. Gated by inventory module +
                 pharmacy vertical (the only vertical that surfaces it for now). */}

@@ -12,6 +12,7 @@ import {
   ClipboardList,
   Utensils,
   FileText,
+  FileWarning,
   HelpCircle,
   LayoutDashboard,
   Package,
@@ -83,6 +84,10 @@ const CATALOG: Item[] = [
   { to: "/catalog/categories", label: "Categories", icon: Boxes },
   { to: "/catalog/tax-rates", label: "Tax rates", icon: FileText, module: "terminals" },
   { to: "/catalog/hs-codes", label: "HS codes", icon: FileText },
+  // Products whose FBR fiscal identity is incomplete (not invoice-ready). Sits
+  // in Catalog (no module gate) so both POS and DI tenants — everyone who
+  // submits to FBR — can clear the backlog.
+  { to: "/inventory/fbr-readiness", label: "FBR readiness", icon: FileWarning },
 ];
 
 // Warehouse-style stock management (grocery + pharmacy). Restaurants think in

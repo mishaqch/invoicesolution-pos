@@ -130,6 +130,10 @@ export function useUpdateProduct() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["products"] });
       qc.invalidateQueries({ queryKey: ["product", data.id] });
+      // The stock list embeds the product's FBR fields (HS/UoM/sale type/SRO…)
+      // so the Stock screen can edit them inline; refresh it after a product
+      // edit so those rows show the new fiscal identity.
+      qc.invalidateQueries({ queryKey: ["stock-levels"] });
     },
   });
 }
@@ -296,6 +300,35 @@ export function useExpiry(params: Record<string, string> = {}) {
         `/inventory/expiry/${query ? `?${query}` : ""}`,
       ),
     enabled,
+    placeholderData: (prev) => prev,
+  });
+}
+
+export interface FbrReadinessRow {
+  product_id: string;
+  name: string;
+  sku: string;
+  hs_code: string | null;
+  uom: string | null;
+  sale_type: string | null;
+  /** Human-readable list of what's still missing (e.g. ["HS code", "FBR sale type"]). */
+  missing: string[];
+}
+
+/** Products whose FBR fiscal identity is incomplete (not invoice-ready).
+ *  Available to both POS (`inventory`) and Digital-Invoicing (`warehouses`)
+ *  tenants — both submit to FBR. */
+export function useFbrReadiness(params: Record<string, string> = {}) {
+  const inventoryOn = useModuleEnabled("inventory");
+  const warehousesOn = useModuleEnabled("warehouses");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["fbr-readiness", params],
+    queryFn: () =>
+      api<{ count: number; page: number; page_size: number; results: FbrReadinessRow[] }>(
+        `/inventory/fbr-readiness/${query ? `?${query}` : ""}`,
+      ),
+    enabled: inventoryOn || warehousesOn,
     placeholderData: (prev) => prev,
   });
 }

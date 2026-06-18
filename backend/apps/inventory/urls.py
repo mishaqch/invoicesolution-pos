@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdjustmentView,
     ExpiryViewSet,
+    FbrReadinessViewSet,
     RestockViewSet,
     StockAuditViewSet,
     StockLevelViewSet,
@@ -16,6 +17,7 @@ router.register("warehouses", WarehouseViewSet, basename="warehouse")
 router.register("stock-levels", StockLevelViewSet, basename="stocklevel")
 router.register("restock", RestockViewSet, basename="restock")
 router.register("expiry", ExpiryViewSet, basename="expiry")
+router.register("fbr-readiness", FbrReadinessViewSet, basename="fbr-readiness")
 router.register("movements", StockMovementViewSet, basename="movement")
 router.register("adjustments", AdjustmentView, basename="adjustment")
 router.register("transfers", StockTransferViewSet, basename="transfer")

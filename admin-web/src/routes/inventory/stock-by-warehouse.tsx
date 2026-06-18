@@ -9,9 +9,10 @@
  * POS tenants never see this (gated by the `warehouses` module + DI mode);
  * their branch-keyed "Stock by branch" page is untouched.
  */
-import { PackagePlus, Pencil, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, PackagePlus, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 
+import { FbrDetailsPanel } from "@/features/inventory/FbrDetailsPanel";
 import { useToast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +69,9 @@ export default function StockByWarehouse() {
   // the on-hand to a typed value and "remove" sets it to 0.
   const post = usePostAdjustment();
   const delStock = useDeleteStockLevel();
+
+  // Which row's inline "FBR details" editor is expanded (one at a time).
+  const [fbrOpen, setFbrOpen] = useState<string | null>(null);
 
   async function editQuantity(productId: string, name: string, current: string) {
     if (!selectedWh) return;
@@ -140,6 +144,7 @@ export default function StockByWarehouse() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-px" />
               <TableHead>Product</TableHead>
               <TableHead className="hidden lg:table-cell">SKU</TableHead>
               <TableHead className="hidden md:table-cell">HS code</TableHead>
@@ -151,11 +156,11 @@ export default function StockByWarehouse() {
           </TableHeader>
           <TableBody>
             {!activeWh ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
             ) : isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : (data?.results.length ?? 0) === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
             ) : (
               data!.results.map((s) => {
                 // FBR fields come straight from the stock row now (the API embeds
@@ -165,35 +170,59 @@ export default function StockByWarehouse() {
                 const name = s.product_name ?? p?.name ?? s.product;
                 const sku = s.product_sku ?? p?.sku ?? "";
                 const fbrMissing = !s.hs_code;
+                const expanded = fbrOpen === s.id;
                 return (
-                  <TableRow key={s.id}>
-                    <TableCell>
-                      {name}
-                      {sku && (
-                        <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">{sku}</span>
-                      )}
-                      {fbrMissing && (
-                        <span className="block text-[11px] text-warning-soft-foreground">No HS code — set it on the product before invoicing</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="hidden font-mono text-xs lg:table-cell">{sku}</TableCell>
-                    <TableCell className="hidden font-mono text-xs md:table-cell">{s.hs_code || "—"}</TableCell>
-                    <TableCell className="hidden text-xs lg:table-cell">{s.uom || "—"}</TableCell>
-                    <TableCell className="hidden text-xs xl:table-cell">{shortSaleType(s.sale_type)}</TableCell>
-                    <TableCell className="text-right font-mono">{s.quantity}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="sm" title="Correct on-hand quantity"
-                          onClick={() => editQuantity(s.product, name, s.quantity)}>
-                          <Pencil className="h-4 w-4" />
+                  <Fragment key={s.id}>
+                    <TableRow>
+                      <TableCell className="pr-0">
+                        <Button
+                          variant="ghost" size="sm"
+                          title={expanded ? "Hide FBR details" : "Edit FBR details"}
+                          aria-expanded={expanded}
+                          onClick={() => setFbrOpen(expanded ? null : s.id)}
+                        >
+                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
-                        <Button variant="ghost" size="sm" title="Remove from stock list"
-                          onClick={() => removeStock(s, name)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell>
+                        {name}
+                        {sku && (
+                          <span className="block font-mono text-[11px] text-muted-foreground lg:hidden">{sku}</span>
+                        )}
+                        {fbrMissing && (
+                          <span className="block text-[11px] text-warning-soft-foreground">No HS code — set it via “FBR details” before invoicing</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden font-mono text-xs lg:table-cell">{sku}</TableCell>
+                      <TableCell className="hidden font-mono text-xs md:table-cell">{s.hs_code || "—"}</TableCell>
+                      <TableCell className="hidden text-xs lg:table-cell">{s.uom || "—"}</TableCell>
+                      <TableCell className="hidden text-xs xl:table-cell">{shortSaleType(s.sale_type)}</TableCell>
+                      <TableCell className="text-right font-mono">{s.quantity}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="sm" title="Edit FBR details (HS code, UoM, sale type…)"
+                            onClick={() => setFbrOpen(expanded ? null : s.id)}>
+                            <SlidersHorizontal className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" title="Correct on-hand quantity"
+                            onClick={() => editQuantity(s.product, name, s.quantity)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm" title="Remove from stock list"
+                            onClick={() => removeStock(s, name)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {expanded && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="bg-muted/20 p-3">
+                          <FbrDetailsPanel stock={s} onSaved={() => setFbrOpen(null)} />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 );
               })
             )}
@@ -222,6 +251,25 @@ function StockInCard({
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  // FBR-readiness mirrors the server-side stock-in gate: a product can't be
+  // stocked for sale until HS code + UoM + sale type are set. We surface it
+  // BEFORE submit (flag in the dropdown + inline hint) so the gate is never a
+  // surprise. The list of missing fields is purely advisory; the backend is the
+  // enforcer. Stock-IN types add stock; out/damage are exempt (like the server).
+  const STOCK_IN = new Set(["opening_balance", "adjustment_in"]);
+  function missingFbr(p: { hs_code?: string | null; uom?: string | null; sale_type?: string | null }): string[] {
+    const m: string[] = [];
+    if (!p.hs_code) m.push("HS code");
+    if (!p.uom) m.push("UoM");
+    if (!p.sale_type) m.push("sale type");
+    return m;
+  }
+  const selectedProduct = products.data?.results.find((p) => p.id === product);
+  const blockingFbr =
+    selectedProduct && STOCK_IN.has(movementType) && Number(quantity || "0") > 0
+      ? missingFbr(selectedProduct)
+      : [];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -256,9 +304,14 @@ function StockInCard({
             <Label htmlFor="sw-product">Product *</Label>
             <Select id="sw-product" value={product} onChange={(e) => setProduct(e.target.value)} required>
               <option value="">— Select —</option>
-              {products.data?.results.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
-              ))}
+              {products.data?.results.map((p) => {
+                const incomplete = missingFbr(p).length > 0;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.sku}){incomplete ? " — FBR details incomplete" : ""}
+                  </option>
+                );
+              })}
             </Select>
           </div>
           <div className="space-y-1.5">
@@ -279,7 +332,13 @@ function StockInCard({
             <Input id="sw-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="optional note" />
           </div>
           <div className="sm:col-span-2">
-            <Button type="submit" loading={post.isPending}>
+            {blockingFbr.length > 0 && (
+              <p className="mb-2 rounded-md border border-warning-soft-foreground/30 bg-warning-soft/40 px-3 py-2 text-sm text-warning-soft-foreground">
+                This product is missing required FBR details: {blockingFbr.join(", ")}.
+                Set them in “FBR details” (the chevron on its stock row) before stocking it for sale.
+              </p>
+            )}
+            <Button type="submit" loading={post.isPending} disabled={blockingFbr.length > 0}>
               <Plus className="mr-2 h-4 w-4" /> {post.isPending ? "Saving…" : "Save"}
             </Button>
             {error && <p className="mt-2 text-sm text-destructive">{error}</p>}

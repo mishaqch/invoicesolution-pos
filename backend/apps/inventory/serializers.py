@@ -32,26 +32,42 @@ class WarehouseSerializer(serializers.ModelSerializer):
 
 class StockLevelSerializer(serializers.ModelSerializer):
     warehouse_name = serializers.CharField(source="warehouse.name", read_only=True)
-    # FBR-relevant product metadata, read-only, so the stock view can show HS
-    # code / UoM / sale type per item without a separate products fetch + lookup.
+    # FBR-relevant product metadata, read-only, so the stock view doubles as the
+    # FBR cockpit: it shows the full fiscal identity (HS code, UoM, sale type,
+    # SRO, retail price) per item without a separate products fetch + lookup.
+    # These mirror Product (the single source of truth) — the Stock screen EDITS
+    # them by PATCHing /catalog/products/{id}/, it does NOT store a second copy.
     product_name = serializers.CharField(source="product.name", read_only=True)
     product_sku = serializers.CharField(source="product.sku", read_only=True)
+    product_description = serializers.CharField(source="product.description", read_only=True)
     hs_code = serializers.CharField(source="product.hs_code_id", read_only=True)
     uom = serializers.CharField(source="product.uom_id", read_only=True)
     sale_type = serializers.CharField(source="product.sale_type", read_only=True)
+    sro_schedule_no = serializers.CharField(source="product.sro_schedule_no", read_only=True)
+    sro_item_serial_no = serializers.CharField(source="product.sro_item_serial_no", read_only=True)
+    tax_rate = serializers.CharField(source="product.tax_rate_id", read_only=True, allow_null=True)
+    retail_price = serializers.DecimalField(
+        source="product.retail_price", max_digits=14, decimal_places=4,
+        read_only=True, allow_null=True,
+    )
+    is_third_schedule = serializers.BooleanField(source="product.is_third_schedule", read_only=True)
 
     class Meta:
         model = StockLevel
         fields = (
-            "id", "product", "product_name", "product_sku",
+            "id", "product", "product_name", "product_sku", "product_description",
             "hs_code", "uom", "sale_type",
+            "sro_schedule_no", "sro_item_serial_no",
+            "tax_rate", "retail_price", "is_third_schedule",
             "variant", "branch", "warehouse", "warehouse_name",
             "quantity", "reserved_quantity", "reorder_level",
             "last_counted_at", "updated_at",
         )
         read_only_fields = (
             "id", "warehouse_name", "product_name", "product_sku",
-            "hs_code", "uom", "sale_type", "updated_at",
+            "product_description", "hs_code", "uom", "sale_type",
+            "sro_schedule_no", "sro_item_serial_no",
+            "tax_rate", "retail_price", "is_third_schedule", "updated_at",
         )
 
 
