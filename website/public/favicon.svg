@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Emerald square with rounded corners — matches the app's brand lockup. -->
+  <rect width="64" height="64" rx="14" fill="#16a34a"/>
+  <!-- Receipt outline icon in white — same lucide-react glyph used in the app. -->
+  <g fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 8v48l5-2.5L26 56l5-2.5L36 56l5-2.5L46 56l5-2.5V8l-5 2.5L41 8l-5 2.5L31 8l-5 2.5L21 8z"/>
+    <path d="M40 22h-15a4.5 4.5 0 1 0 0 9h10a4.5 4.5 0 1 1 0 9H22"/>
+    <path d="M31 41V17"/>
+  </g>
+</svg>

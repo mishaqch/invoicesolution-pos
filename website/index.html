@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#16a34a" />
+
+    <title>InvoiceSolution — FBR-Compliant POS &amp; Digital Invoicing for Pakistan</title>
+    <meta
+      name="description"
+      content="Run your shop and stay 100% FBR-compliant — even offline. InvoiceSolution is an FBR Digital Invoicing &amp; POS system for Pakistani retailers, pharmacies, restaurants, wholesalers and service providers. Real FBR invoice numbers, scannable QR, all payment methods."
+    />
+    <meta name="keywords" content="FBR POS, FBR Digital Invoicing, Pakistan POS, FBR compliant invoice, PRAL integration, retail POS Pakistan, pharmacy POS, restaurant POS, offline POS" />
+
+    <!-- Open Graph / social -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="InvoiceSolution — FBR-Compliant POS &amp; Digital Invoicing" />
+    <meta property="og:description" content="FBR Digital Invoicing &amp; POS that works even when your internet doesn't. Built for Pakistani businesses." />
+    <meta property="og:url" content="https://invoicesolution.pk/" />
+    <meta property="og:image" content="https://invoicesolution.pk/og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="canonical" href="https://invoicesolution.pk/" />
+
+    <!-- Inter font (matches the app) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* Instant boot paint so the page never flashes white before React mounts. */
+      #app-boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+      }
+      #app-boot .ring {
+        width: 38px;
+        height: 38px;
+        border: 3px solid #d1fae5;
+        border-top-color: #16a34a;
+        border-radius: 9999px;
+        animation: boot-spin 0.7s linear infinite;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="app-boot"><div class="ring"></div></div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

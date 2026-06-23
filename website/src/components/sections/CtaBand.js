@@ -1,0 +1,8 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { ArrowRight, MessageCircle } from "lucide-react";
+import { ButtonAnchor, ButtonLink } from "@/components/ui/Button";
+import { whatsappLink } from "@/lib/site";
+/** Reusable closing call-to-action band. Appears near the foot of most pages. */
+export function CtaBand({ title = "Ready to get FBR-ready?", subtitle = "Book a free demo and we'll set up your account, configure FBR, import your products and train your team.", }) {
+    return (_jsx("div", { className: "container py-16 sm:py-20", children: _jsxs("div", { className: "relative overflow-hidden rounded-3xl bg-ink px-6 py-14 text-center shadow-card sm:px-12", children: [_jsx("div", { "aria-hidden": true, className: "absolute inset-0 mesh opacity-60" }), _jsx("div", { "aria-hidden": true, className: "absolute -right-16 -top-16 h-64 w-64 rounded-full bg-brand-600/30 blur-3xl" }), _jsxs("div", { className: "relative mx-auto max-w-2xl", children: [_jsx("h2", { className: "text-3xl font-bold tracking-tight text-white sm:text-4xl", children: title }), _jsx("p", { className: "mx-auto mt-4 max-w-xl text-lg text-slate-300", children: subtitle }), _jsxs("div", { className: "mt-8 flex flex-wrap items-center justify-center gap-3", children: [_jsxs(ButtonLink, { to: "/contact", variant: "white", size: "lg", children: ["Book a free demo ", _jsx(ArrowRight, { className: "h-4 w-4" })] }), _jsxs(ButtonAnchor, { href: whatsappLink("Hi! I'd like a demo of InvoiceSolution."), variant: "secondary", size: "lg", className: "border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white", children: [_jsx(MessageCircle, { className: "h-4 w-4" }), " WhatsApp us"] })] })] })] }) }));
+}

@@ -107,6 +107,8 @@ INSTALLED_APPS = [
     "apps.reports",
     # Phase 0 platform stub (control plane — separate from tenants)
     "apps.platform_admin",
+    # Public marketing-site lead capture (invoicesolution.pk contact form)
+    "apps.leads",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -241,6 +243,9 @@ REST_FRAMEWORK = {
         # which averages to ~5 per 15 min and gracefully bursts. A custom
         # SlidingWindowThrottle can land later if we need exactness.
         "auth": "20/h",
+        # Public marketing-site contact form — generous enough for a genuine
+        # visitor, tight enough to blunt spam bursts from one IP.
+        "leads": "10/h",
     },
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
@@ -267,6 +272,34 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ---------------------------------------------------------------------------
+# Email (SMTP from env — used for marketing-site lead notifications)
+# ---------------------------------------------------------------------------
+# Wire any transactional provider (Brevo/Resend/Mailgun/Gmail) via env. When
+# EMAIL_HOST is unset we fall back to console (dev) / a no-op log (prod) so a
+# missing config never breaks the request — leads still persist to the DB and
+# show in the super-admin. dev.py overrides EMAIL_BACKEND to console.
+EMAIL_HOST = env("EMAIL_HOST", default="")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+DEFAULT_FROM_EMAIL = env(
+    "DEFAULT_FROM_EMAIL", default="InvoiceSolution <noreply@invoicesolution.pk>"
+)
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+# Where marketing-site leads are emailed. Comma-separated env list; if empty,
+# leads are captured in the DB / super-admin only (no email sent).
+LEADS_NOTIFY_EMAILS = env.list("LEADS_NOTIFY_EMAILS", default=[])
+# Use real SMTP only when a host is configured; otherwise log to console so the
+# app never errors on a missing mail server.
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST
+    else "django.core.mail.backends.console.EmailBackend"
+)
 
 # ---------------------------------------------------------------------------
 # Logging

@@ -1,0 +1,60 @@
+/** Industry/vertical content. Only verticals the product actually supports. */
+export interface Industry {
+  id: string;
+  icon: string;
+  name: string;
+  headline: string;
+  desc: string;
+  points: string[];
+}
+
+export const INDUSTRIES: Industry[] = [
+  {
+    id: "retail",
+    icon: "ShoppingCart",
+    name: "Retail & Grocery",
+    headline: "A fast, FBR-ready till for every counter.",
+    desc: "Scan, ring up and print compliant receipts in seconds — and keep selling even when the internet drops.",
+    points: ["Barcode checkout", "Offline-first sales", "Multi-branch stock", "FBR QR receipts"],
+  },
+  {
+    id: "pharmacy",
+    icon: "Pill",
+    name: "Pharmacy",
+    headline: "Batch and expiry tracking that protects your customers.",
+    desc: "Track every batch and expiry date, sell oldest-first with FEFO, and stay fully FBR-compliant.",
+    points: ["Batch & expiry tracking", "FEFO stock control", "Near-expiry alerts", "Supplier records"],
+  },
+  {
+    id: "restaurant",
+    icon: "UtensilsCrossed",
+    name: "Restaurant & Café",
+    headline: "Table orders, modifiers and kitchen tickets.",
+    desc: "Run dine-in and takeaway with table-based orders, menu modifiers and kitchen order tickets.",
+    points: ["Table management", "Menu modifiers & add-ons", "Kitchen order tickets", "Dine-in & takeaway"],
+  },
+  {
+    id: "wholesale",
+    icon: "Warehouse",
+    name: "Wholesale & Distribution",
+    headline: "Multi-warehouse invoicing without the hardware.",
+    desc: "Issue FBR invoices from the back office, manage stock across warehouses, and handle high invoice volumes.",
+    points: ["Digital Invoicing", "Multi-warehouse stock", "Stock transfers", "Bulk product import"],
+  },
+  {
+    id: "services",
+    icon: "Briefcase",
+    name: "Service Providers",
+    headline: "Compliant invoices without a counter.",
+    desc: "Consultants, repairs and service businesses can raise FBR-compliant invoices straight from the dashboard.",
+    points: ["No hardware needed", "Back-office invoicing", "Registered & walk-in buyers", "FBR submission"],
+  },
+  {
+    id: "import-export",
+    icon: "Ship",
+    name: "Importers & Exporters",
+    headline: "Sector-aware invoicing for trade businesses.",
+    desc: "Raise FBR Digital Invoices with the right sale types and HS codes for your sector.",
+    points: ["HS code catalogue", "Sale-type handling", "Multi-branch", "Full audit trail"],
+  },
+];
