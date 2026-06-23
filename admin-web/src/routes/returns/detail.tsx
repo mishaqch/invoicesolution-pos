@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useReturn } from "@/lib/queries";
-import { money } from "@/lib/utils";
+import { money, qty } from "@/lib/utils";
 
 export default function ReturnDetail() {
   const { id } = useParams<{ id: string }>();
@@ -88,10 +88,10 @@ export default function ReturnDetail() {
                   <TableCell className="font-mono text-xs">
                     {it.product.slice(0, 8)}…
                   </TableCell>
-                  <TableCell className="text-right font-mono">{it.quantity}</TableCell>
+                  <TableCell className="text-right font-mono">{qty(it.quantity)}</TableCell>
                   <TableCell className="hidden text-right font-mono md:table-cell">{money(it.unit_price)}</TableCell>
-                  <TableCell className="hidden text-right font-mono lg:table-cell">{it.tax_amount}</TableCell>
-                  <TableCell className="text-right font-mono">{it.line_total}</TableCell>
+                  <TableCell className="hidden text-right font-mono lg:table-cell">{money(it.tax_amount)}</TableCell>
+                  <TableCell className="text-right font-mono">{money(it.line_total)}</TableCell>
                   <TableCell className="hidden md:table-cell">{it.restocked ? "Yes" : "No"}</TableCell>
                   <TableCell className="hidden font-mono text-xs lg:table-cell">{it.movement_type}</TableCell>
                 </TableRow>

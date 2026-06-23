@@ -333,6 +333,48 @@ export function useFbrReadiness(params: Record<string, string> = {}) {
   });
 }
 
+export interface StockCardLedgerRow {
+  id: string;
+  movement_type: string;
+  quantity: string;
+  balance_after: string;
+  reason: string;
+  reference_type: string | null;
+  reference_id: string | null;
+  performed_by: string | null;
+  created_at: string;
+}
+
+export interface StockCard {
+  product: string;
+  warehouse: string | null;
+  branch: string | null;
+  /** On-hand this line was OPENED with (first opening_balance movement). */
+  opening: string;
+  opening_at: string | null;
+  total_in: string;
+  total_out: string;
+  current: string;
+  ledger: StockCardLedgerRow[];
+}
+
+/** Per-product stock card: opening / in / out / current + running ledger.
+ *  Pass warehouse (DI) or branch (POS) to scope it to one location. */
+export function useStockCard(
+  params: { product?: string; warehouse?: string; branch?: string },
+  enabled = true,
+) {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v),
+  ) as Record<string, string>;
+  const query = new URLSearchParams(clean).toString();
+  return useQuery({
+    queryKey: ["stock-card", clean],
+    queryFn: () => api<StockCard>(`/inventory/stock-levels/card/?${query}`),
+    enabled: enabled && !!params.product && (!!params.warehouse || !!params.branch),
+  });
+}
+
 export function useStockMovements(params: Record<string, string> = {}) {
   const query = new URLSearchParams(params).toString();
   return useQuery({

@@ -126,6 +126,59 @@ class StockLevelViewSet(
             qs = qs.filter(quantity__lte=Coalesce(F("reorder_level"), Value(0)))
         return qs
 
+    def _opening_map(self, rows):
+        """Map {stock_level_id: opening_qty} for the given StockLevel rows.
+
+        "Opening" is the on-hand each line started its CURRENT run with — a
+        running-balance concept that a single SQL subquery can't express (it
+        must drop reversed/abandoned runs like a typo'd opening balance that was
+        later zeroed). So we pull every movement for the visible products in ONE
+        query, bucket them by (product, branch, warehouse) and replay each
+        ledger through compute_opening(). One extra query for the whole page —
+        no N+1.
+        """
+        from collections import defaultdict
+
+        from .services.movements import compute_opening
+
+        if not rows:
+            return {}
+        product_ids = {r.product_id for r in rows}
+        tenant_id = getattr(self.request, "tenant_id", None)
+        moves = (
+            StockMovement.objects.filter(
+                tenant_id=tenant_id, product_id__in=product_ids,
+            )
+            .order_by("created_at", "id")
+            .values("product_id", "branch_id", "warehouse_id", "movement_type", "quantity")
+        )
+        # Bucket movements by the SAME key a StockLevel is unique on.
+        buckets: dict[tuple, list] = defaultdict(list)
+        for m in moves:
+            key = (m["product_id"], m["branch_id"], m["warehouse_id"])
+            buckets[key].append(
+                type("M", (), {"movement_type": m["movement_type"], "quantity": m["quantity"]})()
+            )
+        out = {}
+        for r in rows:
+            key = (r.product_id, r.branch_id, r.warehouse_id)
+            out[r.id] = compute_opening(buckets.get(key, []))
+        return out
+
+    def list(self, request, *args, **kwargs):
+        # Compute "opening" per row for the current page and stash it on each
+        # instance so the serializer can read it (one bulk movement query).
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        rows = page if page is not None else list(queryset)
+        opening_map = self._opening_map(rows)
+        for r in rows:
+            r._opening = opening_map.get(r.id)
+        serializer = self.get_serializer(rows, many=True)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
+
     def perform_destroy(self, instance):
         # Remove the on-hand row from the list. Only allowed when it's at zero —
         # the StockMovement ledger (append-only) keeps the history, so deleting
@@ -139,6 +192,107 @@ class StockLevelViewSet(
                           "stock line (it still holds stock)."
             })
         instance.delete()
+
+    @action(detail=False, methods=["get"], url_path="card")
+    def card(self, request):
+        """GET /api/inventory/stock-levels/card/?product=&warehouse=&branch=
+
+        The "stock card" for one product at one location: the number a
+        shopkeeper actually wants — what you OPENED with, total IN, total OUT,
+        and what you have NOW — plus a running-balance ledger of every movement
+        (newest first) so "where did my stock go?" is answerable in one screen.
+
+        Opening = the FIRST `opening_balance` movement for this product+location
+        (the on-hand you started this line with). Everything after it is the
+        running history. Scope is warehouse-keyed when ?warehouse is given
+        (Digital Invoicing), else branch-keyed (POS) when ?branch is given.
+        """
+        from decimal import Decimal
+
+        tenant_id = getattr(request, "tenant_id", None)
+        product_id = request.query_params.get("product")
+        if not tenant_id or not product_id:
+            raise ValidationError({"product": "A product id is required."})
+
+        warehouse_id = request.query_params.get("warehouse")
+        branch_id = request.query_params.get("branch")
+
+        moves = StockMovement.objects.filter(
+            tenant_id=tenant_id, product_id=product_id,
+        )
+        if warehouse_id:
+            moves = moves.filter(warehouse_id=warehouse_id)
+        elif branch_id:
+            moves = moves.filter(branch_id=branch_id, warehouse__isnull=True)
+        # Chronological for the running balance; we reverse for display.
+        moves = list(
+            moves.select_related("performed_by").order_by("created_at", "id")
+        )
+
+        # Opening = on-hand the CURRENT stock run started with (see
+        # compute_opening): the balance right after the first stock-in that
+        # began the stock held today, ignoring reversed/abandoned runs (e.g. a
+        # typo'd opening_balance that was later zeroed). opening_at is when that
+        # run started.
+        from .services.movements import compute_opening
+
+        opening = compute_opening(moves) or Decimal("0")
+        opening_at = None
+        running = Decimal("0")
+        for m in moves:
+            prev = running
+            running += m.quantity or Decimal("0")
+            if (
+                m.movement_type in ("opening_balance", "adjustment_in", "purchase", "transfer_in")
+                and prev <= Decimal("0")
+                and running > Decimal("0")
+            ):
+                opening_at = m.created_at
+
+        total_in = sum(
+            (m.quantity for m in moves
+             if (m.quantity or Decimal("0")) > 0
+             and m.movement_type != "opening_balance"),
+            Decimal("0"),
+        )
+        total_out = sum(
+            (m.quantity for m in moves if (m.quantity or Decimal("0")) < 0),
+            Decimal("0"),
+        )
+
+        # Running balance, computed forward then attached to each row.
+        running = Decimal("0")
+        ledger = []
+        for m in moves:
+            running += m.quantity or Decimal("0")
+            ledger.append({
+                "id": str(m.id),
+                "movement_type": m.movement_type,
+                "quantity": str(m.quantity),
+                "balance_after": str(running),
+                "reason": m.reason or "",
+                "reference_type": m.reference_type,
+                "reference_id": str(m.reference_id) if m.reference_id else None,
+                # User model is email-keyed (no get_full_name/username); show
+                # the person's name, falling back to their email.
+                "performed_by": (
+                    m.performed_by.full_name or m.performed_by.email
+                ) if m.performed_by_id else None,
+                "created_at": m.created_at.isoformat(),
+            })
+        ledger.reverse()  # newest first for display
+
+        return Response({
+            "product": str(product_id),
+            "warehouse": warehouse_id,
+            "branch": branch_id,
+            "opening": str(opening),
+            "opening_at": opening_at.isoformat() if opening_at else None,
+            "total_in": str(total_in),
+            "total_out": str(abs(total_out)),
+            "current": str(running),
+            "ledger": ledger,
+        })
 
 
 # ---------------------------------------------------------------------------

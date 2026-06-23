@@ -23,6 +23,9 @@ export interface StockLevel {
   warehouse: string | null;
   warehouse_name?: string | null;
   quantity: string;
+  /** On-hand this line OPENED with (earliest opening_balance movement); null
+   *  when no opening balance was ever set for this line. */
+  opening?: string | null;
   reserved_quantity: string;
   reorder_level: string | null;
   last_counted_at: string | null;

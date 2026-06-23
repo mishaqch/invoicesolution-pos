@@ -65,11 +65,11 @@ class SubscriptionPlanAdmin(ModelAdmin):
 
     @admin.display(description="Monthly")
     def monthly_price_display(self, obj):
-        return f"Rs {obj.monthly_price_rs:,.0f}"
+        return f"Rs {obj.monthly_price_rs:,.2f}"
 
     @admin.display(description="Yearly")
     def yearly_price_display(self, obj):
-        return f"Rs {obj.yearly_price_rs:,.0f}"
+        return f"Rs {obj.yearly_price_rs:,.2f}"
 
     @admin.display(description="Tenants")
     def tenants_count(self, obj):

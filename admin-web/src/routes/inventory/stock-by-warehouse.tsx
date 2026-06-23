@@ -9,10 +9,11 @@
  * POS tenants never see this (gated by the `warehouses` module + DI mode);
  * their branch-keyed "Stock by branch" page is untouched.
  */
-import { ChevronDown, ChevronRight, PackagePlus, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, History, PackagePlus, Pencil, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 
 import { FbrDetailsPanel } from "@/features/inventory/FbrDetailsPanel";
+import { StockCardDrawer } from "@/features/inventory/StockCardDrawer";
 import { useToast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { extractApiErrorMessage } from "@/lib/api";
+import { qty } from "@/lib/utils";
 import {
   useDeleteStockLevel,
   usePostAdjustment,
@@ -73,12 +75,28 @@ export default function StockByWarehouse() {
 
   // Which row's inline "FBR details" editor is expanded (one at a time).
   const [fbrOpen, setFbrOpen] = useState<string | null>(null);
+  // Free-text filter over the on-hand list (name / SKU).
+  const [search, setSearch] = useState("");
+  // Inline on-hand editor: the row id being edited + its draft value.
+  const [editRow, setEditRow] = useState<{ id: string; product: string; value: string } | null>(null);
+  // Stock-card drawer: the product whose full history is open.
+  const [cardFor, setCardFor] = useState<{ id: string; name: string } | null>(null);
 
-  async function editQuantity(productId: string, name: string, current: string) {
-    if (!selectedWh) return;
-    const input = window.prompt(`Set on-hand quantity for "${name}":`, current);
-    if (input === null) return;
-    const qty = input.trim();
+  // Filter the on-hand list by the search box (name or SKU), case-insensitive.
+  const rows = useMemo(() => {
+    const all = data?.results ?? [];
+    const q = search.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((s) => {
+      const name = (s.product_name ?? "").toLowerCase();
+      const sku = (s.product_sku ?? "").toLowerCase();
+      return name.includes(q) || sku.includes(q);
+    });
+  }, [data, search]);
+
+  async function saveQuantity(productId: string, name: string) {
+    if (!selectedWh || !editRow) return;
+    const qty = editRow.value.trim();
     if (qty === "" || Number.isNaN(Number(qty)) || Number(qty) < 0) {
       toast.show({ message: "Enter a valid non-negative number.", variant: "destructive" });
       return;
@@ -90,6 +108,7 @@ export default function StockByWarehouse() {
         reason: "Manual stock correction",
       });
       toast.show({ message: `Stock for "${name}" set to ${qty}.`, variant: "success" });
+      setEditRow(null);
     } catch (err) {
       toast.show({ message: extractApiErrorMessage(err), variant: "destructive" });
     }
@@ -141,6 +160,16 @@ export default function StockByWarehouse() {
         />
       )}
 
+      {activeWh && (
+        <div className="sm:max-w-xs">
+          <Input
+            placeholder="Search this warehouse by name or SKU…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      )}
+
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -151,19 +180,22 @@ export default function StockByWarehouse() {
               <TableHead className="hidden md:table-cell">HS code</TableHead>
               <TableHead className="hidden lg:table-cell">UoM</TableHead>
               <TableHead className="hidden xl:table-cell">Sale type</TableHead>
+              <TableHead className="hidden text-right sm:table-cell">Opening</TableHead>
               <TableHead className="text-right">On hand</TableHead>
               <TableHead className="w-px" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {!activeWh ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">Add a warehouse first.</TableCell></TableRow>
             ) : isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : (data?.results.length ?? 0) === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">No stock yet in this warehouse.</TableCell></TableRow>
+            ) : rows.length === 0 ? (
+              <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">No products match “{search}”.</TableCell></TableRow>
             ) : (
-              data!.results.map((s) => {
+              rows.map((s) => {
                 // FBR fields come straight from the stock row now (the API embeds
                 // the product's hs_code / uom / sale_type), falling back to the
                 // product lookup for name/sku on older payloads.
@@ -172,6 +204,7 @@ export default function StockByWarehouse() {
                 const sku = s.product_sku ?? p?.sku ?? "";
                 const fbrMissing = !s.hs_code;
                 const expanded = fbrOpen === s.id;
+                const editing = editRow?.id === s.id;
                 return (
                   <Fragment key={s.id}>
                     <TableRow>
@@ -198,15 +231,43 @@ export default function StockByWarehouse() {
                       <TableCell className="hidden font-mono text-xs md:table-cell">{s.hs_code || "—"}</TableCell>
                       <TableCell className="hidden text-xs lg:table-cell">{s.uom || "—"}</TableCell>
                       <TableCell className="hidden text-xs xl:table-cell">{shortSaleType(s.sale_type)}</TableCell>
-                      <TableCell className="text-right font-mono">{s.quantity}</TableCell>
+                      <TableCell className="hidden text-right font-mono text-muted-foreground sm:table-cell">
+                        {qty(s.opening)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        {editing ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <NumberInput
+                              mode="decimal"
+                              value={editRow!.value}
+                              onChange={(v) => setEditRow({ ...editRow!, value: v })}
+                              className="h-8 w-24 text-right"
+                              autoFocus
+                            />
+                            <Button variant="ghost" size="sm" title="Save" loading={post.isPending}
+                              onClick={() => saveQuantity(s.product, name)}>
+                              <Check className="h-4 w-4 text-emerald-600" />
+                            </Button>
+                            <Button variant="ghost" size="sm" title="Cancel" onClick={() => setEditRow(null)}>
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          qty(s.quantity)
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="sm" title="View stock card (opening, movements, on-hand)"
+                            onClick={() => setCardFor({ id: s.product, name })}>
+                            <History className="h-4 w-4" />
+                          </Button>
                           <Button variant="ghost" size="sm" title="Edit FBR details (HS code, UoM, sale type…)"
                             onClick={() => setFbrOpen(expanded ? null : s.id)}>
                             <SlidersHorizontal className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="sm" title="Correct on-hand quantity"
-                            onClick={() => editQuantity(s.product, name, s.quantity)}>
+                          <Button variant="ghost" size="sm" title="Correct on-hand quantity" disabled={editing}
+                            onClick={() => setEditRow({ id: s.id, product: s.product, value: s.quantity })}>
                             <Pencil className="h-4 w-4" />
                           </Button>
                           <Button variant="ghost" size="sm" title="Remove from stock list"
@@ -218,7 +279,7 @@ export default function StockByWarehouse() {
                     </TableRow>
                     {expanded && (
                       <TableRow>
-                        <TableCell colSpan={8} className="bg-muted/20 p-3">
+                        <TableCell colSpan={9} className="bg-muted/20 p-3">
                           <FbrDetailsPanel stock={s} onSaved={() => setFbrOpen(null)} />
                         </TableCell>
                       </TableRow>
@@ -230,6 +291,15 @@ export default function StockByWarehouse() {
           </TableBody>
         </Table>
       </div>
+
+      {cardFor && (
+        <StockCardDrawer
+          productId={cardFor.id}
+          productName={cardFor.name}
+          warehouse={activeWh}
+          onClose={() => setCardFor(null)}
+        />
+      )}
     </div>
   );
 }

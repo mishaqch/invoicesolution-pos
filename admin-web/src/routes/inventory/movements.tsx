@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useProducts, useStockMovements } from "@/lib/queries";
+import { qty } from "@/lib/utils";
 
 export default function Movements() {
   const { data, isLoading } = useStockMovements();
@@ -34,7 +35,7 @@ export default function Movements() {
                   </TableCell>
                   <TableCell className="hidden font-mono text-xs md:table-cell">{m.movement_type}</TableCell>
                   <TableCell>{productLookup.get(m.product)?.name ?? m.product}</TableCell>
-                  <TableCell className="text-right font-mono">{m.quantity}</TableCell>
+                  <TableCell className="text-right font-mono">{qty(m.quantity)}</TableCell>
                   <TableCell className="hidden text-sm lg:table-cell">{m.reason}</TableCell>
                 </TableRow>
               ))

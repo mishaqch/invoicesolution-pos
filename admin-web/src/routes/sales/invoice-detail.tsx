@@ -11,7 +11,7 @@ import {
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApiError } from "@/lib/api";
-import { money } from "@/lib/utils";
+import { money, qty } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -513,9 +513,14 @@ export default function InvoiceDetail() {
             loading={deleteDraft.isPending}
             onClick={async () => {
               if (!id) return;
-              if (!window.confirm(
-                "Delete this draft invoice? It hasn't been sent to FBR. Stock will be restored.",
-              )) return;
+              // A `failed` invoice was rejected by FBR but still holds its
+              // stock deduction. Discarding it here is the way to put that
+              // stock back — spell that out so the operator isn't left
+              // wondering where the rejected sale's quantity went.
+              const msg = invoice.status === "failed"
+                ? "Discard this rejected invoice? FBR did not accept it. The stock it reserved will be added back to your on-hand."
+                : "Delete this draft invoice? It hasn't been sent to FBR. Stock will be restored.";
+              if (!window.confirm(msg)) return;
               try {
                 await deleteDraft.mutateAsync(id);
                 navigate("/sales", { replace: true });
@@ -524,7 +529,7 @@ export default function InvoiceDetail() {
               }
             }}
           >
-            Delete draft
+            {invoice.status === "failed" ? "Discard & restore stock" : "Delete draft"}
           </Button>
         )}
         {canCancel && (
@@ -803,7 +808,7 @@ export default function InvoiceDetail() {
                         <span className="text-muted-foreground italic">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right font-mono">{it.quantity}</TableCell>
+                    <TableCell className="text-right font-mono">{qty(it.quantity)}</TableCell>
                     <TableCell className="hidden text-right font-mono md:table-cell">Rs {money(it.unit_price)}</TableCell>
                     <TableCell className="hidden text-right font-mono md:table-cell">Rs {money(it.tax_amount)}</TableCell>
                     <TableCell className="text-right font-mono">Rs {money(it.line_total)}</TableCell>

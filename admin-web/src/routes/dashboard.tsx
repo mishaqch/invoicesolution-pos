@@ -9,6 +9,7 @@ import { useIsDigitalInvoicing } from "@/features/modules/hooks";
 import { InvoiceTimeseriesChart } from "@/features/invoices/InvoiceTimeseriesChart";
 import { OnboardingWizard } from "@/features/onboarding/Wizard";
 import { useDashboard, useTenantSetup, type DashboardData } from "@/lib/queries";
+import { qty } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
 
 function formatRs(amount: string | number): string {
@@ -254,7 +255,7 @@ export default function DashboardRoute() {
                         <tr key={idx} className="border-b last:border-0">
                           <td className="px-3 py-2 font-mono text-xs">{s.sku}</td>
                           <td className="px-3 py-2">{s.name}</td>
-                          <td className="px-3 py-2 text-right">{s.quantity} / {s.reorder_level}</td>
+                          <td className="px-3 py-2 text-right">{qty(s.quantity)} / {qty(s.reorder_level)}</td>
                         </tr>
                       ))}
                     </tbody>

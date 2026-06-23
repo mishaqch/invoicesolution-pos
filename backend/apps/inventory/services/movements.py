@@ -83,3 +83,53 @@ def record_movement(
         batch_row.save(update_fields=["current_quantity"])
 
     return movement
+
+
+# Movement types that BRING stock in — these can start a stock run, so the
+# "opening" of the current run is the balance right after the first of them.
+# (A `sale`/`return`/`damage` can't *start* a positive run on its own.)
+_RUN_STARTERS = frozenset(
+    {"opening_balance", "adjustment_in", "purchase", "transfer_in"}
+)
+
+
+def compute_opening(movements) -> Optional[Decimal]:
+    """The on-hand a stock line OPENED with for its CURRENT run.
+
+    `movements` is an iterable of objects with `.movement_type` and `.quantity`
+    in CHRONOLOGICAL order (oldest first), all for the same product + location.
+
+    "Opening of the current run" = the balance immediately after the first
+    stock-IN movement that began the stock you hold today — i.e. after the most
+    recent time the running balance rose from <= 0 up to a positive value via a
+    stock-in. This is the number a shopkeeper means by "what did I start with":
+
+      - CRUISE: first move is adjustment_in 200  -> opening = 200
+      - EV(typo): opening_balance 234234, then set to 0, then re-stocked 500 and
+        sold to 498 -> opening = 500 (the run that's actually on the shelf now),
+        NOT the long-since-reversed 234234 typo.
+
+    Returns None when no stock-in has ever started a positive run (e.g. a line
+    that only ever went negative from sales with no stock-in) — the caller
+    renders that as "—".
+    """
+    moves = list(movements)
+    if not moves:
+        return None
+
+    # Walk forward tracking the running balance. Each time the balance crosses
+    # from <= 0 up to positive via a run-starter, that's a NEW run opening; we
+    # remember the latest such opening, so reversed/abandoned runs are dropped.
+    running = Decimal("0")
+    opening: Optional[Decimal] = None
+    for m in moves:
+        prev = running
+        qty = m.quantity or Decimal("0")
+        running = running + qty
+        if (
+            m.movement_type in _RUN_STARTERS
+            and prev <= Decimal("0")
+            and running > Decimal("0")
+        ):
+            opening = running
+    return opening

@@ -14,3 +14,10 @@ class PlatformAdminConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.platform_admin"
     label = "platform_admin"
+
+    def ready(self):
+        # Render all 4-dp Decimal money/quantity fields as 2 dp ("500.00")
+        # across every admin changelist + readonly detail view. Display-only.
+        from .admin_decimal_format import _install
+
+        _install()

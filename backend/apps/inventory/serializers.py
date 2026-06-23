@@ -51,6 +51,15 @@ class StockLevelSerializer(serializers.ModelSerializer):
         read_only=True, allow_null=True,
     )
     is_third_schedule = serializers.BooleanField(source="product.is_third_schedule", read_only=True)
+    # On-hand this line OPENED with for its CURRENT run (see compute_opening).
+    # The viewset's list() computes it per page and stashes it on `_opening`;
+    # NULL when no stock-in ever started a positive run, or when serialized
+    # outside the list (retrieve/destroy don't need it).
+    opening = serializers.SerializerMethodField()
+
+    def get_opening(self, obj):
+        val = getattr(obj, "_opening", None)
+        return str(val) if val is not None else None
 
     class Meta:
         model = StockLevel
@@ -60,7 +69,7 @@ class StockLevelSerializer(serializers.ModelSerializer):
             "sro_schedule_no", "sro_item_serial_no",
             "tax_rate", "retail_price", "is_third_schedule",
             "variant", "branch", "warehouse", "warehouse_name",
-            "quantity", "reserved_quantity", "reorder_level",
+            "quantity", "opening", "reserved_quantity", "reorder_level",
             "last_counted_at", "updated_at",
         )
         read_only_fields = (

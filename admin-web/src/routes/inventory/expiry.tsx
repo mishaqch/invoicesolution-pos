@@ -9,6 +9,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useBranches, useExpiry, type ExpiryRow } from "@/lib/queries";
+import { qty } from "@/lib/utils";
 
 // Debounce search so we don't query per keystroke.
 function useDebounced<T>(value: T, ms = 300): T {
@@ -175,7 +176,7 @@ function describeDays(days: number): string {
   return `in ${days} day${days === 1 ? "" : "s"}`;
 }
 
-// Trim trailing .0000 for display.
+// Quantities show 2 decimals (e.g. "500.00"), consistent with the rest of the app.
 function fmt(s: string): string {
-  return s.replace(/\.0+$/, "");
+  return qty(s);
 }

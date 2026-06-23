@@ -1,4 +1,4 @@
-import { FileText, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, FileText, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -18,6 +18,7 @@ import {
   useCreateManualInvoice,
   useCustomers,
   useProducts,
+  useStockLevels,
   useTaxRates,
   useTerminals,
   useUoms,
@@ -247,6 +248,31 @@ export default function NewInvoiceRoute() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branchId, warehouses.data]);
 
+  // On-hand availability for the line being invoiced. Scope it to the warehouse
+  // the sale deducts from (Digital Invoicing) or, failing that, the branch (POS)
+  // — exactly what the server will draw down. We only warn (never block): a real
+  // shop's count can lag reality, so the operator decides. Wholesale/office
+  // tenants with no stock rows simply see no availability column.
+  const stockScope: Record<string, string> = warehouseId
+    ? { warehouse: warehouseId }
+    : branchId
+      ? { branch: branchId }
+      : {};
+  const stockLevels = useStockLevels(stockScope);
+  const onHandByProduct = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of stockLevels.data?.results ?? []) {
+      // Sum across variants of the same product so the line-level number is the
+      // product's total on-hand at this location.
+      m.set(s.product, (m.get(s.product) ?? 0) + Number(s.quantity || "0"));
+    }
+    return m;
+  }, [stockLevels.data]);
+
+  // Whether the availability column is meaningful (the tenant actually tracks
+  // stock at this location). Office/wholesale tenants with no rows → hidden.
+  const tracksStock = (stockLevels.data?.results.length ?? 0) > 0;
+
   // Track whether the single payment amount has been edited manually.
   // While untouched (or matching the previous auto-fill), keep the
   // amount synced to the grand total. Once split-tender (>1 row) the
@@ -321,6 +347,20 @@ export default function NewInvoiceRoute() {
     () => payments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0),
     [payments],
   );
+
+  // Lines that would drive stock negative at this location. Advisory only —
+  // we surface them in a banner but never block the sale (the operator's count
+  // may simply be stale). Empty when the tenant doesn't track stock here.
+  const oversells = useMemo(() => {
+    if (!tracksStock) return [];
+    return lines
+      .map((l) => {
+        const onHand = onHandByProduct.get(l.product_id) ?? 0;
+        const want = Number(l.quantity) || 0;
+        return { name: l.product_name, want, onHand, short: want - onHand };
+      })
+      .filter((r) => r.short > 0);
+  }, [lines, onHandByProduct, tracksStock]);
 
   // Auto-fill the single payment row to match the grand total whenever
   // the cart changes. Stops as soon as the user splits the tender or
@@ -837,6 +877,7 @@ export default function NewInvoiceRoute() {
                       // again-to-bump-quantity pattern.
                       const inCart = lines.find((l) => l.product_id === p.id);
                       const addedQty = inCart ? Number(inCart.quantity) || 0 : 0;
+                      const onHand = onHandByProduct.get(p.id);
                       return (
                         <li key={p.id}>
                           <button
@@ -854,6 +895,11 @@ export default function NewInvoiceRoute() {
                               </span>{" "}
                               {p.name}
                             </span>
+                            {tracksStock && onHand !== undefined && (
+                              <span className={`shrink-0 text-xs ${onHand <= 0 ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}>
+                                {onHand} in stock
+                              </span>
+                            )}
                             {inCart && (
                               <span className="shrink-0 rounded-full bg-emerald-600/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
                                 ✓ Added · qty {addedQty}
@@ -884,6 +930,7 @@ export default function NewInvoiceRoute() {
                   <th className="px-3 py-2 text-left font-medium">SKU / name</th>
                   <th className="px-3 py-2 text-left font-medium">HS code</th>
                   <th className="px-3 py-2 text-left font-medium">UoM</th>
+                  {tracksStock && <th className="px-3 py-2 text-right font-medium">Avail.</th>}
                   <th className="px-3 py-2 text-right font-medium">Qty</th>
                   <th className="px-3 py-2 text-right font-medium">Rate (Rs)</th>
                   <th className="px-3 py-2 text-right font-medium">Tax %</th>
@@ -900,6 +947,8 @@ export default function NewInvoiceRoute() {
                   const net = Math.max(0, qty * price - lineDiscount);
                   const rate = line.is_taxable ? (Number(line.tax_rate) || 0) : 0;
                   const lineTotal = net * (1 + rate / 100);
+                  const onHand = onHandByProduct.get(line.product_id) ?? 0;
+                  const over = tracksStock && qty > onHand;
                   return (
                     <tr key={idx} className="border-b">
                       <td className="px-3 py-2">
@@ -930,12 +979,19 @@ export default function NewInvoiceRoute() {
                           ))}
                         </Select>
                       </td>
+                      {tracksStock && (
+                        <td className="px-3 py-2 text-right font-mono text-xs">
+                          <span className={over ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}>
+                            {onHand}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-3 py-2 text-right">
                         <NumberInput
                           mode="decimal"
                           value={line.quantity}
                           onChange={(v) => updateLine(idx, { quantity: v })}
-                          className="h-8 w-20 text-right text-xs"
+                          className={`h-8 w-20 text-right text-xs ${over ? "border-amber-500" : ""}`}
                           aria-label="Quantity"
                         />
                       </td>
@@ -1089,6 +1145,25 @@ export default function NewInvoiceRoute() {
           </CardContent>
         </Card>
       </div>
+
+      {oversells.length > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/70 p-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Selling more than you have on hand</p>
+            <ul className="mt-1 list-inside list-disc text-xs">
+              {oversells.map((o) => (
+                <li key={o.name}>
+                  {o.name}: on hand {o.onHand}, invoicing {o.want} (short {o.short})
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs">
+              You can still create this invoice — stock will go negative. Check the count or restock if this looks wrong.
+            </p>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm text-destructive">

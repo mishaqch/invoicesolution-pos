@@ -32,7 +32,7 @@ import {
   useSaveProductModifierGroups,
 } from "@/lib/queries";
 import type { ProductBatch, StockLevel } from "@pos/shared/types";
-import { money } from "@/lib/utils";
+import { money, qty as fmtQty } from "@/lib/utils";
 
 interface FormValues {
   name: string;
@@ -659,7 +659,7 @@ function StockOnEdit({
             .map((s) => (
               <div key={s.id} className="flex justify-between text-sm">
                 <span className="text-muted-foreground">{branchName(s.branch)}</span>
-                <span className="font-mono">{s.quantity}</span>
+                <span className="font-mono">{fmtQty(s.quantity)}</span>
               </div>
             ))
         )}
@@ -785,7 +785,7 @@ function BatchManager({
                 <span className={st?.cls ?? "text-muted-foreground"}>
                   {b.expiry_date ?? "—"}{st ? ` · ${st.label}` : ""}
                 </span>
-                <span className="font-mono">{b.current_quantity}</span>
+                <span className="font-mono">{fmtQty(b.current_quantity)}</span>
                 <span className="text-muted-foreground">{b.branch_name ?? "—"}</span>
                 <span className="font-mono">{b.cost_price ? money(b.cost_price) : "—"}</span>
               </div>
