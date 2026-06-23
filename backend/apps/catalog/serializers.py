@@ -197,6 +197,15 @@ class ProductSerializer(serializers.ModelSerializer):
 class ProductPosSerializer(serializers.ModelSerializer):
     """Subset shipped to the POS terminal — strips cost_price."""
 
+    # The product's tax_rate is an FK; the terminal needs the NUMERIC percentage
+    # to compute tax on a line. Resolve it here (e.g. "16.00" for the TDCP resort,
+    # "18.00" for standard GST) so the terminal stops assuming a hardcoded 18%.
+    # Null when the product has no tax rate (non-taxable).
+    tax_rate_value = serializers.DecimalField(
+        source="tax_rate.rate", max_digits=5, decimal_places=2,
+        read_only=True, allow_null=True,
+    )
+
     class Meta:
         model = Product
         fields = (
@@ -205,7 +214,7 @@ class ProductPosSerializer(serializers.ModelSerializer):
             # hs_code FK PK IS the code string (e.g. "2402.2000"). The terminal
             # needs it so a sale rung by SCANNING carries a valid HS code to
             # FBR — without it, scanned-sale fiscalization is rejected.
-            "uom", "tax_rate", "hs_code", "is_taxable",
+            "uom", "tax_rate", "tax_rate_value", "hs_code", "is_taxable",
             "sale_price", "retail_price", "min_sale_price", "max_discount_pct",
             "is_third_schedule", "sale_type", "sro_schedule_no", "sro_item_serial_no",
             # is_batch_tracked tells the terminal a sale of this product must be

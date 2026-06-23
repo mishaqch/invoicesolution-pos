@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS products (
   name_ur          TEXT,
   uom_code         TEXT NOT NULL,
   tax_rate_id      TEXT,
+  tax_rate_value   TEXT,
   hs_code          TEXT,
   is_taxable       INTEGER NOT NULL DEFAULT 1,
   sale_price       TEXT NOT NULL,

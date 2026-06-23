@@ -32,7 +32,10 @@ export async function buildCartLineFromProduct(
     unit_price: p.sale_price,
     discount_pct: "0",
     discount_amount: "0",
-    tax_rate: p.is_taxable ? "18" : "0",
+    // Use the product's REAL tax rate (e.g. 16% for the TDCP resort) when the
+    // catalog provided it; fall back to the standard 18% GST for older catalog
+    // rows that predate tax_rate_value. Non-taxable → 0.
+    tax_rate: p.is_taxable ? (p.tax_rate_value ?? "18") : "0",
     is_taxable: !!p.is_taxable,
   };
 

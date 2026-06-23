@@ -57,6 +57,22 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
 
     tenant: Tenant = invoice.tenant
 
+    # --- Non-fiscal tenants — never fiscalize ----------------------------
+    # A tenant with fbr_connection_type="none" is NOT connected to any tax
+    # authority (e.g. the TDCP resort: plain rooms + restaurant invoices). The
+    # invoice is a normal local record — created, synced, reportable — but must
+    # never be submitted to FBR/PRAL. It simply stays as-is with
+    # fbr_invoice_number=NULL, so receipts omit the FBR block. Evaluated BEFORE
+    # any SDC/token logic so a missing token can't be mistaken for "defer".
+    from apps.tenants.business_mode import NON_FISCAL_CONNECTION_TYPES
+
+    if getattr(tenant, "fbr_connection_type", None) in NON_FISCAL_CONNECTION_TYPES:
+        logger.info(
+            "Invoice %s belongs to non-fiscal tenant %s — skipping FBR submission",
+            invoice_id, tenant.id,
+        )
+        return {"skipped": "non_fiscal", "status": invoice.status}
+
     # --- SDC (Fiscalization Service) path — evaluated FIRST ---------------
     # POS/IMS-type registrations fiscalize through the SDC (a central Windows
     # service holding the POS ID + Code), NOT via our DI-API tokens. So if the

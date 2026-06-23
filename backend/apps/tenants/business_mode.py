@@ -61,17 +61,28 @@ DEFAULT_BUSINESS_MODE = "digital_invoicing"
 #             relays to FBR. Our server sends the POS ID to localhost:8524; NO
 #             Bearer token is used on this path, and there are NO sandbox
 #             scenarios (the IMS handles activation itself).
+#   none    — NON-FISCAL. The tenant is NOT connected to any tax authority
+#             (no FBR, no PRA/SRB). Invoices are created, synced and reported
+#             like normal, but are NEVER submitted for fiscalization — they
+#             stay local with fbr_invoice_number=NULL, and receipts omit the
+#             FBR logo/QR/number. Used by clients who want a plain POS (e.g. the
+#             TDCP resort: rooms + restaurant) and may fiscalize later.
 #
 # This flag drives mode-aware UI: ims_sdc tenants must NOT see DI-API token
-# setup or scenarios; di_api tenants must NOT see POS-ID-only / SDC controls.
+# setup or scenarios; di_api tenants must NOT see POS-ID-only / SDC controls;
+# none tenants must NOT see ANY FBR setup at all.
 # ---------------------------------------------------------------------------
 
 FBR_CONNECTION_TYPES = (
     ("di_api", "Direct DI-API (PRAL Bearer token + scenarios)"),
     ("ims_sdc", "IMS / SDC Fiscalization service (POS ID, no token, no scenarios)"),
+    ("none", "Non-fiscal (no FBR / no tax-authority validation)"),
 )
 
 DEFAULT_FBR_CONNECTION_TYPE = "di_api"
+
+# Convenience: connection types that mean "do not fiscalize at all".
+NON_FISCAL_CONNECTION_TYPES = frozenset({"none"})
 
 
 # ---------------------------------------------------------------------------

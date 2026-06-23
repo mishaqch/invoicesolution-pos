@@ -46,6 +46,12 @@ interface ReceiptInput {
   items: PosSaleItemInput[];
   payments: PosPaymentInput[];
   width: 48 | 32;   // 80mm or 58mm
+  // Non-fiscal tenants (fbr_connection_type="none", e.g. the TDCP resort) are
+  // not connected to any tax authority. Their receipts must omit BOTH the FBR
+  // QR/number block AND the "FBR pending" notice, and print a plain resort
+  // footer instead. Defaults to fiscal (true) so every existing FBR tenant is
+  // byte-for-byte unchanged.
+  is_fiscal?: boolean;
 }
 
 // Shared formatters (used by both the styled print + the plain disk fallback).
@@ -428,8 +434,12 @@ async function realPrint(
   // raster logo and a QR on the same band, so we composite them), then the
   // FBR-issued invoice number + verify line. The QR encodes EXACTLY the FBR
   // number (what Tax Asaan verifies). Only when the invoice has an FBR number.
+  const isFiscal = input.is_fiscal !== false;
   const fbrNo = (input.invoice as { fbr_invoice_number?: string | null }).fbr_invoice_number;
-  if (fbrNo) {
+  if (!isFiscal) {
+    // Non-fiscal tenant (e.g. TDCP resort): no FBR block, no pending notice.
+    // The "Thank you" footer in the body already closes the bill cleanly.
+  } else if (fbrNo) {
     printer.alignCenter();
     // 48 cols ≈ 80mm ≈ 576 dots; 32 cols ≈ 58mm ≈ 384 dots.
     const dotWidth = input.width >= 48 ? 576 : 384;
@@ -649,9 +659,11 @@ function renderBodyText(input: ReceiptInput): string {
   }
   lines.push(rule);
 
-  // FBR-pending notice on the disk-fallback receipt too (offline sales).
+  // FBR-pending notice on the disk-fallback receipt too (offline sales) —
+  // but NEVER for non-fiscal tenants (TDCP resort), who have no FBR at all.
+  const isFiscal = input.is_fiscal !== false;
   const fbrNo = (input.invoice as { fbr_invoice_number?: string | null }).fbr_invoice_number;
-  if (!fbrNo) {
+  if (isFiscal && !fbrNo) {
     lines.push(center(FBR_PENDING_NOTICE));
     lines.push(rule);
   }

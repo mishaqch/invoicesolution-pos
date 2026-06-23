@@ -24,6 +24,9 @@ class TenantBriefSerializer(serializers.ModelSerializer):
             "address", "phone",
             # vertical drives pharmacy-only UI on the terminal (e.g. FEFO).
             "vertical",
+            # fbr_connection_type="none" → terminal prints plain non-fiscal
+            # receipts (no FBR QR/number) and hides FBR-specific UI.
+            "fbr_connection_type",
         )
 
 

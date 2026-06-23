@@ -35,6 +35,10 @@ export function migrate(connection: Database.Database): void {
   // is_third_schedule drives MRP-based tax for 3rd-schedule items (cigarettes).
   addColumnIfMissing(connection, "products", "hs_code", "TEXT");
   addColumnIfMissing(connection, "products", "is_third_schedule", "INTEGER NOT NULL DEFAULT 0");
+  // Numeric tax-rate percentage resolved from the product's tax_rate FK (e.g.
+  // "16.00" for the TDCP resort, "18.00" for standard GST). Lets the terminal
+  // apply the product's REAL rate instead of assuming 18%. NULL → fall back.
+  addColumnIfMissing(connection, "products", "tax_rate_value", "TEXT");
   // FBR sale type (PRAL transtypecode) — the terminal carries it so a sale's
   // line submits the right saleType. Server falls back to product.sale_type if
   // the terminal omits it, so pre-update terminals stay correct.

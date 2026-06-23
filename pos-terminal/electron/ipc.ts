@@ -46,7 +46,9 @@ import {
 } from "./db/sales";
 import {
   batchesForProduct,
+  listCategories,
   listProducts,
+  listProductsByCategory,
   nearestExpiryBatch,
   productByBarcode,
   productsCount,
@@ -148,6 +150,10 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
     searchProducts(query, limit),
   );
   ipcMain.handle("catalog:list", (_e, limit?: number) => listProducts(limit));
+  ipcMain.handle("catalog:categories", () => listCategories());
+  ipcMain.handle("catalog:by-category", (_e, categoryId: string, limit?: number) =>
+    listProductsByCategory(categoryId, limit),
+  );
   ipcMain.handle("catalog:by-barcode", (_e, barcode: string) => productByBarcode(barcode));
   ipcMain.handle("catalog:count", () => productsCount());
   // FEFO: nearest-expiry in-stock batch for a batch-tracked product.

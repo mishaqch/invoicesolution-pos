@@ -14,6 +14,8 @@ export interface PosProductSqliteRow {
   name_ur: string | null;
   uom_code: string;
   tax_rate_id: string | null;
+  /** Numeric tax % resolved from the product's tax_rate FK (e.g. "16.00"). */
+  tax_rate_value: string | null;
   hs_code: string | null;
   is_taxable: number;
   sale_price: string;
@@ -36,6 +38,14 @@ export interface PosBatchSqliteRow {
   expiry_date: string | null;
   current_quantity: string;
   branch_id: string | null;
+}
+
+export interface PosCategoryRow {
+  id: string;
+  name: string;
+  display_order: number;
+  color: string | null;
+  icon: string | null;
 }
 
 export interface PosCashSessionRow {
@@ -184,6 +194,10 @@ const api = {
       ipcRenderer.invoke("catalog:search", query, limit),
     list: (limit?: number): Promise<PosProductSqliteRow[]> =>
       ipcRenderer.invoke("catalog:list", limit),
+    // Category quick-filter on the till (Rooms pinned first for the resort).
+    categories: (): Promise<PosCategoryRow[]> => ipcRenderer.invoke("catalog:categories"),
+    byCategory: (categoryId: string, limit?: number): Promise<PosProductSqliteRow[]> =>
+      ipcRenderer.invoke("catalog:by-category", categoryId, limit),
     byBarcode: (barcode: string): Promise<PosProductSqliteRow | null> =>
       ipcRenderer.invoke("catalog:by-barcode", barcode),
     count: (): Promise<number> => ipcRenderer.invoke("catalog:count"),

@@ -253,6 +253,9 @@ export default function PaymentRoute() {
         items,
         payments,
         width: 48,
+        // Non-fiscal tenants (TDCP resort) print a plain bill — no FBR QR/number
+        // and no "FBR pending" notice. Fiscal is the default for everyone else.
+        is_fiscal: tenant?.fbr_connection_type !== "none",
       });
 
       void window.api.sync.kick();

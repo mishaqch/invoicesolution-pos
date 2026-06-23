@@ -10,6 +10,9 @@ export type SubscriptionStatus =
 /** The KIND of shop — grocery vs pharmacy vs restaurant. UI-only presentation flag. */
 export type Vertical = "grocery" | "pharmacy" | "restaurant";
 
+/** HOW the tenant reaches a tax authority. "none" = non-fiscal (no FBR/PRA). */
+export type FbrConnectionType = "di_api" | "ims_sdc" | "none";
+
 export interface Tenant {
   id: string;
   business_name: string;
@@ -21,6 +24,8 @@ export interface Tenant {
   phone: string | null;
   /** Shop vertical (grocery/pharmacy) — drives pharmacy-only terminal UI. */
   vertical: Vertical;
+  /** Fiscal connection. "none" → plain non-fiscal receipts (no FBR QR/number). */
+  fbr_connection_type?: FbrConnectionType;
 }
 
 export interface TenantMembership {

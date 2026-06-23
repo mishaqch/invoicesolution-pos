@@ -17,6 +17,7 @@ interface PosProductRow {
   name_ur: string;
   uom: string;
   tax_rate: string | null;
+  tax_rate_value: string | null;
   hs_code: string | null;
   is_taxable: boolean;
   sale_price: string;
@@ -121,18 +122,19 @@ export async function syncCatalog(opts: {
 
   const upsertProduct = db.prepare(`
     INSERT INTO products (
-      id, category_id, sku, barcode, name, name_ur, uom_code, tax_rate_id,
+      id, category_id, sku, barcode, name, name_ur, uom_code, tax_rate_id, tax_rate_value,
       hs_code, is_taxable, sale_price, retail_price, min_sale_price, max_discount_pct,
       is_third_schedule, sale_type, is_weighable, is_batch_tracked, image_url, is_active, updated_at, deleted_at
     ) VALUES (
-      @id, @category, @sku, @barcode, @name, @name_ur, @uom, @tax_rate,
+      @id, @category, @sku, @barcode, @name, @name_ur, @uom, @tax_rate, @tax_rate_value,
       @hs_code, @is_taxable, @sale_price, @retail_price, @min_sale_price, @max_discount_pct,
       @is_third_schedule, @sale_type, @is_weighable, @is_batch_tracked, @image_url, @is_active, @updated_at, @deleted_at
     )
     ON CONFLICT(id) DO UPDATE SET
       category_id=excluded.category_id, sku=excluded.sku, barcode=excluded.barcode,
       name=excluded.name, name_ur=excluded.name_ur, uom_code=excluded.uom_code,
-      tax_rate_id=excluded.tax_rate_id, hs_code=excluded.hs_code, is_taxable=excluded.is_taxable,
+      tax_rate_id=excluded.tax_rate_id, tax_rate_value=excluded.tax_rate_value,
+      hs_code=excluded.hs_code, is_taxable=excluded.is_taxable,
       sale_price=excluded.sale_price, retail_price=excluded.retail_price,
       min_sale_price=excluded.min_sale_price, max_discount_pct=excluded.max_discount_pct,
       is_third_schedule=excluded.is_third_schedule, sale_type=excluded.sale_type,
@@ -166,6 +168,7 @@ export async function syncCatalog(opts: {
       upsertProduct.run({
         ...p,
         hs_code: (p as { hs_code?: string | null }).hs_code ?? null,
+        tax_rate_value: (p as { tax_rate_value?: string | null }).tax_rate_value ?? null,
         is_taxable: p.is_taxable ? 1 : 0,
         is_third_schedule: (p as { is_third_schedule?: boolean }).is_third_schedule ? 1 : 0,
         sale_type: (p as { sale_type?: string }).sale_type ?? "Goods at standard rate (default)",
@@ -333,4 +336,41 @@ export function productsCount(): number {
     .prepare("SELECT COUNT(*) AS n FROM products WHERE deleted_at IS NULL AND is_active = 1")
     .get() as { n: number };
   return row.n;
+}
+
+export interface PosCategoryRow {
+  id: string;
+  name: string;
+  display_order: number;
+  color: string | null;
+  icon: string | null;
+}
+
+/** Categories that actually have at least one sellable product, ordered by
+ *  display_order then name. Drives the till's category quick-filter chips
+ *  (e.g. "Rooms" pinned first for the resort). */
+export function listCategories(): PosCategoryRow[] {
+  return getDb()
+    .prepare(
+      `SELECT c.id, c.name, c.display_order, c.color, c.icon
+         FROM categories c
+        WHERE c.is_active = 1
+          AND EXISTS (
+            SELECT 1 FROM products p
+             WHERE p.category_id = c.id AND p.deleted_at IS NULL AND p.is_active = 1
+          )
+        ORDER BY c.display_order, c.name`,
+    )
+    .all() as PosCategoryRow[];
+}
+
+/** Products in one category, name-ordered. Backs the category chip tap. */
+export function listProductsByCategory(categoryId: string, limit = 200): PosProductRow[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM products
+        WHERE category_id = ? AND deleted_at IS NULL AND is_active = 1
+        ORDER BY name LIMIT ?`,
+    )
+    .all(categoryId, limit) as PosProductRow[];
 }
