@@ -7,7 +7,7 @@ import { buildCartLineFromProduct } from "@/features/sale/addToCart";
 import { OrderTypeBar } from "@/features/restaurant/OrderTypeBar";
 import { SendToKitchen } from "@/features/restaurant/SendToKitchen";
 import { ModifierPicker, fetchModifierGroups, type ChosenModifiers } from "@/features/restaurant/ModifierPicker";
-import { Money } from "@/lib/money";
+import { Money, rs } from "@/lib/money";
 import { CartPane } from "@/features/sale/CartPane";
 import { ProductGrid } from "@/features/sale/ProductGrid";
 import { TotalsPane } from "@/features/sale/TotalsPane";
@@ -240,7 +240,7 @@ export default function SaleRoute() {
         <div className="text-xs text-muted-foreground">
           {tenant?.business_name ?? "—"} · {ctx.branch?.name ?? "—"} · {ctx.terminal?.name ?? "—"}
           {ctx.session && ctx.session.opened_with_amount && (
-            <span className="ml-2">· Float Rs {ctx.session.opened_with_amount}</span>
+            <span className="ml-2">· Float Rs {rs(ctx.session.opened_with_amount)}</span>
           )}
         </div>
         <div className="flex items-center gap-3">

@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/feedback/Toast";
+import { rs } from "@/lib/money";
 import { useSaleStore, type CartLine } from "@/stores/sale";
 
 import type { PosInvoiceRow } from "../../electron/preload";
@@ -115,7 +116,7 @@ export default function HeldSalesRoute() {
                     {r.held_label ?? t("held_sales.unlabelled", "(unlabelled)")}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {r.local_invoice_number} · Rs {r.grand_total}
+                    {r.local_invoice_number} · Rs {rs(r.grand_total)}
                   </div>
                 </div>
                 <Button

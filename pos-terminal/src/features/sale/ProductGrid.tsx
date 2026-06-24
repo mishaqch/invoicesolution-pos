@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useProductSearch } from "@/features/catalog/useProducts";
 import { buildCartLineFromProduct } from "@/features/sale/addToCart";
+import { rs } from "@/lib/money";
 
 import type { PosCategoryRow, PosProductSqliteRow } from "../../../electron/preload";
 import type { CartLine } from "@/stores/sale";
@@ -136,7 +137,7 @@ export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal
               >
                 <div className="line-clamp-2 text-sm font-medium">{p.name}</div>
                 <div className="mt-1 text-xs text-muted-foreground">{p.sku}</div>
-                <div className="mt-2 font-mono text-sm">Rs. {p.sale_price}</div>
+                <div className="mt-2 font-mono text-sm">Rs. {rs(p.sale_price)}</div>
               </button>
             ))}
           </div>

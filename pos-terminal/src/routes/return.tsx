@@ -10,7 +10,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/feedback/Toast";
 import { ApiError, api } from "@/lib/api";
-import { Money } from "@/lib/money";
+import { Money, rs } from "@/lib/money";
 import { newClientUuid } from "@/lib/uuid";
 import { useSessionStore } from "@/stores/session";
 import { usePosContext } from "@/features/sale/usePosContext";
@@ -156,7 +156,7 @@ export default function ReturnRoute() {
       // Drawer fires for cash refunds.
       if (refundMethod === "cash") void window.api.drawer.open();
       toast.show({
-        message: `Return ${ret.return_number} processed · Refund Rs ${ret.refund_amount}`,
+        message: `Return ${ret.return_number} processed · Refund Rs ${rs(ret.refund_amount)}`,
         variant: "success",
       });
       navigate("/sale", { replace: true });
@@ -217,7 +217,7 @@ export default function ReturnRoute() {
                     >
                       <div className="font-mono">{m.local_invoice_number}</div>
                       <div className="text-muted-foreground">
-                        {m.invoice_date} · Rs {m.grand_total} · {m.status}
+                        {m.invoice_date} · Rs {rs(m.grand_total)} · {m.status}
                       </div>
                     </button>
                   ))}
@@ -241,7 +241,7 @@ export default function ReturnRoute() {
                       <div className="flex-1">
                         <div className="text-sm">{line.product_name}</div>
                         <div className="text-xs text-muted-foreground">
-                          Sold qty: {line.quantity} · Rs {line.unit_price} ea
+                          Sold qty: {line.quantity} · Rs {rs(line.unit_price)} ea
                         </div>
                       </div>
                       <NumberInput

@@ -1,7 +1,7 @@
 import { Minus, Plus, StickyNote, Trash2 } from "lucide-react";
 
 import { useTextPrompt } from "@/components/ui/TextPromptModal";
-import { Money } from "@/lib/money";
+import { Money, rs } from "@/lib/money";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 
@@ -48,7 +48,7 @@ export function CartPane() {
                 <div className="flex-1">
                   <div className="text-sm font-medium">{line.product_name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {line.product_sku} · Rs {line.unit_price}
+                    {line.product_sku} · Rs {rs(line.unit_price)}
                   </div>
                   {/* Restaurant: chosen modifiers + kitchen note under the line. */}
                   {line.modifiers && line.modifiers.length > 0 && (

@@ -8,6 +8,7 @@ import { useToast } from "@/components/feedback/Toast";
 import { useFbrConfirmation } from "@/features/sale/useFbrConfirmation";
 import { useTerminalFiscalize } from "@/features/sale/useTerminalFiscalize";
 import { printInvoiceById } from "@/features/printing/printInvoice";
+import { rs } from "@/lib/money";
 
 interface State {
   invoice_id?: string;
@@ -84,11 +85,11 @@ export default function SuccessRoute() {
 
         <dl className="mx-auto mt-6 grid max-w-xs grid-cols-2 gap-y-1 text-sm">
           <dt className="text-muted-foreground">{t("sale.total")}</dt>
-          <dd className="text-right font-mono">Rs {s.grand}</dd>
+          <dd className="text-right font-mono">Rs {rs(s.grand)}</dd>
           <dt className="text-muted-foreground">{t("payment.amount_tendered")}</dt>
-          <dd className="text-right font-mono">Rs {s.tendered}</dd>
+          <dd className="text-right font-mono">Rs {rs(s.tendered)}</dd>
           <dt className="text-muted-foreground">{t("payment.change")}</dt>
-          <dd className="text-right font-mono">Rs {s.change}</dd>
+          <dd className="text-right font-mono">Rs {rs(s.change)}</dd>
         </dl>
 
         <div

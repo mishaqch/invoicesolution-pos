@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/feedback/Toast";
 import { printInvoiceById } from "@/features/printing/printInvoice";
+import { rs } from "@/lib/money";
 
 import type { PosInvoiceRow, PosSaleItemRow, PosPaymentRow } from "../../electron/preload";
 
@@ -103,7 +104,7 @@ export default function TodayInvoicesRoute() {
         </button>
         <div className="text-sm font-medium">{t("today_invoices.title", "Today's invoices")}</div>
         <div className="text-xs text-muted-foreground">
-          {totals.count} · Rs {totals.gross.toLocaleString("en-PK", { maximumFractionDigits: 0 })}
+          {totals.count} · Rs {rs(totals.gross)}
         </div>
       </header>
 
@@ -145,7 +146,7 @@ export default function TodayInvoicesRoute() {
                     >
                       <div className="flex items-baseline justify-between">
                         <span className="font-mono">{r.local_invoice_number}</span>
-                        <span className="font-mono">Rs {r.grand_total}</span>
+                        <span className="font-mono">Rs {rs(r.grand_total)}</span>
                       </div>
                       <div className="flex items-baseline justify-between text-xs text-muted-foreground">
                         <span>{(r.created_at ?? "").slice(11, 16)}</span>
@@ -191,9 +192,9 @@ export default function TodayInvoicesRoute() {
                       <tr key={line.id} className="border-b last:border-0">
                         <td className="py-1.5">{line.product_name}</td>
                         <td className="py-1.5 text-right text-muted-foreground">
-                          {line.quantity} × Rs {line.unit_price}
+                          {line.quantity} × Rs {rs(line.unit_price)}
                         </td>
-                        <td className="py-1.5 text-right font-mono">Rs {line.line_total}</td>
+                        <td className="py-1.5 text-right font-mono">Rs {rs(line.line_total)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -203,15 +204,15 @@ export default function TodayInvoicesRoute() {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t("sale.subtotal")}</span>
-                  <span className="font-mono">Rs {picked.invoice.subtotal}</span>
+                  <span className="font-mono">Rs {rs(picked.invoice.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">{t("sale.tax")}</span>
-                  <span className="font-mono">Rs {picked.invoice.tax_total}</span>
+                  <span className="font-mono">Rs {rs(picked.invoice.tax_total)}</span>
                 </div>
                 <div className="flex justify-between text-base font-semibold">
                   <span>{t("sale.total")}</span>
-                  <span className="font-mono">Rs {picked.invoice.grand_total}</span>
+                  <span className="font-mono">Rs {rs(picked.invoice.grand_total)}</span>
                 </div>
               </div>
 
@@ -221,7 +222,7 @@ export default function TodayInvoicesRoute() {
                   {picked.payments.map((p) => (
                     <li key={p.id} className="flex justify-between">
                       <span className="capitalize">{p.payment_method.replace(/_/g, " ")}</span>
-                      <span className="font-mono">Rs {p.amount}</span>
+                      <span className="font-mono">Rs {rs(p.amount)}</span>
                     </li>
                   ))}
                 </ul>

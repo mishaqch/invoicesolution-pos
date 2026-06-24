@@ -138,6 +138,22 @@ export class Money {
   toString() { return this.toStorageString(); }
 }
 
+/**
+ * Format any money value for DISPLAY at exactly 2 decimals (e.g. "1500.00").
+ * Backend stores DECIMAL(14,4) so raw values arrive as "1500.0000"; this is the
+ * one helper every UI price render should use so nothing ever shows ".0000".
+ * Safe on null/empty/garbage (returns "0.00") — never throws, unlike
+ * Money.fromStr. Use this, not raw `{value}` interpolation, for any price.
+ */
+export function rs(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "0.00";
+  try {
+    return Money.fromStr(value).display();
+  } catch {
+    return "0.00";
+  }
+}
+
 export function sumMoney(items: Money[]): Money {
   return items.reduce((acc, m) => acc.add(m), Money.zero());
 }

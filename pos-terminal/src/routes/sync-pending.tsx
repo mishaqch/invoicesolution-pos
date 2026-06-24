@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 
 import { useToast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/button";
+import { rs } from "@/lib/money";
 
 type PendingRow = Awaited<ReturnType<NonNullable<Window["api"]["sync"]>["listPending"]>>[number];
 
@@ -112,7 +113,7 @@ export default function SyncPendingRoute() {
                     <span className="font-mono text-sm">
                       {r.local_invoice_number ?? `${r.entity_type} ${r.client_uuid.slice(0, 8)}`}
                     </span>
-                    {r.grand_total && <span className="font-mono text-sm">Rs {r.grand_total}</span>}
+                    {r.grand_total && <span className="font-mono text-sm">Rs {rs(r.grand_total)}</span>}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                     <span className={`rounded-full px-1.5 py-0.5 ${chip(r.status)}`}>{chipLabel(r.status)}</span>

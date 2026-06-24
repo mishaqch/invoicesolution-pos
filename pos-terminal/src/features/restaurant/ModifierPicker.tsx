@@ -12,7 +12,7 @@ import { useState } from "react";
 
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Money } from "@/lib/money";
+import { Money, rs } from "@/lib/money";
 
 interface Modifier { id: string; name: string; price_delta: string }
 interface Group {
@@ -113,7 +113,7 @@ export function ModifierPicker({
                     >
                       <span>{m.name}</span>
                       {Number(m.price_delta) > 0 && (
-                        <span className="font-mono text-xs">+{Number(m.price_delta).toFixed(0)}</span>
+                        <span className="font-mono text-xs">+{rs(m.price_delta)}</span>
                       )}
                     </button>
                   );
