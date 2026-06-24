@@ -1,9 +1,9 @@
 import { Minus, Plus, StickyNote, Trash2 } from "lucide-react";
 
+import { useTextPrompt } from "@/components/ui/TextPromptModal";
 import { Money } from "@/lib/money";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
-import { useApprovalGate } from "./ApprovalGate";
 
 export function CartPane() {
   const lines = useSaleStore((s) => s.lines);
@@ -11,13 +11,21 @@ export function CartPane() {
   const setQuantity = useSaleStore((s) => s.setQuantity);
   const updateLine = useSaleStore((s) => s.updateLine);
   const isRestaurant = useSessionStore((s) => s.tenant?.vertical === "restaurant");
-  const { requireApproval } = useApprovalGate();
+  const prompt = useTextPrompt();
 
-  // Edit a line's kitchen note in place (restaurant). Prompt keeps it simple and
-  // works on a touch terminal; updateLine writes to the cart so it flows to the
-  // KOT + the order snapshot on next fire.
-  function editNote(id: string, current: string | null | undefined) {
-    const next = window.prompt("Kitchen note for this item (e.g. no onions):", current ?? "");
+  // Edit a line's kitchen note in an in-app modal (Electron's renderer has no
+  // working window.prompt, so the old prompt() silently did nothing). updateLine
+  // writes the note to the cart so it flows to the KOT + order snapshot on fire,
+  // the receipt, and the synced invoice.
+  async function editNote(id: string, current: string | null | undefined) {
+    const next = await prompt({
+      title: "Item note",
+      description: "Add a note for the kitchen (e.g. no onions, extra spicy).",
+      placeholder: "e.g. no onions",
+      initialValue: current ?? "",
+      confirmLabel: "Save note",
+      multiline: true,
+    });
     if (next !== null) updateLine(id, { item_note: next.trim() || null });
   }
 
@@ -71,21 +79,10 @@ export function CartPane() {
                     type="button"
                     className="flex h-7 w-7 items-center justify-center rounded-md border bg-background hover:bg-muted"
                     onClick={() =>
-                      // Reducing a quantity is a partial void → manager approval.
-                      requireApproval(
-                        {
-                          action: "reduce_qty",
-                          label: `Reduce qty of ${line.product_name}`,
-                          context: {
-                            product: line.product_name, sku: line.product_sku,
-                            from_qty: line.quantity,
-                          },
-                        },
-                        () =>
-                          setQuantity(
-                            line.id,
-                            Money.fromStr(line.quantity).sub(Money.fromStr("1")).toStorageString(),
-                          ),
+                      // Restaurant/hotel: no manager approval needed to adjust qty.
+                      setQuantity(
+                        line.id,
+                        Money.fromStr(line.quantity).sub(Money.fromStr("1")).toStorageString(),
                       )
                     }
                     disabled={Money.fromStr(line.quantity).le(Money.fromStr("1"))}
@@ -116,20 +113,7 @@ export function CartPane() {
                 <button
                   type="button"
                   className="text-muted-foreground hover:text-destructive"
-                  onClick={() =>
-                    // Removing a line is a void → manager approval (logged).
-                    requireApproval(
-                      {
-                        action: "void_line",
-                        label: `Remove ${line.product_name}`,
-                        context: {
-                          product: line.product_name, sku: line.product_sku,
-                          qty: line.quantity, line_total: line.line_total.toStorageString(),
-                        },
-                      },
-                      () => removeLine(line.id),
-                    )
-                  }
+                  onClick={() => removeLine(line.id)}
                   aria-label="Remove line"
                 >
                   <Trash2 className="h-4 w-4" />

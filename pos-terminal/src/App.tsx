@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { ToastProvider } from "@/components/feedback/Toast";
+import { TextPromptHost } from "@/components/ui/TextPromptModal";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import DayCloseRoute from "@/routes/day-close";
 import DayOpenRoute from "@/routes/day-open";
@@ -51,6 +52,8 @@ export default function App() {
         <Route path="/hardware" element={protectedRoute(<HardwareRoute />)} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {/* App-wide in-app text prompt (replaces Electron's missing window.prompt). */}
+      <TextPromptHost />
       </ToastProvider>
     </HashRouter>
   );

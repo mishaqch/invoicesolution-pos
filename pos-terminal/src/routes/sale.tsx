@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import { buildCartLineFromProduct } from "@/features/sale/addToCart";
-import { ApprovalProvider } from "@/features/sale/ApprovalGate";
 import { OrderTypeBar } from "@/features/restaurant/OrderTypeBar";
 import { SendToKitchen } from "@/features/restaurant/SendToKitchen";
 import { ModifierPicker, fetchModifierGroups, type ChosenModifiers } from "@/features/restaurant/ModifierPicker";
@@ -21,6 +20,7 @@ import { terminalIndexFromName } from "@/lib/terminal";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 import { useToast } from "@/components/feedback/Toast";
+import { useTextPrompt } from "@/components/ui/TextPromptModal";
 
 export default function SaleRoute() {
   const navigate = useNavigate();
@@ -32,6 +32,7 @@ export default function SaleRoute() {
   const role = useSessionStore((s) => s.role);
   const logout = useSessionStore((s) => s.logout);
   const toast = useToast();
+  const prompt = useTextPrompt();
 
   const addLine = useSaleStore((s) => s.addLine);
   const lines = useSaleStore((s) => s.lines);
@@ -147,10 +148,13 @@ export default function SaleRoute() {
       });
       return;
     }
-    const label = window.prompt(
-      t("sale.hold_prompt", "Hold sale — enter a label (e.g., customer name):"),
-    );
-    if (!label) return;
+    const label = await prompt({
+      title: t("sale.hold_title", "Hold sale"),
+      description: t("sale.hold_prompt", "Enter a label (e.g. customer name or table)."),
+      placeholder: t("sale.hold_placeholder", "e.g. Ahmed / Table 5"),
+      confirmLabel: t("sale.hold_confirm", "Hold"),
+    });
+    if (!label || !label.trim()) return;
     const totals = quoteCart(useSaleStore.getState());
     const invoiceId = newClientUuid();
     try {
@@ -231,7 +235,6 @@ export default function SaleRoute() {
   }
 
   return (
-    <ApprovalProvider>
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
         <div className="text-xs text-muted-foreground">
@@ -363,7 +366,6 @@ export default function SaleRoute() {
         />
       )}
     </div>
-    </ApprovalProvider>
   );
 }
 

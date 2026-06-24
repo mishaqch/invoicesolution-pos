@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { NumberInput } from "@/components/ui/number-input";
 import { quoteCart, useSaleStore } from "@/stores/sale";
-import { useApprovalGate } from "./ApprovalGate";
 
 interface Props {
   onHold: () => void;
@@ -18,10 +17,9 @@ export function TotalsPane({ onHold }: Props) {
   const setCartDiscountPct = useSaleStore((s) => s.setCartDiscountPct);
   const customer = useSaleStore((s) => s.customer);
   const resetForNewSale = useSaleStore((s) => s.resetForNewSale);
-  const { requireApproval } = useApprovalGate();
 
-  // Discount is TYPED freely but only COMMITTED to the cart via manager
-  // approval, so a cashier can't apply any discount unilaterally.
+  // Discount is typed then committed to the cart on tap — no manager approval
+  // (restaurant/hotel: cashiers apply discounts directly).
   const [pendingDiscount, setPendingDiscount] = useState(cartDiscountPct);
   useEffect(() => { setPendingDiscount(cartDiscountPct); }, [cartDiscountPct]);
   const discountDirty = pendingDiscount !== cartDiscountPct;
@@ -55,17 +53,8 @@ export function TotalsPane({ onHold }: Props) {
               variant="outline"
               className="h-8 w-8"
               disabled={!discountDirty}
-              aria-label="Apply discount (needs manager approval)"
-              onClick={() =>
-                requireApproval(
-                  {
-                    action: "apply_discount",
-                    label: `Apply ${pendingDiscount}% cart discount`,
-                    context: { discount_pct: pendingDiscount },
-                  },
-                  () => setCartDiscountPct(pendingDiscount),
-                )
-              }
+              aria-label="Apply discount"
+              onClick={() => setCartDiscountPct(pendingDiscount)}
             >
               <Check className="h-4 w-4" />
             </Button>
@@ -100,19 +89,12 @@ export function TotalsPane({ onHold }: Props) {
           variant="outline"
           disabled={!hasItems}
           className="flex-1 text-destructive"
-          onClick={() =>
-            requireApproval(
-              {
-                action: "void_sale",
-                label: "Void the entire sale",
-                context: {
-                  lines: lines.length,
-                  grand_total: totals.grand_total.toStorageString(),
-                },
-              },
-              () => resetForNewSale(),
-            )
-          }
+          onClick={() => {
+            // Restaurant/hotel: cancelling the order needs no manager approval.
+            if (window.confirm("Void the entire sale? This clears the cart.")) {
+              resetForNewSale();
+            }
+          }}
         >
           <Trash2 className="mr-1 h-4 w-4" /> Void sale
         </Button>
