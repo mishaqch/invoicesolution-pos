@@ -1,4 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { queryClient } from "@/lib/queryClient";
@@ -9,66 +10,82 @@ import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { RequireModule } from "@/features/modules/RequireModule";
 import { RequireDiApi } from "@/features/modules/RequireDiApi";
 import { RequireVertical } from "@/features/modules/RequireVertical";
-import BranchesList from "@/routes/branches/branches";
-import TerminalsList from "@/routes/terminals/terminals";
-import CategoriesList from "@/routes/catalog/categories";
-import CsvImport from "@/routes/catalog/csv-import";
-import HsCodesBrowser from "@/routes/catalog/hs-codes";
-import ProductEdit from "@/routes/catalog/product-edit";
-import ProductsList from "@/routes/catalog/products";
-import TaxRatesList from "@/routes/catalog/tax-rates";
-import DashboardRoute from "@/routes/dashboard";
-import Adjustments from "@/routes/inventory/adjustments";
-import StockAuditsList from "@/routes/inventory/audits";
-import ExpiryList from "@/routes/inventory/expiry";
-import FbrReadinessList from "@/routes/inventory/fbr-readiness";
-import Movements from "@/routes/inventory/movements";
-import RestockList from "@/routes/inventory/restock";
-import SuppliersList from "@/routes/suppliers/list";
-import ReceiveStock from "@/routes/purchases/receive";
-import TablesAdmin from "@/routes/restaurant/tables";
-import ModifiersAdmin from "@/routes/restaurant/modifiers";
-import FloorView from "@/routes/restaurant/floor";
-import KitchenDisplay from "@/routes/restaurant/kitchen";
-import StockByBranch from "@/routes/inventory/stock-by-branch";
-import StockByWarehouse from "@/routes/inventory/stock-by-warehouse";
-import Warehouses from "@/routes/inventory/warehouses";
-import StockTransfersList from "@/routes/inventory/transfers";
-import LoginRoute from "@/routes/login";
-import HeldSalesAdminList from "@/routes/sales/held-sales";
-import NewInvoiceRoute from "@/routes/sales/new";
-import InvoiceDetail from "@/routes/sales/invoice-detail";
-import InvoicesList from "@/routes/sales/invoices";
-import SyncHealth from "@/routes/sync/sync-health";
-import TerminalSyncDetail from "@/routes/sync/terminal-detail";
-import CancelBudgetPage from "@/routes/fbr/cancel-budget";
-import FbrDashboard from "@/routes/fbr/dashboard";
-import ManualAmendmentPage from "@/routes/fbr/manual-amendment";
-import ScenariosPage from "@/routes/fbr/scenarios";
-import FbrSetupWizard from "@/routes/fbr/setup";
-import SubmissionsPage from "@/routes/fbr/submissions";
-import ChequesPage from "@/routes/payments/cheques";
-import PaymentSettingsPage from "@/routes/payments/settings";
-import CustomerDetail from "@/routes/customers/detail";
-import CustomerImportRoute from "@/routes/customers/import";
-import CustomersList from "@/routes/customers/list";
-import HelpCenter from "@/routes/help";
-import BusinessProfileRoute from "@/routes/settings/business-profile";
-import HardwareChecklist from "@/routes/settings/hardware";
-import SettingsIndex from "@/routes/settings";
-import ReportDetail from "@/routes/reports/detail";
-import ReportsIndex from "@/routes/reports";
-import ReturnDetail from "@/routes/returns/detail";
-import ReturnsList from "@/routes/returns/list";
+
+// Every page is lazily imported so the first load only downloads the shell +
+// the page actually being viewed — not all 50+ screens at once. This is the
+// biggest single win for slow links (e.g. Pakistan): the login/dashboard chunk
+// is a fraction of the old single 468 KB bundle. Each route is its own
+// content-hashed chunk, cached immutably + brotli-compressed by nginx.
+const LoginRoute = lazy(() => import("@/routes/login"));
+const BranchesList = lazy(() => import("@/routes/branches/branches"));
+const TerminalsList = lazy(() => import("@/routes/terminals/terminals"));
+const CategoriesList = lazy(() => import("@/routes/catalog/categories"));
+const CsvImport = lazy(() => import("@/routes/catalog/csv-import"));
+const HsCodesBrowser = lazy(() => import("@/routes/catalog/hs-codes"));
+const ProductEdit = lazy(() => import("@/routes/catalog/product-edit"));
+const ProductsList = lazy(() => import("@/routes/catalog/products"));
+const TaxRatesList = lazy(() => import("@/routes/catalog/tax-rates"));
+const DashboardRoute = lazy(() => import("@/routes/dashboard"));
+const Adjustments = lazy(() => import("@/routes/inventory/adjustments"));
+const StockAuditsList = lazy(() => import("@/routes/inventory/audits"));
+const ExpiryList = lazy(() => import("@/routes/inventory/expiry"));
+const FbrReadinessList = lazy(() => import("@/routes/inventory/fbr-readiness"));
+const Movements = lazy(() => import("@/routes/inventory/movements"));
+const RestockList = lazy(() => import("@/routes/inventory/restock"));
+const SuppliersList = lazy(() => import("@/routes/suppliers/list"));
+const ReceiveStock = lazy(() => import("@/routes/purchases/receive"));
+const TablesAdmin = lazy(() => import("@/routes/restaurant/tables"));
+const ModifiersAdmin = lazy(() => import("@/routes/restaurant/modifiers"));
+const FloorView = lazy(() => import("@/routes/restaurant/floor"));
+const KitchenDisplay = lazy(() => import("@/routes/restaurant/kitchen"));
+const StockByBranch = lazy(() => import("@/routes/inventory/stock-by-branch"));
+const StockByWarehouse = lazy(() => import("@/routes/inventory/stock-by-warehouse"));
+const Warehouses = lazy(() => import("@/routes/inventory/warehouses"));
+const StockTransfersList = lazy(() => import("@/routes/inventory/transfers"));
+const HeldSalesAdminList = lazy(() => import("@/routes/sales/held-sales"));
+const NewInvoiceRoute = lazy(() => import("@/routes/sales/new"));
+const InvoiceDetail = lazy(() => import("@/routes/sales/invoice-detail"));
+const InvoicesList = lazy(() => import("@/routes/sales/invoices"));
+const SyncHealth = lazy(() => import("@/routes/sync/sync-health"));
+const TerminalSyncDetail = lazy(() => import("@/routes/sync/terminal-detail"));
+const CancelBudgetPage = lazy(() => import("@/routes/fbr/cancel-budget"));
+const FbrDashboard = lazy(() => import("@/routes/fbr/dashboard"));
+const ManualAmendmentPage = lazy(() => import("@/routes/fbr/manual-amendment"));
+const ScenariosPage = lazy(() => import("@/routes/fbr/scenarios"));
+const FbrSetupWizard = lazy(() => import("@/routes/fbr/setup"));
+const SubmissionsPage = lazy(() => import("@/routes/fbr/submissions"));
+const ChequesPage = lazy(() => import("@/routes/payments/cheques"));
+const PaymentSettingsPage = lazy(() => import("@/routes/payments/settings"));
+const CustomerDetail = lazy(() => import("@/routes/customers/detail"));
+const CustomerImportRoute = lazy(() => import("@/routes/customers/import"));
+const CustomersList = lazy(() => import("@/routes/customers/list"));
+const HelpCenter = lazy(() => import("@/routes/help"));
+const BusinessProfileRoute = lazy(() => import("@/routes/settings/business-profile"));
+const HardwareChecklist = lazy(() => import("@/routes/settings/hardware"));
+const SettingsIndex = lazy(() => import("@/routes/settings"));
+const ReportDetail = lazy(() => import("@/routes/reports/detail"));
+const ReportsIndex = lazy(() => import("@/routes/reports"));
+const ReturnDetail = lazy(() => import("@/routes/returns/detail"));
+const ReturnsList = lazy(() => import("@/routes/returns/list"));
 
 // The QueryClient now lives in @/lib/queryClient so the auth store can clear
 // its cache on login/logout (see queryClient.ts).
+
+/** Shown briefly while a lazily-loaded page chunk downloads. */
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+    </div>
+  );
+}
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
       <BrowserRouter>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
 
@@ -250,6 +267,7 @@ export default function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
       </ToastProvider>
     </QueryClientProvider>
