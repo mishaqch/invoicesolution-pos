@@ -84,6 +84,8 @@ urlpatterns = [
     path("api/payments/", include("apps.payments.urls")),
     path("api/returns/", include("apps.returns.urls")),
     path("api/reports/", include("apps.reports.urls")),
+    # Hotel / resort — rooms + guest folios (rooms+restaurant clients).
+    path("api/hotel/", include("apps.hotel.urls")),
     # Public marketing-site lead capture (contact / book-a-demo form).
     path("api/leads/", include("apps.leads.urls")),
     # Public download for the Windows POS terminal installer. Linked from

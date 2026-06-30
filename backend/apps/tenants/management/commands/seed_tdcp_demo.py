@@ -33,13 +33,13 @@ User = get_user_model()
 FOOD_HS = "2106.9090"   # Miscellaneous edible preparations — safe for menu items.
 ROOM_HS = "9963.0000"   # Accommodation services (best-effort; non-fiscal anyway).
 
-# Rooms — billed per night (qty = nights). Rates are demo placeholders; swap to
-# TDCP's real tariff when confirmed.  (name, sku, price_per_night)
-ROOMS = [
-    ("Standard Room / night", "ROOM-STD", "6000"),
-    ("Deluxe Room / night", "ROOM-DLX", "9000"),
-    ("Executive Suite / night", "ROOM-EXE", "14000"),
-    ("Family Room / night", "ROOM-FAM", "12000"),
+# Rooms — TDCP Kallar Kahar real tariff. Tax is a FIXED AMOUNT per night (not %),
+# scaled by nights × rooms. Each tuple:
+#   (type, sku, nightly_base, nightly_tax, count)  →  base + tax = total/night
+ROOM_TYPES = [
+    ("VIP",      "ROOM-VIP", "8820", "1680", 5),   # base 8820 + tax 1680 = 10500
+    ("Deluxe",   "ROOM-DLX", "6300", "1200", 5),   # base 6300 + tax 1200 = 7500
+    ("Standard", "ROOM-STD", "5040",  "960", 6),   # base 5040 + tax  960 = 6000
 ]
 
 # Full restaurant menu, transcribed from the TDCP Lake Resort Kallar Kahar menu
@@ -195,9 +195,18 @@ class Command(BaseCommand):
             tenant.phone = "0300 204 1742"
             tenant.address = "TDCP Lake Resort, Kallar Kahar, Chakwal, Punjab"
             tenant.save()
+        # Enable the `hotel` module (rooms + folios) for this rooms+restaurant
+        # tenant — idempotent. Restaurant-only POS tenants don't get it.
+        mods = list(tenant.modules_enabled or [])
+        for m in ("hotel", "restaurant"):
+            if m not in mods:
+                mods.append(m)
+        tenant.modules_enabled = mods
+        tenant.save(update_fields=["modules_enabled", "updated_at"])
+
         self.stdout.write(
             f"Tenant: {tenant.business_name} ({tenant.ntn}) "
-            f"[{'created' if created else 'updated'}] — non-fiscal"
+            f"[{'created' if created else 'updated'}] — non-fiscal, hotel+restaurant"
         )
 
         # 2) Owner + 3) Cashier (PIN for the terminal)
@@ -252,23 +261,51 @@ class Command(BaseCommand):
                 cat.save(update_fields=["display_order"])
             categories[cat_name] = cat
 
-        # 7) Room products (billed per night, qty = nights).
+        # 7) Rooms — one Product per room type + individual Room rows for
+        #    occupancy. Room tax is a FIXED AMOUNT per night (set on the Room),
+        #    applied at folio time — so the room Product itself carries no
+        #    tax_rate (the folio service computes the exact line tax).
+        from apps.hotel.models import Room
+
+        n_room_products = 0
         n_rooms = 0
-        for name, sku, price in ROOMS:
-            Product.objects.get_or_create(
+        for room_type, sku, base, tax_amt, count in ROOM_TYPES:
+            product, _ = Product.objects.get_or_create(
                 tenant=tenant, sku=sku,
                 defaults={
-                    "name": name,
+                    "name": f"{room_type} Room / night",
                     "category": categories["Rooms"],
                     "uom": uom_night,
-                    "tax_rate": tax_rate,
+                    "tax_rate": None,            # tax applied per-night as fixed amount
                     "hs_code": room_hs,
-                    "sale_price": Decimal(price),
+                    "sale_price": Decimal(base),
                     "cost_price": Decimal("0.0000"),
                     "is_taxable": True,
                 },
             )
-            n_rooms += 1
+            # Keep the product's price/name in sync on re-run.
+            product.name = f"{room_type} Room / night"
+            product.sale_price = Decimal(base)
+            product.category = categories["Rooms"]
+            product.uom = uom_night
+            product.save(update_fields=["name", "sale_price", "category", "uom", "updated_at"])
+            n_room_products += 1
+
+            # Individual rooms: VIP-1..5, Deluxe-1..5, Standard-1..6.
+            prefix = {"VIP": "VIP", "Deluxe": "DLX", "Standard": "STD"}.get(room_type, room_type[:3].upper())
+            for i in range(1, count + 1):
+                Room.objects.get_or_create(
+                    tenant=tenant, branch=branch, room_number=f"{prefix}-{i}",
+                    defaults={
+                        "room_type": room_type,
+                        "nightly_base": Decimal(base),
+                        "nightly_tax": Decimal(tax_amt),
+                        "product": product,
+                        "display_order": n_room_products * 100 + i,
+                        "status": "available",
+                    },
+                )
+                n_rooms += 1
 
         # 8) Restaurant menu items.
         n_menu = 0
@@ -302,8 +339,9 @@ class Command(BaseCommand):
         # --- Summary ---
         self.stdout.write(self.style.SUCCESS("\n=== TDCP Kallar Kahar demo ready (NON-FISCAL) ==="))
         self.stdout.write(f"Business : {tenant.business_name}  (NTN {tenant.ntn})")
-        self.stdout.write(f"Tax      : 16% Punjab Sales Tax (shown on bill, not submitted)")
-        self.stdout.write(f"Rooms    : {n_rooms}   Menu items: {n_menu}   Tables: 8")
+        self.stdout.write(f"Tax      : 16% food (PST) + fixed per-night room tax (VIP 1680 / Deluxe 1200 / Standard 960)")
+        self.stdout.write(f"Rooms    : {n_rooms} ({n_room_products} types)   Menu items: {n_menu}   Tables: 8")
+        self.stdout.write(f"Modules  : hotel + restaurant enabled (folios + rooms)")
         self.stdout.write("")
         self.stdout.write(self.style.WARNING("Admin-web login (admin/client.invoicesolution.pk):"))
         self.stdout.write(f"  Owner email   : {owner.email}")

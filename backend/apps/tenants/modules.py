@@ -155,6 +155,18 @@ MODULES: list[_Module] = [
                        "to surface the UI.",
         "forced": False,
     },
+    # --- Hotel / resort ---
+    {
+        "key": "hotel",
+        "label": "Hotel / Resort (rooms + folios)",
+        "group": "Restaurant",
+        "description": "Bookable rooms + multi-day guest folios: open a stay, "
+                       "add room nights + daily restaurant charges, settle one "
+                       "consolidated bill at checkout. For rooms+restaurant "
+                       "clients (e.g. resorts). NOT auto-enabled — turn on only "
+                       "for tenants that rent rooms.",
+        "forced": False,
+    },
     # --- Insights ---
     {
         "key": "reports_basic",

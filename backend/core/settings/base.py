@@ -91,6 +91,8 @@ INSTALLED_APPS = [
     "apps.purchases",
     # Restaurant / F&B vertical — tables, modifiers, kitchen
     "apps.restaurant",
+    # Hotel / resort — rooms + multi-day guest folios (rooms+restaurant clients)
+    "apps.hotel",
     # Local — Phase 2
     "apps.customers",
     "apps.sales",
