@@ -54,6 +54,7 @@ export type ModuleKey =
   | "customer_display"
   | "hardware"
   | "restaurant"
+  | "hotel"
   | "reports_basic"
   | "reports_advanced"
   | "audit_log";

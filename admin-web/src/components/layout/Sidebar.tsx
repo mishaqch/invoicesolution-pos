@@ -2,10 +2,12 @@ import {
   Activity,
   BarChart3,
   AlertTriangle,
+  BedDouble,
   Boxes,
   Building2,
   CalendarClock,
   ChefHat,
+  DoorOpen,
   Grid3x3,
   LayoutGrid,
   Monitor,
@@ -126,6 +128,13 @@ const RESTAURANT: Item[] = [
   { to: "/restaurant/modifiers", label: "Modifiers", icon: Utensils, module: "restaurant", vertical: "restaurant" },
 ];
 
+// Hotel — rooms + guest folios. Gated on the opt-in `hotel` module only (no
+// vertical gate), so rooms+restaurant tenants see it alongside Restaurant.
+const HOTEL: Item[] = [
+  { to: "/hotel/rooms", label: "Rooms", icon: DoorOpen, module: "hotel" },
+  { to: "/hotel/stays", label: "Stays", icon: BedDouble, module: "hotel" },
+];
+
 const ADMIN: Item[] = [
   { to: "/branches", label: "Branches", icon: Building2, module: "branches" },
   { to: "/terminals", label: "Terminals", icon: Monitor, module: "terminals" },
@@ -184,6 +193,7 @@ export function Sidebar() {
   const inventory = visible(INVENTORY);
   const warehouse = visible(WAREHOUSE);
   const restaurant = visible(RESTAURANT);
+  const hotel = visible(HOTEL);
   const adminItems = visible(ADMIN);
 
   const open = useSidebarStore((s) => s.open);
@@ -217,6 +227,7 @@ export function Sidebar() {
         {inventory.length > 0 && <Section title="Inventory" items={inventory} />}
         {warehouse.length > 0 && <Section title="Warehouse" items={warehouse} />}
         {restaurant.length > 0 && <Section title="Restaurant" items={restaurant} />}
+        {hotel.length > 0 && <Section title="Hotel" items={hotel} />}
         {adminItems.length > 0 && <Section title="Admin" items={adminItems} />}
       </nav>
       <div className="border-t px-4 py-3 text-[11px] text-muted-foreground">

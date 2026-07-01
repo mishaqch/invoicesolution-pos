@@ -35,6 +35,8 @@ const RestockList = lazy(() => import("@/routes/inventory/restock"));
 const SuppliersList = lazy(() => import("@/routes/suppliers/list"));
 const ReceiveStock = lazy(() => import("@/routes/purchases/receive"));
 const TablesAdmin = lazy(() => import("@/routes/restaurant/tables"));
+const RoomsAdmin = lazy(() => import("@/routes/hotel/rooms"));
+const StaysAdmin = lazy(() => import("@/routes/hotel/stays"));
 const ModifiersAdmin = lazy(() => import("@/routes/restaurant/modifiers"));
 const FloorView = lazy(() => import("@/routes/restaurant/floor"));
 const KitchenDisplay = lazy(() => import("@/routes/restaurant/kitchen"));
@@ -191,6 +193,13 @@ export default function App() {
               <Route path="modifiers" element={<ModifiersAdmin />} />
               <Route path="floor" element={<FloorView />} />
               <Route path="kitchen" element={<KitchenDisplay />} />
+            </Route>
+
+            {/* Hotel — rooms + guest folios. Gated by the opt-in `hotel` module
+                (rooms+restaurant clients only). */}
+            <Route path="hotel" element={<RequireModule module="hotel"><Outlet /></RequireModule>}>
+              <Route path="rooms" element={<RoomsAdmin />} />
+              <Route path="stays" element={<StaysAdmin />} />
             </Route>
 
             <Route path="sales">

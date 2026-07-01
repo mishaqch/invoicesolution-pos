@@ -2110,3 +2110,60 @@ export function useSaveTenantSetup() {
     },
   });
 }
+
+// ============================================================================
+// Hotel — rooms + guest folios (rooms+restaurant clients, gated on `hotel`).
+// ============================================================================
+
+import type { FolioBill, FolioRow, Room } from "@pos/shared/types";
+
+/** Rooms list (optionally by status/branch). Gated by the hotel module. */
+export function useRooms(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("hotel");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["hotel-rooms", params],
+    queryFn: () => api<Page<Room> | Room[]>(`/hotel/rooms/${query ? `?${query}` : ""}`),
+    enabled,
+  });
+}
+
+export function useSaveRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Partial<Room> & { id?: string }) =>
+      api<Room>(`/hotel/rooms/${id ? `${id}/` : ""}`, {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hotel-rooms"] }),
+  });
+}
+
+export function useDeleteRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/hotel/rooms/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hotel-rooms"] }),
+  });
+}
+
+/** Folios list. Pass { status: "open" | "closed" } to filter. */
+export function useFolios(params: Record<string, string> = {}) {
+  const enabled = useModuleEnabled("hotel");
+  const query = new URLSearchParams(params).toString();
+  return useQuery({
+    queryKey: ["hotel-folios", params],
+    queryFn: () => api<Page<FolioRow> | FolioRow[]>(`/hotel/folios/${query ? `?${query}` : ""}`),
+    enabled,
+  });
+}
+
+/** One folio's consolidated bill (guest, room, charges by day, totals). */
+export function useFolio(id: string | null) {
+  return useQuery({
+    queryKey: ["hotel-folio", id],
+    queryFn: () => api<FolioBill>(`/hotel/folios/${id}/`),
+    enabled: !!id,
+  });
+}
