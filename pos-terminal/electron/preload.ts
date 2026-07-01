@@ -254,6 +254,8 @@ const api = {
       ipcRenderer.invoke("printer:print-receipt", payload),
     printKOT: (payload: unknown): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
       ipcRenderer.invoke("printer:print-kot", payload),
+    printFolio: (payload: unknown): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
+      ipcRenderer.invoke("printer:print-folio", payload),
   },
   drawer: {
     open: (): Promise<{ success: boolean; reason?: string }> =>

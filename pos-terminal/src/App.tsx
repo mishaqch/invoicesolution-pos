@@ -15,6 +15,7 @@ import PaymentRoute from "@/routes/payment";
 import ReturnRoute from "@/routes/return";
 import SaleRoute from "@/routes/sale";
 import SplashRoute from "@/routes/splash";
+import StaysRoute from "@/routes/stays";
 import SuccessRoute from "@/routes/success";
 import SyncPendingRoute from "@/routes/sync-pending";
 
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/payment" element={protectedRoute(<PaymentRoute />)} />
         <Route path="/success" element={protectedRoute(<SuccessRoute />)} />
         <Route path="/held-sales" element={protectedRoute(<HeldSalesRoute />)} />
+        <Route path="/stays" element={protectedRoute(<StaysRoute />)} />
         <Route path="/today-invoices" element={protectedRoute(<TodayInvoicesRoute />)} />
         <Route path="/sync" element={protectedRoute(<SyncPendingRoute />)} />
         <Route path="/return" element={protectedRoute(<ReturnRoute />)} />

@@ -292,6 +292,7 @@ def consolidated_bill(folio: GuestFolio) -> dict:
         paid_total += inv.paid_total or Decimal("0")
 
     return {
+        "id": str(folio.id),
         "folio_number": folio.folio_number,
         "status": folio.status,
         "guest": {

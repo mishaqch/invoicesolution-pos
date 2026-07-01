@@ -26,6 +26,8 @@ export interface Tenant {
   vertical: Vertical;
   /** Fiscal connection. "none" → plain non-fiscal receipts (no FBR QR/number). */
   fbr_connection_type?: FbrConnectionType;
+  /** Enabled modules. The `hotel` module surfaces the Stays/Rooms folio flow. */
+  modules_enabled?: string[];
 }
 
 export interface TenantMembership {

@@ -281,6 +281,15 @@ export default function SaleRoute() {
               ? t("sale.syncing", "Syncing…")
               : t("sale.sync", "Sync")}
           </button>
+          {(tenant?.modules_enabled ?? []).includes("hotel") && (
+            <button
+              type="button"
+              onClick={() => navigate("/stays")}
+              className="rounded-md border border-primary bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+            >
+              🛏 {t("stays.title", "Stays / Rooms")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate("/today-invoices")}

@@ -55,7 +55,7 @@ import {
   searchProducts,
   syncCatalog,
 } from "./db/sync";
-import { openCashDrawer, printKOT, printReceipt } from "./printer";
+import { openCashDrawer, printFolioBill, printKOT, printReceipt } from "./printer";
 import { postToCustomerDisplay } from "./customer-display";
 
 export function registerIpcHandlers(opts: { apiBase: string }) {
@@ -245,6 +245,7 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   // Printer + drawer
   ipcMain.handle("printer:print-receipt", async (_e, payload) => printReceipt(payload));
   ipcMain.handle("printer:print-kot", async (_e, payload) => printKOT(payload));
+  ipcMain.handle("printer:print-folio", async (_e, payload) => printFolioBill(payload));
   ipcMain.handle("drawer:open", async () => openCashDrawer());
 
   // Customer-facing display (second monitor). Returns success=false when

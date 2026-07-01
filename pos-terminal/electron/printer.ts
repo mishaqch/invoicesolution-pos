@@ -312,6 +312,145 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   }
 }
 
+// ---------------------------------------------------------------------------
+// Consolidated folio bill (hotel stay) — one bill for the whole stay.
+// ---------------------------------------------------------------------------
+
+interface FolioBillInput {
+  business_name: string;
+  address?: string;
+  contact?: string;
+  ntn?: string;
+  width: 48 | 32;
+  is_fiscal?: boolean;          // resort tenants → false (plain, no FBR block)
+  folio: {
+    folio_number: string;
+    guest: { name: string; cnic: string; phone: string };
+    room: { number: string; type: string } | null;
+    check_in: string | null;
+    check_out: string | null;
+    nights: number;
+    days: { date: string; charges: { kind: string; items: { name: string; quantity: string; line_total: string; note?: string }[]; total: string }[] }[];
+    subtotal: string;
+    tax_total: string;
+    grand_total: string;
+    paid_total: string;
+    balance: string;
+  };
+}
+
+/** Print the consolidated stay bill. Non-fiscal text receipt (no FBR block);
+ *  falls back to disk when no printer is configured so a bill is never lost. */
+export async function printFolioBill(input: FolioBillInput): Promise<PrintResult> {
+  const printerUrl = resolvePrinterInterface();
+  const text = renderFolioText(input);
+  const fileKey = `folio-${input.folio.folio_number}`;
+  if (!printerUrl) {
+    const fallback = writeFallback(fileKey, text);
+    return { success: false, reason: "no printer configured", fallbackPath: fallback };
+  }
+  const timeout = printerUrl.startsWith("cups://") ? 30_000 : TIMEOUT_MS;
+  try {
+    return await withTimeout(realPrintFolio(text, input, printerUrl), timeout, () => {
+      const fallback = writeFallback(fileKey, text);
+      return { success: false, reason: `folio printer timeout (${timeout / 1000}s)`, fallbackPath: fallback };
+    });
+  } catch (e) {
+    const fallback = writeFallback(fileKey, text);
+    return { success: false, reason: `folio print error: ${e instanceof Error ? e.message : String(e)}`, fallbackPath: fallback };
+  }
+}
+
+async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: string): Promise<PrintResult> {
+  let mod: any;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    mod = require("node-thermal-printer");
+  } catch {
+    return { success: false, reason: "printer driver not installed" };
+  }
+  const cupsQueue = printerUrl.startsWith("cups://")
+    ? printerUrl.slice("cups://".length).replace(/\/+$/, "")
+    : null;
+  const ThermalPrinter = mod.printer;
+  const PrinterTypes = mod.types;
+  const printer = new ThermalPrinter({
+    type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
+    interface: cupsQueue ? "tcp://127.0.0.1:1" : printerUrl,
+    characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
+    width: input.width,
+    options: { timeout: TIMEOUT_MS },
+  });
+  if (!cupsQueue) {
+    const ok = await printer.isPrinterConnected();
+    if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
+  }
+  for (const line of text.split("\n")) printer.println(line);
+  printer.cut();
+  if (cupsQueue) return printViaCups(printer.getBuffer(), cupsQueue);
+  try {
+    await printer.execute();
+    return { success: true };
+  } catch (e) {
+    return { success: false, reason: `folio execute failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+function renderFolioText(input: FolioBillInput): string {
+  const W = input.width;
+  const center = (s: string) => (s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s);
+  const rule = "-".repeat(W);
+  const row = (k: string, v: string) => {
+    const pad = Math.max(1, W - k.length - v.length);
+    return k + " ".repeat(pad) + v;
+  };
+  const f = input.folio;
+  const L: string[] = [];
+
+  L.push(center(input.business_name.toUpperCase()));
+  if (input.address) L.push(center(input.address));
+  if (input.contact) L.push(center(input.contact));
+  L.push("");
+  L.push(center("GUEST BILL"));
+  L.push(rule);
+  L.push(row("Folio", f.folio_number));
+  L.push(row("Guest", f.guest.name));
+  L.push(row("CNIC", f.guest.cnic));
+  L.push(row("Phone", f.guest.phone));
+  if (f.room) L.push(row("Room", `${f.room.number} (${f.room.type})`));
+  if (f.check_in) L.push(row("Check-in", new Date(f.check_in).toLocaleString()));
+  if (f.check_out) L.push(row("Check-out", new Date(f.check_out).toLocaleString()));
+  L.push(row("Nights", String(f.nights)));
+  L.push(rule);
+
+  for (const day of f.days) {
+    L.push(day.date);
+    for (const ch of day.charges) {
+      for (const it of ch.items) {
+        const left = `  ${it.quantity} x ${it.name}`.slice(0, W - 10);
+        L.push(row(left, money2(it.line_total)));
+        if (it.note) L.push(`     ** ${it.note} **`);
+      }
+    }
+  }
+  L.push(rule);
+  L.push(row("Subtotal", money2(f.subtotal)));
+  L.push(row("Tax", money2(f.tax_total)));
+  L.push(row("GRAND TOTAL", money2(f.grand_total)));
+  if (Number(f.paid_total) > 0) L.push(row("Paid", money2(f.paid_total)));
+  if (Number(f.balance) !== 0) L.push(row("Balance", money2(f.balance)));
+  L.push(rule);
+
+  // Non-fiscal resort bill: a plain thank-you, no FBR block / pending notice.
+  if (input.is_fiscal === false) {
+    L.push(center("Thank you for staying with us!"));
+  } else {
+    L.push(center("Thank you!"));
+  }
+  L.push("");
+  return L.join("\n");
+}
+
 function renderKotText(input: KotInput): string {
   const W = input.width;
   const center = (s: string) => (s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s);

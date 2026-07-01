@@ -27,6 +27,9 @@ class TenantBriefSerializer(serializers.ModelSerializer):
             # fbr_connection_type="none" → terminal prints plain non-fiscal
             # receipts (no FBR QR/number) and hides FBR-specific UI.
             "fbr_connection_type",
+            # modules_enabled lets the terminal gate optional features — e.g. the
+            # `hotel` module surfaces the Stays/Rooms (guest folio) flow.
+            "modules_enabled",
         )
 
 
