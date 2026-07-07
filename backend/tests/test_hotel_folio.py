@@ -150,3 +150,105 @@ def test_cannot_open_occupied_room():
             cash_session=None, guest_name="B", guest_cnic="2", guest_phone="0",
             room=room, check_in=timezone.now(),
         )
+
+
+def test_void_item_drops_total():
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room,
+        check_in=timezone.make_aware(dt.datetime(2026, 6, 30, 18, 0)),
+        expected_check_out=timezone.make_aware(dt.datetime(2026, 7, 1, 11, 0)),  # 1 night
+    )
+    charge = services.add_charge(
+        folio=folio, terminal=terminal, cashier=cashier, cash_session=None,
+        cart_lines=[{"product": str(biryani.id), "quantity": "2", "unit_price": "500",
+                     "tax_rate": "16", "is_taxable": True, "discount_amount": "0"}],
+        kind="restaurant",
+    )
+    before = services.consolidated_bill(folio)
+    assert before["grand_total"] == "11660.0000"  # room 10500 + food 1160
+    item_id = charge.invoice.items.first().id
+    services.void_item(folio=folio, charge=charge, sale_item_id=item_id, user=cashier)
+    after = services.consolidated_bill(folio)
+    # Food charge now empty -> only the room remains.
+    assert after["grand_total"] == "10500.0000"
+    # The (now-empty) food charge is skipped; only the room day shows.
+    total_charges = sum(len(d["charges"]) for d in after["days"])
+    assert total_charges == 1
+
+
+def test_void_whole_charge():
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+    charge = services.add_charge(
+        folio=folio, terminal=terminal, cashier=cashier, cash_session=None,
+        cart_lines=[{"product": str(biryani.id), "quantity": "1", "unit_price": "500",
+                     "tax_rate": "16", "is_taxable": True, "discount_amount": "0"}],
+        kind="restaurant",
+    )
+    services.void_charge(folio=folio, charge=charge, user=cashier)
+    after = services.consolidated_bill(folio)
+    assert after["grand_total"] == "10500.0000"  # only the room
+
+
+def test_cannot_void_room_charge():
+    from django.core.exceptions import ValidationError
+    from apps.hotel.models import FolioInvoice
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+    )
+    room_charge = FolioInvoice.objects.get(folio=folio, kind="room")
+    with pytest.raises(ValidationError):
+        services.void_charge(folio=folio, charge=room_charge, user=cashier)
+
+
+def test_multi_room_one_guest():
+    """Ali books TWO rooms under one folio; each room auto-charges its nights,
+    and the consolidated bill sums both rooms into one grand total."""
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    # A second room (Deluxe).
+    from apps.catalog.models import Product, Category, UnitOfMeasure
+    uom_night = UnitOfMeasure.objects.get(code="NIGHT")
+    cat = Category.objects.get(tenant=tenant, slug="rooms")
+    dlx_product = Product.objects.create(
+        tenant=tenant, sku="ROOM-DLX", name="Deluxe Room / night",
+        category=cat, uom=uom_night, sale_price=Decimal("6300"),
+        cost_price=Decimal("0"), is_taxable=True,
+    )
+    room2 = Room.objects.create(
+        tenant=tenant, branch=branch, room_number="DLX-1", room_type="Deluxe",
+        nightly_base=Decimal("6300"), nightly_tax=Decimal("1200"),
+        product=dlx_product, status="available",
+    )
+    ci = timezone.make_aware(dt.datetime(2026, 6, 30, 15, 0))
+    co = timezone.make_aware(dt.datetime(2026, 7, 2, 11, 0))  # 2 nights
+
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali Ahmad", guest_cnic="1", guest_phone="0300",
+        rooms=[{"room": room}, {"room": room2}],
+        check_in=ci, expected_check_out=co,
+    )
+    bill = services.consolidated_bill(folio)
+    # VIP 2 nights: (8820+1680)*2 = 21000.  Deluxe 2 nights: (6300+1200)*2 = 15000.
+    assert bill["grand_total"] == "36000.0000"
+    assert len(bill["rooms"]) == 2
+    # Both rooms now occupied.
+    room.refresh_from_db(); room2.refresh_from_db()
+    assert room.status == "occupied" and room2.status == "occupied"
+
+    # Checkout frees BOTH rooms.
+    services.checkout_stay(folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "36000"}])
+    room.refresh_from_db(); room2.refresh_from_db()
+    assert room.status == "available" and room2.status == "available"

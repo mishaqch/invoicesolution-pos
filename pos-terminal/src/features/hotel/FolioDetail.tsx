@@ -13,6 +13,8 @@ import {
   addCharge,
   checkoutFolio,
   getFolio,
+  removeCharge,
+  removeItem,
   type ChargeLine,
   type FolioBill,
 } from "@/features/hotel/api";
@@ -51,6 +53,8 @@ export function FolioDetail({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [busy, setBusy] = useState(false);
   const [payMethod, setPayMethod] = useState<string>("cash");
+  // Which room this batch of charges is tagged to ("" = whole stay / general).
+  const [chargeRoom, setChargeRoom] = useState<string>("");
 
   async function load() {
     setLoading(true);
@@ -99,9 +103,10 @@ export function FolioDetail({
         item_note: l.item_note ?? null,
         modifiers: l.modifiers,
       }));
-      const updated = await addCharge(folioId, lines, "restaurant");
+      const updated = await addCharge(folioId, lines, "restaurant", chargeRoom || null);
       setBill(updated);
       setCart([]);
+      setChargeRoom("");
       setMode("view");
       toast.show({ message: "Charges added to folio.", variant: "success" });
     } catch (e) {
@@ -138,6 +143,28 @@ export function FolioDetail({
     }
   }
 
+  async function voidItem(chargeId: string, itemId: string, name: string) {
+    if (!confirm(`Remove "${name}" from the bill?`)) return;
+    try {
+      setBill(await removeItem(folioId, chargeId, itemId));
+      toast.show({ message: "Item removed.", variant: "info" });
+    } catch (e) {
+      toast.show({ message: errMsg(e), variant: "destructive" });
+    }
+  }
+
+  async function voidCharge(chargeId: string) {
+    if (!confirm("Remove this entire charge entry from the bill?")) return;
+    try {
+      setBill(await removeCharge(folioId, chargeId));
+      toast.show({ message: "Charge removed.", variant: "info" });
+    } catch (e) {
+      toast.show({ message: errMsg(e), variant: "destructive" });
+    }
+  }
+
+  const isOpen = bill?.status === "open";
+
   if (loading || !bill) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>
@@ -152,7 +179,22 @@ export function FolioDetail({
           <button type="button" onClick={() => { setCart([]); setMode("view"); }} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted">
             <ArrowLeft className="h-4 w-4" /> Cancel
           </button>
-          <div className="text-sm font-semibold">Add charges · {bill.guest.name}</div>
+          <div className="flex items-center gap-3">
+            <div className="text-sm font-semibold">Add charges · {bill.guest.name}</div>
+            {bill.rooms.length > 1 && (
+              <select
+                value={chargeRoom}
+                onChange={(e) => setChargeRoom(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                title="Tag this charge to a room"
+              >
+                <option value="">Whole stay (no room)</option>
+                {bill.rooms.map((r) => (
+                  <option key={r.id} value={r.id}>Room {r.number}</option>
+                ))}
+              </select>
+            )}
+          </div>
           <Button size="sm" onClick={saveCharges} disabled={busy || cart.length === 0}>
             {busy ? "Saving…" : `Add ${cart.length} item${cart.length === 1 ? "" : "s"}`}
           </Button>
@@ -209,11 +251,26 @@ export function FolioDetail({
           {/* Guest + stay summary */}
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-4 text-sm sm:grid-cols-3">
             <Info label="Folio" value={bill.folio_number} mono />
-            <Info label="Room" value={`${bill.room?.number ?? "—"} (${bill.room?.type ?? "—"})`} />
+            <Info
+              label={bill.rooms.length > 1 ? "Rooms" : "Room"}
+              value={
+                bill.rooms.length > 0
+                  ? bill.rooms.map((r) => r.number).join(", ")
+                  : `${bill.room?.number ?? "—"} (${bill.room?.type ?? "—"})`
+              }
+            />
             <Info label="Nights" value={String(bill.nights)} />
             <Info label="CNIC" value={bill.guest.cnic} />
             <Info label="Phone" value={bill.guest.phone} />
+            {bill.guest.email && <Info label="Email" value={bill.guest.email} />}
             <Info label="Check-in" value={fmtDate(bill.check_in)} />
+            {bill.check_out && <Info label="Check-out" value={fmtDate(bill.check_out)} />}
+            {bill.guest.address && (
+              <div className="col-span-2 sm:col-span-3">
+                <div className="text-[11px] text-muted-foreground">Address</div>
+                <div className="text-sm">{bill.guest.address}</div>
+              </div>
+            )}
           </div>
 
           {/* Charges grouped by day */}
@@ -221,16 +278,39 @@ export function FolioDetail({
             <div key={day.date} className="mb-3">
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{day.date}</div>
               <div className="rounded-lg border">
-                {day.charges.map((ch, ci) => (
-                  <div key={ci} className="border-b p-3 last:border-0">
-                    <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                      <span className="capitalize">{ch.kind} · {ch.invoice_number}</span>
-                      <span className="font-mono">Rs {rs(ch.total)}</span>
+                {day.charges.map((ch) => (
+                  <div key={ch.charge_id} className="border-b p-3 last:border-0">
+                    <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="capitalize">
+                        {ch.kind}{ch.room_number ? ` · Room ${ch.room_number}` : ""} · {ch.invoice_number}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono">Rs {rs(ch.total)}</span>
+                        {isOpen && ch.can_remove && (
+                          <button
+                            type="button"
+                            onClick={() => voidCharge(ch.charge_id)}
+                            className="rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] font-medium text-destructive hover:bg-destructive/10"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {ch.items.map((it, ii) => (
-                      <div key={ii} className="flex justify-between text-sm">
-                        <span>{it.quantity} × {it.name}{it.note ? ` (${it.note})` : ""}</span>
+                    {ch.items.map((it) => (
+                      <div key={it.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="min-w-0 flex-1">{it.quantity} × {it.name}{it.note ? ` (${it.note})` : ""}</span>
                         <span className="font-mono">Rs {rs(it.line_total)}</span>
+                        {isOpen && ch.can_remove && (
+                          <button
+                            type="button"
+                            onClick={() => voidItem(ch.charge_id, it.id, it.name)}
+                            aria-label={`Remove ${it.name}`}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

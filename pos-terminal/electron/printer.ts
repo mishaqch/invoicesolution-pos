@@ -330,7 +330,8 @@ interface FolioBillInput {
     check_in: string | null;
     check_out: string | null;
     nights: number;
-    days: { date: string; charges: { kind: string; items: { name: string; quantity: string; line_total: string; note?: string }[]; total: string }[] }[];
+    rooms?: { number: string; type: string; nights: number }[];
+    days: { date: string; charges: { kind: string; room_number?: string | null; items: { name: string; quantity: string; line_total: string; note?: string }[]; total: string }[] }[];
     subtotal: string;
     tax_total: string;
     grand_total: string;
@@ -417,7 +418,14 @@ function renderFolioText(input: FolioBillInput): string {
   L.push(row("Guest", f.guest.name));
   L.push(row("CNIC", f.guest.cnic));
   L.push(row("Phone", f.guest.phone));
-  if (f.room) L.push(row("Room", `${f.room.number} (${f.room.type})`));
+  // Rooms: list all booked rooms (multi-room stay), else the single room.
+  if (f.rooms && f.rooms.length > 0) {
+    for (const r of f.rooms) {
+      L.push(row("Room", `${r.number} (${r.type}) x ${r.nights}n`));
+    }
+  } else if (f.room) {
+    L.push(row("Room", `${f.room.number} (${f.room.type})`));
+  }
   if (f.check_in) L.push(row("Check-in", new Date(f.check_in).toLocaleString()));
   if (f.check_out) L.push(row("Check-out", new Date(f.check_out).toLocaleString()));
   L.push(row("Nights", String(f.nights)));
@@ -426,6 +434,7 @@ function renderFolioText(input: FolioBillInput): string {
   for (const day of f.days) {
     L.push(day.date);
     for (const ch of day.charges) {
+      if (ch.room_number) L.push(`  [Room ${ch.room_number}]`);
       for (const it of ch.items) {
         const left = `  ${it.quantity} x ${it.name}`.slice(0, W - 10);
         L.push(row(left, money2(it.line_total)));

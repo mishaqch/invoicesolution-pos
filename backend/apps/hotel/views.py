@@ -115,13 +115,15 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
         ser.is_valid(raise_exception=True)
         v = ser.validated_data
 
-        room = (
-            Room.objects.for_tenant(request.tenant_id)
-            .filter(pk=v["room"], deleted_at__isnull=True)
-            .first()
-        )
-        if room is None:
-            raise NotFound("Room not found.")
+        # Resolve one or many rooms (multi-room booking under one guest).
+        room_ids = v.get("rooms") or ([v["room"]] if v.get("room") else [])
+        found = {
+            str(r.id): r for r in Room.objects.for_tenant(request.tenant_id)
+            .filter(pk__in=room_ids, deleted_at__isnull=True)
+        }
+        rooms = [found[str(rid)] for rid in room_ids if str(rid) in found]
+        if len(rooms) != len(room_ids):
+            raise NotFound("One or more rooms not found.")
 
         branch, terminal, cash_session = _resolve_context(request, v.get("terminal"))
         try:
@@ -134,7 +136,7 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
                 guest_name=v["guest_name"],
                 guest_cnic=v["guest_cnic"],
                 guest_phone=v["guest_phone"],
-                room=room,
+                rooms=[{"room": r} for r in rooms],
                 check_in=v.get("check_in"),
                 expected_check_out=v.get("expected_check_out"),
                 guest_email=v.get("guest_email", ""),
@@ -159,6 +161,11 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
         ser.is_valid(raise_exception=True)
         v = ser.validated_data
         branch, terminal, cash_session = _resolve_context(request, v.get("terminal"))
+        room = None
+        if v.get("room"):
+            room = Room.objects.for_tenant(request.tenant_id).filter(pk=v["room"]).first()
+            if room is None:
+                raise NotFound("Room not found.")
         try:
             services.add_charge(
                 folio=folio,
@@ -168,11 +175,47 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
                 cart_lines=v["cart_lines"],
                 kind=v.get("kind", "restaurant"),
                 charge_date=v.get("charge_date"),
+                room=room,
                 client_uuid=v.get("client_uuid"),
             )
         except DjangoValidationError as e:
             raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
         return Response(services.consolidated_bill(folio), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["delete"], url_path=r"charges/(?P<charge_id>[^/.]+)")
+    def remove_charge(self, request, pk=None, charge_id=None):
+        """Void an entire charge entry on an open folio (audit-kept)."""
+        folio = self._get_folio(request, pk)
+        charge = self._get_charge(folio, charge_id)
+        try:
+            services.void_charge(folio=folio, charge=charge, user=request.user)
+        except DjangoValidationError as e:
+            raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
+        return Response(services.consolidated_bill(folio))
+
+    @action(detail=True, methods=["delete"],
+            url_path=r"charges/(?P<charge_id>[^/.]+)/items/(?P<item_id>[^/.]+)")
+    def remove_item(self, request, pk=None, charge_id=None, item_id=None):
+        """Void one item on a charge (open folio only). Bill total drops."""
+        folio = self._get_folio(request, pk)
+        charge = self._get_charge(folio, charge_id)
+        try:
+            services.void_item(
+                folio=folio, charge=charge, sale_item_id=item_id, user=request.user,
+            )
+        except DjangoValidationError as e:
+            raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
+        return Response(services.consolidated_bill(folio))
+
+    def _get_charge(self, folio, charge_id):
+        from .models import FolioInvoice
+        charge = (
+            FolioInvoice.objects.for_tenant(folio.tenant_id)
+            .filter(pk=charge_id, folio=folio).select_related("invoice").first()
+        )
+        if charge is None:
+            raise NotFound("Charge not found.")
+        return charge
 
     @action(detail=True, methods=["post"])
     def checkout(self, request, pk=None):

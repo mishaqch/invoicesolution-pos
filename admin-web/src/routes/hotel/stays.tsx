@@ -125,7 +125,14 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
               <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-4 text-sm">
                 <Info label="Folio" value={bill.folio_number} mono />
                 <Info label="Status" value={bill.status} />
-                <Info label="Room" value={`${bill.room?.number ?? "—"} (${bill.room?.type ?? "—"})`} />
+                <Info
+                  label={bill.rooms.length > 1 ? "Rooms" : "Room"}
+                  value={
+                    bill.rooms.length > 0
+                      ? bill.rooms.map((r) => r.number).join(", ")
+                      : `${bill.room?.number ?? "—"} (${bill.room?.type ?? "—"})`
+                  }
+                />
                 <Info label="Nights" value={String(bill.nights)} />
                 <Info label="CNIC" value={bill.guest.cnic} />
                 <Info label="Phone" value={bill.guest.phone} />
@@ -140,7 +147,9 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
                     {day.charges.map((ch, ci) => (
                       <div key={ci} className="border-b p-3 last:border-0">
                         <div className="mb-1 flex justify-between text-xs text-muted-foreground">
-                          <span className="capitalize">{ch.kind} · {ch.invoice_number}</span>
+                          <span className="capitalize">
+                            {ch.kind}{ch.room_number ? ` · Room ${ch.room_number}` : ""} · {ch.invoice_number}
+                          </span>
                           <span className="font-mono">Rs {money(ch.total)}</span>
                         </div>
                         {ch.items.map((it, ii) => (

@@ -52,10 +52,10 @@ export function OpenStayForm({
     guest_phone: "",
     guest_email: "",
     guest_address: "",
-    room: "",
     check_in: localNow(),
     expected_check_out: localNow(1),
   });
+  const [roomIds, setRoomIds] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -67,19 +67,22 @@ export function OpenStayForm({
   }, []);
 
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
-  const selectedRoom = rooms.find((r) => r.id === form.room);
+  function toggleRoom(id: string) {
+    setRoomIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  }
+  const selectedRooms = rooms.filter((r) => roomIds.includes(r.id));
   const nights = useMemo(
     () => nightsBetween(form.check_in, form.expected_check_out),
     [form.check_in, form.expected_check_out],
   );
-  const roomTotal = selectedRoom ? Number(selectedRoom.nightly_total) * nights : 0;
+  const roomsTotal = selectedRooms.reduce((acc, r) => acc + Number(r.nightly_total) * nights, 0);
 
   function validate(): boolean {
     const e: Record<string, string> = {};
     if (!form.guest_name.trim()) e.guest_name = "Required";
     if (!form.guest_cnic.trim()) e.guest_cnic = "Required";
     if (!form.guest_phone.trim()) e.guest_phone = "Required";
-    if (!form.room) e.room = "Pick a room";
+    if (roomIds.length === 0) e.room = "Pick at least one room";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -89,7 +92,7 @@ export function OpenStayForm({
     setSaving(true);
     try {
       const bill = await openStay({
-        room: form.room,
+        rooms: roomIds,
         guest_name: form.guest_name.trim(),
         guest_cnic: form.guest_cnic.trim(),
         guest_phone: form.guest_phone.trim(),
@@ -136,15 +139,28 @@ export function OpenStayForm({
             <input className={inp()} value={form.guest_address} onChange={(e) => set("guest_address", e.target.value)} placeholder="City / address" />
           </Field>
 
-          <Field label="Room *" error={errors.room}>
-            <select className={inp(errors.room)} value={form.room} onChange={(e) => set("room", e.target.value)}>
-              <option value="">Select an available room…</option>
-              {rooms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.room_number} · {r.room_type} · Rs {rs(r.nightly_total)}/night
-                </option>
-              ))}
-            </select>
+          <Field label={`Rooms * ${roomIds.length ? `(${roomIds.length} selected)` : ""}`} error={errors.room}>
+            <div className={`max-h-56 overflow-auto rounded-md border p-1 ${errors.room ? "border-destructive" : "border-input"}`}>
+              {rooms.length === 0 ? (
+                <div className="p-3 text-sm text-muted-foreground">No available rooms.</div>
+              ) : (
+                rooms.map((r) => {
+                  const on = roomIds.includes(r.id);
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => toggleRoom(r.id)}
+                      className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm ${on ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                    >
+                      <span>{on ? "✓ " : ""}{r.room_number} · {r.room_type}</span>
+                      <span className="font-mono text-xs">Rs {rs(r.nightly_total)}/night</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">One guest can book multiple rooms — tap to select several.</p>
           </Field>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -156,13 +172,17 @@ export function OpenStayForm({
             </Field>
           </div>
 
-          {selectedRoom && (
+          {selectedRooms.length > 0 && (
             <div className="rounded-lg border bg-muted/40 p-4 text-sm">
-              <div className="flex justify-between"><span>Room</span><span>{selectedRoom.room_number} ({selectedRoom.room_type})</span></div>
-              <div className="flex justify-between"><span>Nights</span><span>{nights}</span></div>
-              <div className="flex justify-between"><span>Per night (incl. tax)</span><span className="font-mono">Rs {rs(selectedRoom.nightly_total)}</span></div>
+              <div className="mb-1 flex justify-between"><span>Nights</span><span>{nights}</span></div>
+              {selectedRooms.map((r) => (
+                <div key={r.id} className="flex justify-between">
+                  <span>{r.room_number} ({r.room_type}) × {nights}</span>
+                  <span className="font-mono">Rs {rs(Number(r.nightly_total) * nights)}</span>
+                </div>
+              ))}
               <div className="mt-2 flex justify-between border-t pt-2 font-semibold">
-                <span>Room charge on open</span><span className="font-mono">Rs {rs(roomTotal)}</span>
+                <span>Room charges on open</span><span className="font-mono">Rs {rs(roomsTotal)}</span>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">Food &amp; other charges are added during the stay; everything settles in one bill at checkout.</p>
             </div>
@@ -170,7 +190,7 @@ export function OpenStayForm({
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onCancel}>Cancel</Button>
-            <Button onClick={submit} disabled={saving}>{saving ? "Opening…" : "Open stay & charge room"}</Button>
+            <Button onClick={submit} disabled={saving}>{saving ? "Opening…" : `Open stay & charge ${roomIds.length > 1 ? `${roomIds.length} rooms` : "room"}`}</Button>
           </div>
         </div>
       </div>

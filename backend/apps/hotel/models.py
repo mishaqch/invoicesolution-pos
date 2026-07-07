@@ -111,7 +111,9 @@ class GuestFolio(TenantScopedModel):
     guest_email = models.EmailField(max_length=254, blank=True)
     guest_address = models.TextField(blank=True)
 
-    # Single room in V1 (model allows multi-room later via a through table).
+    # Primary room (first/main room). A folio can hold SEVERAL rooms under the
+    # same guest via FolioRoom (below) — one guest, many rooms, one bill. This
+    # FK is kept for the primary room + backward compatibility.
     room = models.ForeignKey(
         Room, on_delete=models.PROTECT, blank=True, null=True, related_name="folios",
     )
@@ -180,6 +182,11 @@ class FolioInvoice(TenantScopedModel):
     )
     kind = models.CharField(max_length=15, choices=CHARGE_KINDS, default="restaurant")
     charge_date = models.DateField(default=dt.date.today)
+    # Which room this charge is for (multi-room folios). NULL = general/whole
+    # stay (not tied to a specific room). Room-night charges always set this.
+    room = models.ForeignKey(
+        Room, on_delete=models.SET_NULL, blank=True, null=True, related_name="folio_charges",
+    )
 
     # created_at / updated_at come from TenantScopedModel.
 
@@ -190,3 +197,30 @@ class FolioInvoice(TenantScopedModel):
 
     def __str__(self) -> str:
         return f"{self.folio.folio_number} · {self.kind} · {self.charge_date}"
+
+
+class FolioRoom(TenantScopedModel):
+    """A room booked on a folio. One guest (one folio) can book several rooms,
+    each with its own nights. The room-night charge is auto-posted per room."""
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+
+    folio = models.ForeignKey(
+        GuestFolio, on_delete=models.CASCADE, related_name="rooms_booked",
+    )
+    room = models.ForeignKey(Room, on_delete=models.PROTECT, related_name="folio_rooms")
+    nights = models.PositiveIntegerField(default=1)
+    check_in = models.DateTimeField()
+    expected_check_out = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = "hotel_folio_rooms"
+        indexes = [models.Index(fields=["tenant", "folio"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["folio", "room"], name="uniq_folioroom_folio_room",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.folio.folio_number} · {self.room.room_number}"

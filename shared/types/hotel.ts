@@ -37,6 +37,7 @@ export interface FolioRow {
 
 /** Consolidated bill (folio detail) — every charge grouped by day + totals. */
 export interface FolioBillItem {
+  id: string;
   name: string;
   quantity: string;
   unit_price: string;
@@ -45,12 +46,24 @@ export interface FolioBillItem {
   note: string;
 }
 export interface FolioBillCharge {
+  charge_id: string;
   kind: string;
   invoice_number: string;
+  room_number: string | null;
+  can_remove: boolean;
   items: FolioBillItem[];
   subtotal: string;
   tax: string;
   total: string;
+}
+export interface FolioBillRoom {
+  id: string;
+  number: string;
+  type: string;
+  nights: number;
+  nightly_total: string;
+  check_in: string | null;
+  expected_check_out: string | null;
 }
 export interface FolioBill {
   id: string;
@@ -58,6 +71,7 @@ export interface FolioBill {
   status: FolioStatus;
   guest: { name: string; cnic: string; phone: string; email: string; address: string };
   room: { number: string; type: string; nightly_total: string } | null;
+  rooms: FolioBillRoom[];
   check_in: string | null;
   check_out: string | null;
   expected_check_out: string | null;

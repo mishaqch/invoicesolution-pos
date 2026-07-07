@@ -37,9 +37,17 @@ class FolioListSerializer(serializers.ModelSerializer):
 
 
 class OpenStaySerializer(serializers.Serializer):
-    """Body for POST /api/hotel/folios/ (open a stay)."""
+    """Body for POST /api/hotel/folios/ (open a stay).
 
-    room = serializers.UUIDField()
+    Pass `rooms` (list of room UUIDs) for a multi-room booking under one guest,
+    or the single `room` field for backward compatibility. All rooms share the
+    stay's check-in/out unless a future version sets them per room.
+    """
+
+    room = serializers.UUIDField(required=False)
+    rooms = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=False,
+    )
     guest_name = serializers.CharField(max_length=255)
     guest_cnic = serializers.CharField(max_length=20)
     guest_phone = serializers.CharField(max_length=20)
@@ -51,6 +59,11 @@ class OpenStaySerializer(serializers.Serializer):
     # Optional terminal context (falls back to implicit defaults server-side).
     terminal = serializers.UUIDField(required=False)
 
+    def validate(self, data):
+        if not data.get("room") and not data.get("rooms"):
+            raise serializers.ValidationError("Provide at least one room.")
+        return data
+
 
 class AddChargeSerializer(serializers.Serializer):
     """Body for POST /api/hotel/folios/{id}/charges/."""
@@ -60,6 +73,8 @@ class AddChargeSerializer(serializers.Serializer):
         choices=["restaurant", "misc"], default="restaurant",
     )
     charge_date = serializers.DateField(required=False)
+    # Optionally tag this charge to one of the folio's booked rooms.
+    room = serializers.UUIDField(required=False, allow_null=True)
     client_uuid = serializers.UUIDField(required=False)
     terminal = serializers.UUIDField(required=False)
 

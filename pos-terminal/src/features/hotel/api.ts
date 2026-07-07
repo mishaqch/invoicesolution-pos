@@ -38,6 +38,7 @@ export interface FolioRow {
 }
 
 export interface FolioBillItem {
+  id: string;
   name: string;
   quantity: string;
   unit_price: string;
@@ -46,12 +47,24 @@ export interface FolioBillItem {
   note: string;
 }
 export interface FolioBillCharge {
+  charge_id: string;
   kind: string;
   invoice_number: string;
+  room_number: string | null;
+  can_remove: boolean;
   items: FolioBillItem[];
   subtotal: string;
   tax: string;
   total: string;
+}
+export interface FolioBillRoom {
+  id: string;
+  number: string;
+  type: string;
+  nights: number;
+  nightly_total: string;
+  check_in: string | null;
+  expected_check_out: string | null;
 }
 export interface FolioBill {
   id: string;
@@ -59,6 +72,7 @@ export interface FolioBill {
   status: string;
   guest: { name: string; cnic: string; phone: string; email: string; address: string };
   room: { number: string; type: string; nightly_total: string } | null;
+  rooms: FolioBillRoom[];
   check_in: string | null;
   check_out: string | null;
   expected_check_out: string | null;
@@ -72,7 +86,8 @@ export interface FolioBill {
 }
 
 export interface OpenStayBody {
-  room: string;
+  room?: string;
+  rooms?: string[];
   guest_name: string;
   guest_cnic: string;
   guest_phone: string;
@@ -116,10 +131,10 @@ export function getFolio(id: string) {
   return api<FolioBill>(`/hotel/folios/${id}/`);
 }
 
-export function addCharge(id: string, cart_lines: ChargeLine[], kind = "restaurant", terminal?: string) {
+export function addCharge(id: string, cart_lines: ChargeLine[], kind = "restaurant", room?: string | null) {
   return api<FolioBill>(`/hotel/folios/${id}/charges/`, {
     method: "POST",
-    body: JSON.stringify({ cart_lines, kind, terminal }),
+    body: JSON.stringify({ cart_lines, kind, room: room ?? undefined }),
   });
 }
 
@@ -127,5 +142,19 @@ export function checkoutFolio(id: string, payments: { payment_method: string; am
   return api<FolioBill>(`/hotel/folios/${id}/checkout/`, {
     method: "POST",
     body: JSON.stringify({ payments }),
+  });
+}
+
+/** Void one item on a charge (open folio). Returns the updated bill. */
+export function removeItem(folioId: string, chargeId: string, itemId: string) {
+  return api<FolioBill>(`/hotel/folios/${folioId}/charges/${chargeId}/items/${itemId}/`, {
+    method: "DELETE",
+  });
+}
+
+/** Void a whole charge entry (open folio). Returns the updated bill. */
+export function removeCharge(folioId: string, chargeId: string) {
+  return api<FolioBill>(`/hotel/folios/${folioId}/charges/${chargeId}/`, {
+    method: "DELETE",
   });
 }
