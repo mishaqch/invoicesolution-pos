@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Settings } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -317,6 +317,15 @@ export default function SaleRoute() {
             className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
           >
             {t("day_close.title")}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/hardware")}
+            title={t("hardware.title", "Hardware & settings")}
+            aria-label={t("hardware.title", "Hardware & settings")}
+            className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+          >
+            <Settings className="h-3.5 w-3.5" />
           </button>
           <div className="text-right text-xs leading-tight">
             <div className="font-medium">{user?.full_name}</div>
