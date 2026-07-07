@@ -7,12 +7,12 @@ export const SITE = {
   domain: "invoicesolution.pk",
   tagline: "Run your shop. Stay FBR-compliant. Even offline.",
   appUrl: "https://client.invoicesolution.pk",
-  // Contact — update these to the real business details before launch.
+  // Contact — real business details.
   email: "info@invoicesolution.pk",
-  phoneDisplay: "+92 300 1234567",
-  phoneTel: "+923001234567",
+  phoneDisplay: "0300 5066442",
+  phoneTel: "+923005066442",
   // WhatsApp click-to-chat (international format, no +/spaces).
-  whatsapp: "923001234567",
+  whatsapp: "923005066442",
   city: "Lahore, Pakistan",
 } as const;
 
