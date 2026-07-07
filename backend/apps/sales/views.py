@@ -893,16 +893,35 @@ class CashSessionViewSet(
     @action(detail=False, methods=["post"], url_path="open",
             permission_classes=[HasRolePerm.with_perm("sales.create")])
     def open(self, request):
+        from rest_framework.exceptions import ValidationError as DrfValidationError
+
         body = SessionOpenSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         v = body.validated_data
-        branch = Branch.objects.for_tenant(request.tenant_id).get(pk=v["branch"])
-        terminal = Terminal.objects.for_tenant(request.tenant_id).get(pk=v["terminal"])
-        session = sessions.open_session(
-            tenant_id=request.tenant_id, branch=branch, terminal=terminal,
-            cashier=request.user, opening_amount=v["opening_amount"],
-            request=request,
-        )
+        # A paired terminal sends its own branch/terminal UUIDs. If those
+        # don't resolve for this tenant (stale pairing, wrong tenant), a bare
+        # .get() raises DoesNotExist → a bare 500. Surface a clean 400 instead
+        # so the terminal can show a real message ("re-pair this device").
+        try:
+            branch = Branch.objects.for_tenant(request.tenant_id).get(pk=v["branch"])
+        except Branch.DoesNotExist:
+            raise DrfValidationError({"branch": "Unknown branch for this account. Re-pair the terminal."})
+        try:
+            terminal = Terminal.objects.for_tenant(request.tenant_id).get(pk=v["terminal"])
+        except Terminal.DoesNotExist:
+            raise DrfValidationError({"terminal": "Unknown terminal for this account. Re-pair the terminal."})
+        # open_session raises Django-core ValidationError (e.g. "a session is
+        # already open for this terminal"). DRF does NOT translate that — left
+        # unhandled it becomes a 500. Convert to a clean 400, matching every
+        # other action in this file.
+        try:
+            session = sessions.open_session(
+                tenant_id=request.tenant_id, branch=branch, terminal=terminal,
+                cashier=request.user, opening_amount=v["opening_amount"],
+                request=request,
+            )
+        except DjValidationError as exc:
+            raise DrfValidationError({"detail": _dj_error_message(exc)})
         return Response(self.get_serializer(session).data, status=201)
 
     @action(detail=True, methods=["post"],
