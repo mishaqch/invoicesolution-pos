@@ -10,9 +10,6 @@ import { cn } from "@/lib/utils";
 import { useSessionStore } from "@/stores/session";
 
 import type { AuthResponse } from "@pos/shared/types";
-
-const BRANCH_NAME = import.meta.env.VITE_BRANCH_NAME ?? "—";
-const TERMINAL_NAME = import.meta.env.VITE_TERMINAL_NAME ?? "Terminal";
 // PINs are exactly 6 digits — fixed length, no Enter button, auto-submit
 // on the 6th digit. The backend serializer enforces /^\d{6}$/; the
 // Django admin's "Set PIN" form enforces the same. Keep these three
@@ -60,6 +57,22 @@ export default function LoginRoute() {
   const [shake, setShake] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Show the ACTUAL paired identity (this machine's bound branch + terminal),
+  // NOT a hardcoded default. Prevents another client's name (e.g. a stale
+  // pairing) from ever appearing on this terminal.
+  const [identity, setIdentity] = useState<{ businessName: string; branchName: string; terminalName: string } | null>(null);
+  useEffect(() => {
+    void window.api?.pairing?.status?.().then((s) => {
+      if (s?.paired && s.identity) {
+        setIdentity({
+          businessName: s.identity.tenantName ?? "",
+          branchName: s.identity.branchName ?? "",
+          terminalName: s.identity.terminalName ?? "",
+        });
+      }
+    }).catch(() => {/* not paired yet */});
+  }, []);
 
   useEffect(() => {
     // Auto-submit only when the PIN reaches its fixed length. Anything
@@ -187,8 +200,13 @@ export default function LoginRoute() {
           shake && "animate-shake",
         )}
       >
+        {identity && (
+          <div className="mb-1 text-center text-sm font-semibold text-foreground">
+            {identity.businessName}
+          </div>
+        )}
         <div className="mb-1 text-center text-xs uppercase tracking-wide text-muted-foreground">
-          {BRANCH_NAME} · {TERMINAL_NAME}
+          {identity ? `${identity.branchName} · ${identity.terminalName}` : t("login.not_paired", "Not paired")}
         </div>
         <div className="mb-6 text-center text-lg font-semibold">{t("login.title")}</div>
 

@@ -18,6 +18,7 @@
   },
   "login": {
     "title": "Sign in",
+    "not_paired": "Not paired",
     "email": "Email",
     "pin": "PIN",
     "password": "Password",
