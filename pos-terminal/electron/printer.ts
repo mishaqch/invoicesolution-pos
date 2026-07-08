@@ -337,6 +337,11 @@ interface FolioBillInput {
     grand_total: string;
     paid_total: string;
     balance: string;
+    // Cash settlement (optional): only set when the guest paid cash and gets
+    // change back. Printed on the bill so the change is on the record.
+    payment_method?: string;
+    tendered?: string;
+    change_given?: string;
   };
 }
 
@@ -447,6 +452,13 @@ function renderFolioText(input: FolioBillInput): string {
   L.push(row("Tax", money2(f.tax_total)));
   L.push(row("GRAND TOTAL", money2(f.grand_total)));
   if (Number(f.paid_total) > 0) L.push(row("Paid", money2(f.paid_total)));
+  // Cash tender/change, when the guest paid cash and got change back.
+  if (f.tendered && Number(f.tendered) > 0) {
+    L.push(row("Cash tendered", money2(f.tendered)));
+    if (f.change_given && Number(f.change_given) > 0) {
+      L.push(row("Change", money2(f.change_given)));
+    }
+  }
   if (Number(f.balance) !== 0) L.push(row("Balance", money2(f.balance)));
   L.push(rule);
 

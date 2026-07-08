@@ -6,7 +6,7 @@ import { useToast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "@/features/sale/ProductGrid";
 import { ApiError } from "@/lib/api";
-import { rs } from "@/lib/money";
+import { Money, rs } from "@/lib/money";
 import { useSessionStore } from "@/stores/session";
 
 import {
@@ -53,6 +53,9 @@ export function FolioDetail({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [busy, setBusy] = useState(false);
   const [payMethod, setPayMethod] = useState<string>("cash");
+  // Cash tendered by the guest (typed string, e.g. "5000"). Only meaningful
+  // when payMethod === "cash"; drives the change-due calculation below.
+  const [tendered, setTendered] = useState<string>("");
   // Which room this batch of charges is tagged to ("" = whole stay / general).
   const [chargeRoom, setChargeRoom] = useState<string>("");
 
@@ -123,6 +126,10 @@ export function FolioDetail({
       const settled = await checkoutFolio(folioId, [
         { payment_method: payMethod, amount: bill.grand_total },
       ]);
+      // Cash tender/change to print on the bill (cash only, and only when
+      // there's actual change to hand back).
+      const printChange =
+        isCash && changeMoney !== null && !cashShort && changeMoney.gt(Money.zero());
       // Print the consolidated bill (non-fiscal for resort tenants).
       await window.api.printer
         .printFolio({
@@ -132,7 +139,16 @@ export function FolioDetail({
           contact: tenant?.phone ?? undefined,
           width: 48,
           is_fiscal: tenant?.fbr_connection_type !== "none",
-          folio: settled,
+          folio: {
+            ...settled,
+            payment_method: payMethod,
+            ...(printChange && tenderedMoney
+              ? {
+                  tendered: tenderedMoney.toStorageString(),
+                  change_given: changeMoney!.toStorageString(),
+                }
+              : {}),
+          },
         })
         .catch(() => {/* print failure shouldn't block checkout */});
       onCheckedOut();
@@ -164,6 +180,19 @@ export function FolioDetail({
   }
 
   const isOpen = bill?.status === "open";
+
+  // Cash tendered/change math — paisa-safe via Money (never float). Only the
+  // cash method collects a physical amount and returns change; other methods
+  // are settled for the exact total, so tendered/change don't apply.
+  const isCash = payMethod === "cash";
+  const dueMoney = bill ? Money.fromStr(bill.grand_total) : Money.zero();
+  let tenderedMoney: Money | null = null;
+  if (isCash && tendered.trim() !== "") {
+    try { tenderedMoney = Money.fromStr(tendered); } catch { tenderedMoney = null; }
+  }
+  const changeMoney = tenderedMoney ? tenderedMoney.sub(dueMoney) : null;
+  // Short by cash: a valid tendered amount below the total. Blocks checkout.
+  const cashShort = isCash && tenderedMoney !== null && tenderedMoney.lt(dueMoney);
 
   if (loading || !bill) {
     return (
@@ -338,16 +367,70 @@ export function FolioDetail({
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setPayMethod(m)}
+                    onClick={() => { setPayMethod(m); setTendered(""); }}
                     className={`rounded-md border px-2 py-2 text-xs font-medium capitalize ${payMethod === m ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
                   >
                     {m.replace("_", " ")}
                   </button>
                 ))}
               </div>
+
+              {/* Cash-only: tendered amount + change due. Other methods settle
+                  for the exact total, so no tender/change is shown. */}
+              {isCash && (
+                <div className="mb-3 rounded-md border bg-background p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label htmlFor="tendered" className="text-sm text-muted-foreground">Cash tendered</label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm text-muted-foreground">Rs</span>
+                      <input
+                        id="tendered"
+                        type="text"
+                        inputMode="decimal"
+                        autoFocus
+                        value={tendered}
+                        onChange={(e) => setTendered(e.target.value.replace(/[^\d.]/g, ""))}
+                        placeholder={rs(bill.grand_total)}
+                        className="h-9 w-36 rounded-md border border-input bg-background px-2 text-right font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                    </div>
+                  </div>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setTendered(Money.fromStr(bill.grand_total).display())}
+                      className="rounded border px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      Exact
+                    </button>
+                    {[500, 1000, 5000].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setTendered(String(n))}
+                        className="rounded border px-2 py-1 text-xs hover:bg-muted"
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  {changeMoney !== null && !cashShort && changeMoney.ge(Money.zero()) && (
+                    <div className="flex items-center justify-between border-t pt-2 text-sm">
+                      <span className="font-medium">Change due</span>
+                      <span className="font-mono text-base font-bold text-primary">Rs {rs(changeMoney.toStorageString())}</span>
+                    </div>
+                  )}
+                  {cashShort && (
+                    <div className="border-t pt-2 text-xs font-medium text-destructive">
+                      Tendered is less than the total. Collect at least Rs {rs(bill.grand_total)}.
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
-                <span className="text-sm">Collect <b className="font-mono">Rs {rs(bill.grand_total)}</b> ({payMethod})</span>
-                <Button onClick={doCheckout} disabled={busy}>{busy ? "Processing…" : "Confirm checkout & print bill"}</Button>
+                <span className="text-sm">Collect <b className="font-mono">Rs {rs(bill.grand_total)}</b> ({payMethod.replace("_", " ")})</span>
+                <Button onClick={doCheckout} disabled={busy || cashShort}>{busy ? "Processing…" : "Confirm checkout & print bill"}</Button>
               </div>
             </div>
           )}
