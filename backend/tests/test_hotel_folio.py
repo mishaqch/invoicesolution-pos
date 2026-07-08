@@ -252,3 +252,173 @@ def test_multi_room_one_guest():
         payments=[{"payment_method": "cash", "amount": "36000"}])
     room.refresh_from_db(); room2.refresh_from_db()
     assert room.status == "available" and room2.status == "available"
+
+
+def _second_room(tenant, branch):
+    """A Deluxe room + product for multi-room / add-room tests."""
+    from apps.catalog.models import Category, Product, UnitOfMeasure
+    uom_night = UnitOfMeasure.objects.get(code="NIGHT")
+    cat = Category.objects.get(tenant=tenant, slug="rooms")
+    dlx_product = Product.objects.create(
+        tenant=tenant, sku="ROOM-DLX", name="Deluxe Room / night",
+        category=cat, uom=uom_night, sale_price=Decimal("6300"),
+        cost_price=Decimal("0"), is_taxable=True,
+    )
+    return Room.objects.create(
+        tenant=tenant, branch=branch, room_number="DLX-1", room_type="Deluxe",
+        nightly_base=Decimal("6300"), nightly_tax=Decimal("1200"),
+        product=dlx_product, status="available",
+    )
+
+
+# --- Edit / update stay -----------------------------------------------------
+
+def test_update_stay_edits_guest_details():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali Khan", guest_cnic="1", guest_phone="0300",
+        room=room,
+    )
+    services.update_stay(
+        folio=folio,
+        fields={"guest_name": "Ali Ahmad Khan", "guest_phone": "03005066442",
+                "guest_email": "ali@example.com"},
+        user=cashier,
+    )
+    folio.refresh_from_db()
+    assert folio.guest_name == "Ali Ahmad Khan"
+    assert folio.guest_phone == "03005066442"
+    assert folio.guest_email == "ali@example.com"
+
+
+def test_update_stay_dates_reprices_room_nights():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    ci = timezone.make_aware(dt.datetime(2026, 6, 30, 15, 0))
+    co1 = timezone.make_aware(dt.datetime(2026, 7, 2, 11, 0))   # 2 nights
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room, check_in=ci, expected_check_out=co1,
+    )
+    assert services.consolidated_bill(folio)["grand_total"] == "21000.0000"  # 10500*2
+
+    co2 = timezone.make_aware(dt.datetime(2026, 7, 4, 11, 0))   # 4 nights
+    services.update_stay(
+        folio=folio, fields={}, check_in=ci, expected_check_out=co2,
+        terminal=terminal, cashier=cashier, cash_session=None, user=cashier,
+    )
+    folio.refresh_from_db()
+    assert folio.nights == 4
+    # Room re-priced to 4 nights: 10500 * 4 = 42000.
+    assert services.consolidated_bill(folio)["grand_total"] == "42000.0000"
+
+
+def test_cannot_update_closed_stay():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room,
+    )
+    services.checkout_stay(folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}])
+    from django.core.exceptions import ValidationError
+    with pytest.raises(ValidationError):
+        services.update_stay(folio=folio, fields={"guest_name": "X"}, user=cashier)
+
+
+# --- Add / remove room ------------------------------------------------------
+
+def test_add_room_to_stay():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    room2 = _second_room(tenant, branch)
+    ci = timezone.make_aware(dt.datetime(2026, 6, 30, 15, 0))
+    co = timezone.make_aware(dt.datetime(2026, 7, 2, 11, 0))  # 2 nights
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room, check_in=ci, expected_check_out=co,
+    )
+    assert services.consolidated_bill(folio)["grand_total"] == "21000.0000"  # VIP 2n
+
+    services.add_room_to_stay(
+        folio=folio, room=room2, terminal=terminal, cashier=cashier,
+        cash_session=None, user=cashier,
+    )
+    room2.refresh_from_db()
+    assert room2.status == "occupied"
+    # + Deluxe 2 nights (7500*2 = 15000) → 36000.
+    assert services.consolidated_bill(folio)["grand_total"] == "36000.0000"
+
+
+def test_remove_room_from_stay_frees_room_and_drops_total():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    room2 = _second_room(tenant, branch)
+    ci = timezone.make_aware(dt.datetime(2026, 6, 30, 15, 0))
+    co = timezone.make_aware(dt.datetime(2026, 7, 2, 11, 0))  # 2 nights
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        rooms=[{"room": room}, {"room": room2}], check_in=ci, expected_check_out=co,
+    )
+    assert services.consolidated_bill(folio)["grand_total"] == "36000.0000"
+
+    services.remove_room_from_stay(folio=folio, room=room2, user=cashier)
+    room2.refresh_from_db()
+    assert room2.status == "available"
+    # Deluxe removed → back to VIP-only 21000.
+    assert services.consolidated_bill(folio)["grand_total"] == "21000.0000"
+
+
+def test_cannot_remove_last_room():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room,
+    )
+    from django.core.exceptions import ValidationError
+    with pytest.raises(ValidationError):
+        services.remove_room_from_stay(folio=folio, room=room, user=cashier)
+
+
+# --- Cancel stay ------------------------------------------------------------
+
+def test_cancel_stay_voids_charges_and_frees_rooms():
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room,
+    )
+    # A food charge too, to prove everything gets voided.
+    services.add_charge(
+        folio=folio, terminal=terminal, cashier=cashier, cash_session=None,
+        cart_lines=[{"product": str(biryani.id), "quantity": "2",
+                     "unit_price": "500", "tax_rate": "16", "is_taxable": True,
+                     "discount_amount": "0"}],
+        kind="restaurant",
+    )
+    services.cancel_stay(folio=folio, reason="Customer changed mind", user=cashier)
+    folio.refresh_from_db()
+    room.refresh_from_db()
+    assert folio.status == "cancelled"
+    assert room.status == "available"
+    # Bill collapses to zero — every charge voided.
+    bill = services.consolidated_bill(folio)
+    assert bill["grand_total"] == "0.0000"
+
+
+def test_cannot_cancel_checked_out_stay():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="1", guest_phone="0300",
+        room=room,
+    )
+    services.checkout_stay(folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}])
+    from django.core.exceptions import ValidationError
+    with pytest.raises(ValidationError):
+        services.cancel_stay(folio=folio, user=cashier)

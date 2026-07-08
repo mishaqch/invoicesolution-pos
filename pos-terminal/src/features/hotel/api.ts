@@ -158,3 +158,50 @@ export function removeCharge(folioId: string, chargeId: string) {
     method: "DELETE",
   });
 }
+
+export interface UpdateStayBody {
+  guest_name?: string;
+  guest_cnic?: string;
+  guest_phone?: string;
+  guest_email?: string;
+  guest_address?: string;
+  notes?: string;
+  check_in?: string;
+  expected_check_out?: string | null;
+  terminal?: string;
+}
+
+/** Edit an open stay's guest details and/or dates. Returns the updated bill. */
+export function updateStay(id: string, body: UpdateStayBody) {
+  return api<FolioBill>(`/hotel/folios/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Add another room to an open stay (same guest). Returns the updated bill. */
+export function addRoom(
+  id: string,
+  room: string,
+  opts: { check_in?: string; expected_check_out?: string | null } = {},
+) {
+  return api<FolioBill>(`/hotel/folios/${id}/rooms/`, {
+    method: "POST",
+    body: JSON.stringify({ room, ...opts }),
+  });
+}
+
+/** Remove a room from an open multi-room stay (manager/owner). Updated bill. */
+export function removeRoom(folioId: string, roomId: string) {
+  return api<FolioBill>(`/hotel/folios/${folioId}/rooms/${roomId}/`, {
+    method: "DELETE",
+  });
+}
+
+/** Cancel a whole open stay (manager/owner). Voids charges, frees rooms. */
+export function cancelStay(id: string, reason = "") {
+  return api<FolioBill>(`/hotel/folios/${id}/cancel/`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}

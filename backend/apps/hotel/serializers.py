@@ -84,3 +84,36 @@ class CheckoutSerializer(serializers.Serializer):
 
     payments = serializers.ListField(child=serializers.DictField(), default=list)
     check_out = serializers.DateTimeField(required=False)
+
+
+class UpdateStaySerializer(serializers.Serializer):
+    """Body for PATCH /api/hotel/folios/{id}/ — edit an open stay.
+
+    All fields optional; only provided ones change. Editing check_in/
+    expected_check_out recomputes the room-night charges server-side.
+    """
+
+    guest_name = serializers.CharField(max_length=255, required=False)
+    guest_cnic = serializers.CharField(max_length=20, required=False)
+    guest_phone = serializers.CharField(max_length=20, required=False)
+    guest_email = serializers.EmailField(required=False, allow_blank=True)
+    guest_address = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    check_in = serializers.DateTimeField(required=False)
+    expected_check_out = serializers.DateTimeField(required=False, allow_null=True)
+    terminal = serializers.UUIDField(required=False)
+
+
+class AddRoomSerializer(serializers.Serializer):
+    """Body for POST /api/hotel/folios/{id}/rooms/ — add a room to a stay."""
+
+    room = serializers.UUIDField()
+    check_in = serializers.DateTimeField(required=False)
+    expected_check_out = serializers.DateTimeField(required=False, allow_null=True)
+    terminal = serializers.UUIDField(required=False)
+
+
+class CancelStaySerializer(serializers.Serializer):
+    """Body for POST /api/hotel/folios/{id}/cancel/."""
+
+    reason = serializers.CharField(required=False, allow_blank=True, default="")

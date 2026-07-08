@@ -310,6 +310,294 @@ def void_charge(*, folio: GuestFolio, charge, user=None) -> None:
     charge.delete()
 
 
+# ---------------------------------------------------------------------------
+# Edit / update a stay
+# ---------------------------------------------------------------------------
+
+# Guest fields a cashier may edit on an open stay (typo fixes etc.).
+_EDITABLE_GUEST_FIELDS = {
+    "guest_name": "guest_name",
+    "guest_cnic": "guest_cnic",
+    "guest_phone": "guest_phone",
+    "guest_email": "guest_email",
+    "guest_address": "guest_address",
+    "notes": "notes",
+}
+
+
+@transaction.atomic
+def update_stay(
+    *,
+    folio: GuestFolio,
+    fields: dict,
+    check_in: dt.datetime | None = None,
+    expected_check_out: dt.datetime | None = None,
+    terminal: Terminal | None = None,
+    cashier=None,
+    cash_session=None,
+    user=None,
+) -> GuestFolio:
+    """Edit an OPEN stay's guest details and/or dates.
+
+    Guest details are updated in place. If dates change, every booked room's
+    nights are recomputed and its room charge is re-posted at the new nights
+    (old room charge voided, audit-kept) so the bill stays correct.
+    """
+    # Reload under lock FIRST, then check status — the caller may hold a stale
+    # in-memory copy whose status predates a checkout/cancel.
+    folio = GuestFolio.objects.select_for_update().get(pk=folio.pk)
+    if folio.status != "open":
+        raise ValidationError({"folio": "Can only edit an open stay."})
+
+    before = {}
+    changed_fields = []
+    for key, model_field in _EDITABLE_GUEST_FIELDS.items():
+        if key in fields and fields[key] is not None:
+            new_val = fields[key]
+            old_val = getattr(folio, model_field)
+            if old_val != new_val:
+                before[model_field] = old_val
+                setattr(folio, model_field, new_val)
+                changed_fields.append(model_field)
+    if changed_fields:
+        folio.save(update_fields=[*changed_fields, "updated_at"])
+
+    dates_changed = check_in is not None or expected_check_out is not None
+    if dates_changed:
+        # Re-posting the room charge needs a terminal (for invoice numbering).
+        # The cash session may be None — the room charge is held/unpaid until
+        # checkout, same as on open_stay.
+        if terminal is None:
+            raise ValidationError(
+                {"dates": "Editing dates needs an active till (terminal)."}
+            )
+        new_ci = check_in or folio.check_in or timezone.now()
+        new_co = expected_check_out if expected_check_out is not None else folio.expected_check_out
+        _reprice_room_nights(
+            folio=folio, check_in=new_ci, expected_check_out=new_co,
+            terminal=terminal, cashier=cashier or user, cash_session=cash_session,
+        )
+        folio.check_in = new_ci
+        folio.expected_check_out = new_co
+        folio.nights = compute_nights(new_ci, new_co)
+        folio.save(update_fields=["check_in", "expected_check_out", "nights", "updated_at"])
+
+    from apps.audit.services import log as audit_log
+    audit_log(
+        tenant_id=folio.tenant_id, user=user,
+        entity_type="guest_folio", entity_id=folio.id, action="update",
+        before=before or None,
+        after={"folio": folio.folio_number, "dates_changed": dates_changed},
+    )
+    return folio
+
+
+def _reprice_room_nights(*, folio, check_in, expected_check_out, terminal, cashier, cash_session):
+    """Recompute nights for each booked room and re-post its room charge.
+
+    The old room-night charge for each room is voided (items cancelled, invoice
+    soft-cancelled, kept for audit) and a fresh one posted at the new nights.
+    """
+    from .models import FolioRoom
+
+    booked = list(folio.rooms_booked.select_related("room").all())
+    if not booked:
+        # Legacy single-room folio with no FolioRoom rows.
+        if folio.room_id:
+            booked = [_LegacyBooked(folio.room)]
+        else:
+            return
+
+    now = timezone.now()
+    for fr in booked:
+        room = fr.room
+        new_nights = compute_nights(check_in, expected_check_out)
+        # Void the existing room charge for THIS room (if any).
+        old = (
+            FolioInvoice.objects.for_tenant(folio.tenant_id)
+            .filter(folio=folio, kind="room", room=room)
+            .select_related("invoice").first()
+        )
+        if old is not None:
+            inv = old.invoice
+            for it in inv.items.all():
+                if not it.is_cancelled:
+                    it.is_cancelled = True
+                    it.cancelled_at = now
+                    it.save(update_fields=["is_cancelled", "cancelled_at"])
+            _recompute_invoice_totals(inv)
+            inv.status = "cancelled"
+            inv.save(update_fields=["status", "updated_at"])
+            old.delete()
+        # Re-post at the new nights.
+        _post_room_charge(
+            folio=folio, room=room, nights=new_nights, terminal=terminal,
+            cashier=cashier, cash_session=cash_session,
+        )
+        # Keep the FolioRoom night count in step (real rows only).
+        if isinstance(fr, _LegacyBooked):
+            continue
+        fr.nights = new_nights
+        fr.check_in = check_in
+        fr.expected_check_out = expected_check_out
+        fr.save(update_fields=["nights", "check_in", "expected_check_out"])
+
+
+class _LegacyBooked:
+    """Shim so _reprice_room_nights can treat a legacy single-room folio (no
+    FolioRoom rows) the same as a multi-room one."""
+    def __init__(self, room):
+        self.room = room
+
+
+@transaction.atomic
+def add_room_to_stay(
+    *, folio: GuestFolio, room: Room, terminal: Terminal, cashier, cash_session,
+    check_in: dt.datetime | None = None, expected_check_out: dt.datetime | None = None,
+    user=None,
+) -> GuestFolio:
+    """Add another room to an OPEN stay (same guest). Posts its room charge."""
+    folio = GuestFolio.objects.select_for_update().get(pk=folio.pk)
+    if folio.status != "open":
+        raise ValidationError({"folio": "Can only edit an open stay."})
+    if room.status == "occupied":
+        raise ValidationError({"room": f"Room {room.room_number} is already occupied."})
+    if room.product_id is None:
+        raise ValidationError({"room": f"Room {room.room_number} has no linked product."})
+    if folio.rooms_booked.filter(room=room).exists():
+        raise ValidationError({"room": f"Room {room.room_number} is already on this stay."})
+
+    ci = check_in or folio.check_in or timezone.now()
+    co = expected_check_out if expected_check_out is not None else folio.expected_check_out
+    nights = compute_nights(ci, co)
+
+    from .models import FolioRoom
+    FolioRoom.objects.create(
+        tenant_id=folio.tenant_id, folio=folio, room=room, nights=nights,
+        check_in=ci, expected_check_out=co,
+    )
+    room.status = "occupied"
+    room.save(update_fields=["status", "updated_at"])
+    _post_room_charge(
+        folio=folio, room=room, nights=nights, terminal=terminal,
+        cashier=cashier, cash_session=cash_session,
+    )
+
+    from apps.audit.services import log as audit_log
+    audit_log(
+        tenant_id=folio.tenant_id, user=user,
+        entity_type="guest_folio", entity_id=folio.id, action="update",
+        after={"folio": folio.folio_number, "added_room": room.room_number},
+    )
+    return folio
+
+
+@transaction.atomic
+def remove_room_from_stay(*, folio: GuestFolio, room: Room, user=None) -> GuestFolio:
+    """Remove a room from an OPEN multi-room stay: void its room charge, free the
+    room. Refuses to remove the last room (cancel the whole stay instead)."""
+    folio = GuestFolio.objects.select_for_update().get(pk=folio.pk)
+    if folio.status != "open":
+        raise ValidationError({"folio": "Can only edit an open stay."})
+
+    booked = list(folio.rooms_booked.select_related("room").all())
+    if not any(fr.room_id == room.id for fr in booked):
+        raise ValidationError({"room": "That room is not on this stay."})
+    if len(booked) <= 1:
+        raise ValidationError(
+            {"room": "This is the only room — cancel the whole stay instead."}
+        )
+
+    now = timezone.now()
+    # Void every charge tagged to this room (room-night AND any food tagged to it).
+    tagged = (
+        FolioInvoice.objects.for_tenant(folio.tenant_id)
+        .filter(folio=folio, room=room).select_related("invoice")
+    )
+    for ch in tagged:
+        inv = ch.invoice
+        for it in inv.items.all():
+            if not it.is_cancelled:
+                it.is_cancelled = True
+                it.cancelled_at = now
+                it.save(update_fields=["is_cancelled", "cancelled_at"])
+        _recompute_invoice_totals(inv)
+        inv.status = "cancelled"
+        inv.save(update_fields=["status", "updated_at"])
+        ch.delete()
+
+    folio.rooms_booked.filter(room=room).delete()
+    room.status = "available"
+    room.save(update_fields=["status", "updated_at"])
+
+    # If we removed the primary room, repoint folio.room to a remaining one.
+    if folio.room_id == room.id:
+        remaining = folio.rooms_booked.select_related("room").first()
+        folio.room = remaining.room if remaining else None
+        folio.save(update_fields=["room", "updated_at"])
+
+    from apps.audit.services import log as audit_log
+    audit_log(
+        tenant_id=folio.tenant_id, user=user,
+        entity_type="guest_folio", entity_id=folio.id, action="update",
+        after={"folio": folio.folio_number, "removed_room": room.room_number},
+    )
+    return folio
+
+
+@transaction.atomic
+def cancel_stay(*, folio: GuestFolio, reason: str = "", user=None) -> GuestFolio:
+    """Cancel an OPEN stay (customer changed their mind, etc.).
+
+    Audit-don't-delete: void every charge (items cancelled, invoices
+    soft-cancelled — all kept for the six-year record), free every booked room,
+    and mark the folio cancelled. Refuses once the stay is checked out.
+    """
+    folio = GuestFolio.objects.select_for_update().get(pk=folio.pk)
+    if folio.status != "open":
+        raise ValidationError({"folio": f"Stay is already {folio.status} — cannot cancel."})
+
+    now = timezone.now()
+
+    # Void ALL charges (including the room charge) — kept for audit.
+    for ch in folio.charges.select_related("invoice").all():
+        inv = ch.invoice
+        for it in inv.items.all():
+            if not it.is_cancelled:
+                it.is_cancelled = True
+                it.cancelled_at = now
+                it.save(update_fields=["is_cancelled", "cancelled_at"])
+        _recompute_invoice_totals(inv)
+        inv.is_held = False
+        inv.held_label = None
+        inv.status = "cancelled"
+        inv.save(update_fields=["is_held", "held_label", "status", "updated_at"])
+
+    # Free every booked room (multi-room), then the legacy single room.
+    booked = list(folio.rooms_booked.select_related("room").all())
+    if booked:
+        for fr in booked:
+            fr.room.status = "available"
+            fr.room.save(update_fields=["status", "updated_at"])
+    elif folio.room:
+        folio.room.status = "available"
+        folio.room.save(update_fields=["status", "updated_at"])
+
+    folio.status = "cancelled"
+    folio.closed_at = now
+    if reason:
+        folio.notes = (folio.notes + "\n" if folio.notes else "") + f"Cancelled: {reason}"
+    folio.save(update_fields=["status", "closed_at", "notes", "updated_at"])
+
+    from apps.audit.services import log as audit_log
+    audit_log(
+        tenant_id=folio.tenant_id, user=user,
+        entity_type="guest_folio", entity_id=folio.id, action="cancel",
+        after={"folio": folio.folio_number, "reason": reason or "stay_cancelled"},
+    )
+    return folio
+
+
 @transaction.atomic
 def checkout_stay(
     *,
@@ -472,9 +760,11 @@ def consolidated_bill(folio: GuestFolio) -> dict:
         ),
         "nights": folio.nights,
         "days": [{"date": d, "charges": c} for d, c in sorted(days.items())],
-        "subtotal": str(subtotal),
-        "tax_total": str(tax_total),
-        "grand_total": str(grand_total),
-        "paid_total": str(paid_total),
-        "balance": str(grand_total - paid_total),
+        # Quantize to 4dp so a fully-voided/zero bill reads "0.0000", not "0"
+        # — consistent with every non-zero total (the money wire format).
+        "subtotal": str(subtotal.quantize(Decimal("0.0001"))),
+        "tax_total": str(tax_total.quantize(Decimal("0.0001"))),
+        "grand_total": str(grand_total.quantize(Decimal("0.0001"))),
+        "paid_total": str(paid_total.quantize(Decimal("0.0001"))),
+        "balance": str((grand_total - paid_total).quantize(Decimal("0.0001"))),
     }

@@ -1,5 +1,5 @@
 /** A folio's running tab — view charges, add today's charges, checkout. */
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, BedDouble, Pencil, Plus, Trash2, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useToast } from "@/components/feedback/Toast";
@@ -11,12 +11,19 @@ import { useSessionStore } from "@/stores/session";
 
 import {
   addCharge,
+  addRoom,
+  cancelStay,
   checkoutFolio,
   getFolio,
+  listRooms,
   removeCharge,
   removeItem,
+  removeRoom,
+  updateStay,
   type ChargeLine,
   type FolioBill,
+  type Room,
+  type UpdateStayBody,
 } from "@/features/hotel/api";
 import type { CartLine } from "@/stores/sale";
 
@@ -45,9 +52,17 @@ export function FolioDetail({
 }) {
   const toast = useToast();
   const tenant = useSessionStore((s) => s.tenant);
+  const role = useSessionStore((s) => s.role);
+  // Cancelling a stay / removing a room is manager/owner-only (matches the
+  // server-side permission gate). Editing guest details is open to cashiers.
+  const canCancel = role === "owner" || role === "manager";
   const [bill, setBill] = useState<FolioBill | null>(null);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<"view" | "add" | "checkout">("view");
+  const [mode, setMode] = useState<"view" | "add" | "checkout" | "edit">("view");
+  // Edit-stay form + add-room state.
+  const [editForm, setEditForm] = useState<UpdateStayBody>({});
+  const [availRooms, setAvailRooms] = useState<Room[]>([]);
+  const [addRoomId, setAddRoomId] = useState<string>("");
 
   // Local add-charge cart (kept separate from the main till's sale store).
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -151,6 +166,103 @@ export function FolioDetail({
           },
         })
         .catch(() => {/* print failure shouldn't block checkout */});
+      onCheckedOut();
+    } catch (e) {
+      toast.show({ message: errMsg(e), variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Open the edit form pre-filled from the current bill.
+  function startEdit() {
+    if (!bill) return;
+    setEditForm({
+      guest_name: bill.guest.name,
+      guest_cnic: bill.guest.cnic,
+      guest_phone: bill.guest.phone,
+      guest_email: bill.guest.email || "",
+      guest_address: bill.guest.address || "",
+      // datetime-local wants "YYYY-MM-DDTHH:mm".
+      check_in: bill.check_in ? toLocalInput(bill.check_in) : undefined,
+      expected_check_out: bill.expected_check_out ? toLocalInput(bill.expected_check_out) : undefined,
+    });
+    setMode("edit");
+  }
+
+  async function saveEdit() {
+    if (!bill) return;
+    setBusy(true);
+    try {
+      // Convert the datetime-local strings back to ISO for the API.
+      const body: UpdateStayBody = { ...editForm };
+      if (body.check_in) body.check_in = new Date(body.check_in).toISOString();
+      if (body.expected_check_out)
+        body.expected_check_out = new Date(body.expected_check_out).toISOString();
+      const updated = await updateStay(bill.id, body);
+      setBill(updated);
+      setMode("view");
+      toast.show({ message: "Stay updated.", variant: "success" });
+    } catch (e) {
+      toast.show({ message: errMsg(e), variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Load available rooms when the edit form opens (for the "add room" picker).
+  useEffect(() => {
+    if (mode !== "edit") return;
+    void listRooms({ status: "available" })
+      .then((r) => setAvailRooms(r))
+      .catch(() => setAvailRooms([]));
+  }, [mode]);
+
+  async function doAddRoom() {
+    if (!bill || !addRoomId) return;
+    setBusy(true);
+    try {
+      const updated = await addRoom(bill.id, addRoomId);
+      setBill(updated);
+      setAddRoomId("");
+      // Refresh the available list (the added room is now occupied).
+      void listRooms({ status: "available" }).then((r) => setAvailRooms(r)).catch(() => {});
+      toast.show({ message: "Room added to the stay.", variant: "success" });
+    } catch (e) {
+      toast.show({ message: errMsg(e), variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doRemoveRoom(roomId: string, number: string) {
+    if (!bill) return;
+    if (!confirm(`Remove Room ${number} from this stay? Its charges will be voided and the room freed.`)) return;
+    setBusy(true);
+    try {
+      const updated = await removeRoom(bill.id, roomId);
+      setBill(updated);
+      toast.show({ message: `Room ${number} removed.`, variant: "info" });
+    } catch (e) {
+      toast.show({ message: errMsg(e), variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doCancelStay() {
+    if (!bill) return;
+    const reason = prompt(
+      `Cancel the WHOLE stay for ${bill.guest.name}? This voids every charge and frees all rooms.\n\nOptional reason:`,
+    );
+    if (reason === null) return; // user hit Cancel on the prompt
+    setBusy(true);
+    try {
+      const updated = await cancelStay(bill.id, reason || "");
+      setBill(updated);
+      setMode("view");
+      toast.show({ message: "Stay cancelled. Rooms freed.", variant: "info" });
+      // Bounce back to the stays list — this folio is no longer open.
       onCheckedOut();
     } catch (e) {
       toast.show({ message: errMsg(e), variant: "destructive" });
@@ -270,8 +382,26 @@ export function FolioDetail({
         </button>
         <div className="text-sm font-semibold">{bill.guest.name} · {bill.room?.number ?? "—"}</div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => setMode("add")}><Plus className="mr-1 h-4 w-4" /> Add charges</Button>
-          <Button size="sm" onClick={() => setMode("checkout")}>Checkout</Button>
+          {isOpen && (
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              <Pencil className="mr-1 h-4 w-4" /> Edit stay
+            </Button>
+          )}
+          {isOpen && (
+            <Button size="sm" variant="outline" onClick={() => setMode("add")}><Plus className="mr-1 h-4 w-4" /> Add charges</Button>
+          )}
+          {isOpen && canCancel && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={doCancelStay}
+              disabled={busy}
+              className="border-destructive/40 text-destructive hover:bg-destructive/10"
+            >
+              <XCircle className="mr-1 h-4 w-4" /> Cancel stay
+            </Button>
+          )}
+          {isOpen && <Button size="sm" onClick={() => setMode("checkout")}>Checkout</Button>}
         </div>
       </header>
 
@@ -301,6 +431,85 @@ export function FolioDetail({
               </div>
             )}
           </div>
+
+          {/* --- EDIT STAY panel --- */}
+          {mode === "edit" && isOpen && (
+            <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-semibold">Edit stay</div>
+                <button type="button" onClick={() => setMode("view")} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field label="Guest name">
+                  <input className={inputCls} value={editForm.guest_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_name: e.target.value }))} />
+                </Field>
+                <Field label="CNIC">
+                  <input className={inputCls} value={editForm.guest_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_cnic: e.target.value }))} />
+                </Field>
+                <Field label="Phone">
+                  <input className={inputCls} value={editForm.guest_phone ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_phone: e.target.value }))} />
+                </Field>
+                <Field label="Email">
+                  <input className={inputCls} value={editForm.guest_email ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_email: e.target.value }))} />
+                </Field>
+                <Field label="Address" full>
+                  <input className={inputCls} value={editForm.guest_address ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_address: e.target.value }))} />
+                </Field>
+                <Field label="Check-in">
+                  <input type="datetime-local" className={inputCls} value={editForm.check_in ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, check_in: e.target.value }))} />
+                </Field>
+                <Field label="Expected check-out">
+                  <input type="datetime-local" className={inputCls} value={editForm.expected_check_out ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, expected_check_out: e.target.value }))} />
+                </Field>
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">Changing dates re-prices each room's nights.</p>
+
+              <div className="mt-3 flex justify-end">
+                <Button size="sm" onClick={saveEdit} disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>
+              </div>
+
+              {/* Rooms on this stay — add / remove */}
+              <div className="mt-4 border-t pt-3">
+                <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <BedDouble className="h-3.5 w-3.5" /> Rooms on this stay
+                </div>
+                <div className="space-y-1">
+                  {bill.rooms.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between rounded border px-2 py-1 text-sm">
+                      <span>Room {r.number} <span className="text-muted-foreground">({r.type}) · {r.nights}n</span></span>
+                      {canCancel && bill.rooms.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => doRemoveRoom(r.id, r.number)}
+                          disabled={busy}
+                          className="rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] font-medium text-destructive hover:bg-destructive/10"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-2 flex items-center gap-2">
+                  <select
+                    value={addRoomId}
+                    onChange={(e) => setAddRoomId(e.target.value)}
+                    className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                  >
+                    <option value="">Add a room…</option>
+                    {availRooms.map((r) => (
+                      <option key={r.id} value={r.id}>Room {r.room_number} ({r.room_type}) — Rs {rs(r.nightly_total)}/night</option>
+                    ))}
+                  </select>
+                  <Button size="sm" variant="outline" onClick={doAddRoom} disabled={busy || !addRoomId}>
+                    <Plus className="mr-1 h-4 w-4" /> Add
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Charges grouped by day */}
           {bill.days.map((day) => (
@@ -440,6 +649,18 @@ export function FolioDetail({
   );
 }
 
+const inputCls =
+  "h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
+  return (
+    <div className={full ? "sm:col-span-2" : ""}>
+      <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
+      {children}
+    </div>
+  );
+}
+
 function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
@@ -460,4 +681,11 @@ function fmtDate(s: string | null): string {
   if (!s) return "—";
   const d = new Date(s);
   return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** ISO string → "YYYY-MM-DDTHH:mm" for a datetime-local input (local time). */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

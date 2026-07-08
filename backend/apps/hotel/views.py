@@ -15,11 +15,19 @@ from . import services
 from .models import GuestFolio, Room
 from .serializers import (
     AddChargeSerializer,
+    AddRoomSerializer,
+    CancelStaySerializer,
     CheckoutSerializer,
     FolioListSerializer,
     OpenStaySerializer,
     RoomSerializer,
+    UpdateStaySerializer,
 )
+
+# Cancelling / removing a whole stay is higher-impact than editing details,
+# so gate it behind the manager/owner cancel permission (same as high-value
+# invoice cancels). Editing guest details stays open to any cashier.
+_CANCEL_PERM = "sales.cancel.threshold_high"
 
 _HOTEL_GATE = HasModule.for_module("hotel")
 
@@ -99,6 +107,12 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
     queryset = GuestFolio.objects.select_related("room", "branch").all()
     serializer_class = FolioListSerializer
     permission_classes = [_HOTEL_GATE, IsTenantMember]
+
+    def get_permissions(self):
+        # Cancelling a whole stay or removing a room is manager/owner-only.
+        if self.action in ("cancel", "remove_room"):
+            return [_HOTEL_GATE(), HasRolePerm.with_perm(_CANCEL_PERM)()]
+        return super().get_permissions()
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -229,6 +243,90 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
                 payments=v.get("payments", []),
                 cashier=request.user,
                 check_out=v.get("check_out"),
+            )
+        except DjangoValidationError as e:
+            raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
+        return Response(services.consolidated_bill(folio))
+
+    def partial_update(self, request, pk=None):
+        """Edit an open stay's guest details and/or dates."""
+        folio = self._get_folio(request, pk)
+        ser = UpdateStaySerializer(data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        v = ser.validated_data
+        dates_changed = "check_in" in v or "expected_check_out" in v
+        terminal = cash_session = None
+        if dates_changed:
+            _, terminal, cash_session = _resolve_context(request, v.get("terminal"))
+        try:
+            folio = services.update_stay(
+                folio=folio,
+                fields={
+                    k: v[k] for k in (
+                        "guest_name", "guest_cnic", "guest_phone",
+                        "guest_email", "guest_address", "notes",
+                    ) if k in v
+                },
+                check_in=v.get("check_in") if dates_changed else None,
+                expected_check_out=v.get("expected_check_out") if dates_changed else None,
+                terminal=terminal,
+                cashier=request.user,
+                cash_session=cash_session,
+                user=request.user,
+            )
+        except DjangoValidationError as e:
+            raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
+        return Response(services.consolidated_bill(folio))
+
+    @action(detail=True, methods=["post"])
+    def rooms(self, request, pk=None):
+        """Add a room to an open stay (same guest)."""
+        folio = self._get_folio(request, pk)
+        ser = AddRoomSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        v = ser.validated_data
+        room = Room.objects.for_tenant(request.tenant_id).filter(
+            pk=v["room"], deleted_at__isnull=True,
+        ).first()
+        if room is None:
+            raise NotFound("Room not found.")
+        _, terminal, cash_session = _resolve_context(request, v.get("terminal"))
+        try:
+            folio = services.add_room_to_stay(
+                folio=folio, room=room, terminal=terminal,
+                cashier=request.user, cash_session=cash_session,
+                check_in=v.get("check_in"),
+                expected_check_out=v.get("expected_check_out"),
+                user=request.user,
+            )
+        except DjangoValidationError as e:
+            raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
+        return Response(services.consolidated_bill(folio), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["delete"], url_path=r"rooms/(?P<room_id>[^/.]+)")
+    def remove_room(self, request, pk=None, room_id=None):
+        """Remove a room from an open multi-room stay (manager/owner only)."""
+        folio = self._get_folio(request, pk)
+        room = Room.objects.for_tenant(request.tenant_id).filter(pk=room_id).first()
+        if room is None:
+            raise NotFound("Room not found.")
+        try:
+            folio = services.remove_room_from_stay(folio=folio, room=room, user=request.user)
+        except DjangoValidationError as e:
+            raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
+        return Response(services.consolidated_bill(folio))
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """Cancel an open stay — void charges (audit-kept), free rooms
+        (manager/owner only)."""
+        folio = self._get_folio(request, pk)
+        ser = CancelStaySerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            folio = services.cancel_stay(
+                folio=folio, reason=ser.validated_data.get("reason", ""),
+                user=request.user,
             )
         except DjangoValidationError as e:
             raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))
