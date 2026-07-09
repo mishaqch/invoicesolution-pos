@@ -1,15 +1,24 @@
-import { BedDouble, Printer, X } from "lucide-react";
+import { BedDouble, Pencil, Plus, Printer, Trash2, X, XCircle } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useFolio, useFolios } from "@/lib/queries";
+import {
+  useAddStayRoom,
+  useCancelStay,
+  useFolio,
+  useFolios,
+  useRemoveStayRoom,
+  useRooms,
+  useUpdateStay,
+  type UpdateStayBody,
+} from "@/lib/queries";
 import { useAuthStore } from "@/stores/auth";
 import { money } from "@/lib/utils";
 
-import type { FolioBill, FolioRow, Tenant } from "@pos/shared/types";
+import type { FolioBill, FolioRow, Room, Tenant } from "@pos/shared/types";
 
 function rows<T>(d: { results: T[] } | T[] | undefined): T[] {
   if (!d) return [];
@@ -237,6 +246,86 @@ function printFolioBill(bill: FolioBill, tenant: Tenant | null): void {
 function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () => void }) {
   const { data: bill, isLoading } = useFolio(folioId);
   const tenant = useAuthStore((s) => s.tenant);
+  const role = useAuthStore((s) => s.role);
+  // Cancel / remove-room are manager/owner-only (mirrors the server gate).
+  const canCancel = role === "owner" || role === "manager";
+  const isOpen = bill?.status === "open";
+
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<UpdateStayBody>({});
+  const [addRoomId, setAddRoomId] = useState("");
+
+  const updateStay = useUpdateStay();
+  const addStayRoom = useAddStayRoom();
+  const removeStayRoom = useRemoveStayRoom();
+  const cancelStay = useCancelStay();
+  const busy =
+    updateStay.isPending || addStayRoom.isPending || removeStayRoom.isPending || cancelStay.isPending;
+
+  // Available rooms for the "add room" picker (only fetched while editing).
+  const { data: roomsData } = useRooms(editing ? { status: "available" } : {});
+  const availRooms: Room[] = editing ? rows<Room>(roomsData) : [];
+
+  function startEdit() {
+    if (!bill) return;
+    setForm({
+      guest_name: bill.guest.name,
+      guest_cnic: bill.guest.cnic,
+      guest_phone: bill.guest.phone,
+      guest_email: bill.guest.email || "",
+      guest_address: bill.guest.address || "",
+      check_in: bill.check_in ? toLocalInput(bill.check_in) : undefined,
+      expected_check_out: bill.expected_check_out ? toLocalInput(bill.expected_check_out) : undefined,
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    if (!bill) return;
+    const body: UpdateStayBody = { ...form };
+    if (body.check_in) body.check_in = new Date(body.check_in).toISOString();
+    if (body.expected_check_out) body.expected_check_out = new Date(body.expected_check_out).toISOString();
+    try {
+      await updateStay.mutateAsync({ id: bill.id, ...body });
+      setEditing(false);
+    } catch (e) {
+      alert(errText(e));
+    }
+  }
+
+  async function doAddRoom() {
+    if (!bill || !addRoomId) return;
+    try {
+      await addStayRoom.mutateAsync({ id: bill.id, room: addRoomId });
+      setAddRoomId("");
+    } catch (e) {
+      alert(errText(e));
+    }
+  }
+
+  async function doRemoveRoom(roomId: string, number: string) {
+    if (!bill) return;
+    if (!confirm(`Remove Room ${number}? Its charges are voided and the room is freed.`)) return;
+    try {
+      await removeStayRoom.mutateAsync({ id: bill.id, roomId });
+    } catch (e) {
+      alert(errText(e));
+    }
+  }
+
+  async function doCancel() {
+    if (!bill) return;
+    const reason = prompt(
+      `Cancel the WHOLE stay for ${bill.guest.name}? This voids every charge and frees all rooms.\n\nOptional reason:`,
+    );
+    if (reason === null) return;
+    try {
+      await cancelStay.mutateAsync({ id: bill.id, reason: reason || "" });
+      onClose();
+    } catch (e) {
+      alert(errText(e));
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
@@ -247,6 +336,22 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
             <p className="text-xs text-muted-foreground">Consolidated stay bill</p>
           </div>
           <div className="flex items-center gap-2">
+            {isOpen && (
+              <Button variant="outline" size="sm" onClick={editing ? () => setEditing(false) : startEdit}>
+                <Pencil className="mr-1 h-4 w-4" /> {editing ? "Done" : "Edit"}
+              </Button>
+            )}
+            {isOpen && canCancel && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={doCancel}
+                disabled={busy}
+                className="border-destructive/40 text-destructive hover:bg-destructive/10"
+              >
+                <XCircle className="mr-1 h-4 w-4" /> Cancel stay
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -280,7 +385,75 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
                 <Info label="Phone" value={bill.guest.phone} />
                 <Info label="Check-in" value={fmt(bill.check_in)} />
                 <Info label="Check-out" value={fmt(bill.check_out)} />
+                {bill.guest.email && <Info label="Email" value={bill.guest.email} />}
+                {bill.guest.address && (
+                  <div className="col-span-2">
+                    <div className="text-[11px] text-muted-foreground">Address</div>
+                    <div className="text-sm">{bill.guest.address}</div>
+                  </div>
+                )}
               </div>
+
+              {/* --- EDIT panel --- */}
+              {editing && isOpen && (
+                <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 p-4">
+                  <div className="mb-3 text-sm font-semibold">Edit stay</div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <EditField label="Guest name" value={form.guest_name ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_name: v }))} />
+                    <EditField label="CNIC" value={form.guest_cnic ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_cnic: v }))} />
+                    <EditField label="Phone" value={form.guest_phone ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_phone: v }))} />
+                    <EditField label="Email" value={form.guest_email ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_email: v }))} />
+                    <div className="sm:col-span-2">
+                      <EditField label="Address" value={form.guest_address ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_address: v }))} />
+                    </div>
+                    <EditField label="Check-in" type="datetime-local" value={form.check_in ?? ""} onChange={(v) => setForm((f) => ({ ...f, check_in: v }))} />
+                    <EditField label="Expected check-out" type="datetime-local" value={form.expected_check_out ?? ""} onChange={(v) => setForm((f) => ({ ...f, expected_check_out: v }))} />
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">Changing dates re-prices each room's nights.</p>
+                  <div className="mt-3 flex justify-end">
+                    <Button size="sm" onClick={saveEdit} disabled={busy}>{updateStay.isPending ? "Saving…" : "Save changes"}</Button>
+                  </div>
+
+                  {/* Rooms on this stay — add / remove */}
+                  <div className="mt-4 border-t pt-3">
+                    <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <BedDouble className="h-3.5 w-3.5" /> Rooms on this stay
+                    </div>
+                    <div className="space-y-1">
+                      {bill.rooms.map((r) => (
+                        <div key={r.id} className="flex items-center justify-between rounded border px-2 py-1 text-sm">
+                          <span>Room {r.number} <span className="text-muted-foreground">({r.type}) · {r.nights}n</span></span>
+                          {canCancel && bill.rooms.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => doRemoveRoom(r.id, r.number)}
+                              disabled={busy}
+                              className="inline-flex items-center gap-1 rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] font-medium text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-3 w-3" /> Remove
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <select
+                        value={addRoomId}
+                        onChange={(e) => setAddRoomId(e.target.value)}
+                        className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+                      >
+                        <option value="">Add a room…</option>
+                        {availRooms.map((r) => (
+                          <option key={r.id} value={r.id}>Room {r.room_number} ({r.room_type}) — Rs {money(r.nightly_total)}/night</option>
+                        ))}
+                      </select>
+                      <Button size="sm" variant="outline" onClick={doAddRoom} disabled={busy || !addRoomId}>
+                        <Plus className="mr-1 h-4 w-4" /> Add
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {bill.days.map((day) => (
                 <div key={day.date} className="mb-3">
@@ -321,6 +494,48 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
       </div>
     </div>
   );
+}
+
+function EditField({
+  label, value, onChange, type = "text",
+}: {
+  label: string; value: string; onChange: (v: string) => void; type?: string;
+}) {
+  return (
+    <div>
+      <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      />
+    </div>
+  );
+}
+
+/** ISO string → "YYYY-MM-DDTHH:mm" for a datetime-local input (local time). */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Pull a human message out of an API error (best effort). */
+function errText(e: unknown): string {
+  if (e && typeof e === "object") {
+    const data = (e as { data?: unknown }).data;
+    if (data && typeof data === "object") {
+      const d = data as Record<string, unknown>;
+      if (typeof d.detail === "string") return d.detail;
+      for (const v of Object.values(d)) {
+        if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+        if (typeof v === "string") return v;
+      }
+    }
+    if (typeof (e as { message?: unknown }).message === "string") return (e as { message: string }).message;
+  }
+  return "Something went wrong. Please try again.";
 }
 
 function Info({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

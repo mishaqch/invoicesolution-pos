@@ -2167,3 +2167,64 @@ export function useFolio(id: string | null) {
     enabled: !!id,
   });
 }
+
+export interface UpdateStayBody {
+  guest_name?: string;
+  guest_cnic?: string;
+  guest_phone?: string;
+  guest_email?: string;
+  guest_address?: string;
+  notes?: string;
+  check_in?: string;
+  expected_check_out?: string | null;
+}
+
+/** Invalidate the open bill + the folios list after any stay mutation. */
+function invalidateFolio(qc: ReturnType<typeof useQueryClient>, id: string) {
+  qc.invalidateQueries({ queryKey: ["hotel-folio", id] });
+  qc.invalidateQueries({ queryKey: ["hotel-folios"] });
+  qc.invalidateQueries({ queryKey: ["hotel-rooms"] });
+}
+
+/** Edit an open stay's guest details and/or dates. */
+export function useUpdateStay() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: UpdateStayBody & { id: string }) =>
+      api<FolioBill>(`/hotel/folios/${id}/`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: (_d, v) => invalidateFolio(qc, v.id),
+  });
+}
+
+/** Add a room to an open stay. */
+export function useAddStayRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, room }: { id: string; room: string }) =>
+      api<FolioBill>(`/hotel/folios/${id}/rooms/`, { method: "POST", body: JSON.stringify({ room }) }),
+    onSuccess: (_d, v) => invalidateFolio(qc, v.id),
+  });
+}
+
+/** Remove a room from an open multi-room stay (manager/owner). */
+export function useRemoveStayRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, roomId }: { id: string; roomId: string }) =>
+      api<FolioBill>(`/hotel/folios/${id}/rooms/${roomId}/`, { method: "DELETE" }),
+    onSuccess: (_d, v) => invalidateFolio(qc, v.id),
+  });
+}
+
+/** Cancel a whole open stay (manager/owner) — voids charges, frees rooms. */
+export function useCancelStay() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) =>
+      api<FolioBill>(`/hotel/folios/${id}/cancel/`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason ?? "" }),
+      }),
+    onSuccess: (_d, v) => invalidateFolio(qc, v.id),
+  });
+}
