@@ -32,6 +32,10 @@ export default function HardwareRoute() {
   const [printerUrl, setPrinterUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  // Installed Windows printers (USB thermal printers show up here). Empty on
+  // macOS/Linux — those use tcp:// or cups:// interfaces instead.
+  const [winPrinters, setWinPrinters] = useState<{ name: string; isDefault: boolean }[]>([]);
 
   // FBR SDC (Fiscalization service) — base URL + paired identity.
   const [sdcUrl, setSdcUrl] = useState("");
@@ -43,7 +47,27 @@ export default function HardwareRoute() {
     void window.api.meta.get("printer.interface").then((v) => setPrinterUrl(v ?? ""));
     void window.api.sdc.getUrl().then((v) => setSdcUrl(v ?? ""));
     void window.api.pairing.status().then((s) => setIdentity(s.identity));
+    // Load installed Windows printers so the operator can pick instead of
+    // hand-typing the interface. No-op (empty) on macOS/Linux.
+    void window.api.printer.listWindows?.().then((list) => setWinPrinters(list ?? [])).catch(() => {});
   }, []);
+
+  async function testPrint() {
+    setTesting(true);
+    setTestStatus(null);
+    try {
+      const r = await window.api.printer.test?.(printerUrl.trim() || undefined);
+      setTestStatus({
+        ok: !!r?.success,
+        msg: r?.success
+          ? "Test slip sent to the printer."
+          : (r?.reason ?? "Test print failed.") +
+            (r?.fallbackPath ? ` (saved to ${r.fallbackPath})` : ""),
+      });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   async function saveSdc() {
     setSdcSaving(true);
@@ -115,25 +139,56 @@ export default function HardwareRoute() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* Windows USB printer picker — the common case for shops in PK.
+                Selecting one fills the interface as win:<PrinterName>. */}
+            {winPrinters.length > 0 && (
+              <div>
+                <Label>Installed printer (USB / Windows)</Label>
+                <select
+                  value={
+                    printerUrl.startsWith("win:")
+                      ? printerUrl.slice(4)
+                      : ""
+                  }
+                  onChange={(e) => setPrinterUrl(e.target.value ? `win:${e.target.value}` : "")}
+                  className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="">— pick your printer —</option>
+                  {winPrinters.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}{p.isDefault ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Pick the thermal printer (e.g. your SPEED SP-200 / POS-80). This is
+                  the easiest option for a USB printer plugged into this PC.
+                </p>
+              </div>
+            )}
+
             <div>
-              <Label>Interface URL</Label>
+              <Label>Interface URL (advanced)</Label>
               <Input
                 value={printerUrl}
                 onChange={(e) => setPrinterUrl(e.target.value)}
-                placeholder="tcp://192.168.1.50:9100"
+                placeholder="win:POS-80"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                Examples: <span className="font-mono">tcp://192.168.1.50:9100</span> ·{" "}
-                <span className="font-mono">/dev/usb/lp0</span> ·{" "}
-                <span className="font-mono">//USB/EPSON-TM-T20III</span>
+                USB on Windows: <span className="font-mono">win:PrinterName</span> (or{" "}
+                <span className="font-mono">win:auto</span> for the default printer).{" "}
+                Network: <span className="font-mono">tcp://192.168.1.50:9100</span>.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Leave blank to disable printing (receipts log to disk fallback).
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={save} disabled={saving} size="sm">
                 {saving ? "Saving…" : "Save"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={testPrint} disabled={testing}>
+                {testing ? "Printing…" : "Test print"}
               </Button>
               <Button variant="outline" size="sm" onClick={testDrawer}>
                 Open drawer (test)

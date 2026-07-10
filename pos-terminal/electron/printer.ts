@@ -31,6 +31,7 @@ import path from "node:path";
 
 import { getMeta } from "./db/client";
 import { buildFbrStampPng } from "./fbr-stamp";
+import { isWindowsInterface, printRawWindows, windowsPrinterName } from "./win-print";
 import type { PosInvoiceInput, PosSaleItemInput, PosPaymentInput } from "./db/sales";
 
 interface ReceiptInput {
@@ -186,6 +187,65 @@ export async function printReceipt(input: ReceiptInput): Promise<PrintResult> {
   }
 }
 
+/**
+ * Print a short diagnostic slip on demand (Hardware → Test print). Optionally
+ * overrides the saved interface so the operator can verify a printer BEFORE
+ * saving. Returns the same PrintResult shape (with a fallback file path when no
+ * printer is reachable) so the UI can show a precise reason.
+ */
+export async function testPrint(overrideInterface?: string): Promise<PrintResult> {
+  const printerUrl = (overrideInterface && overrideInterface.trim()) || resolvePrinterInterface();
+  if (!printerUrl) {
+    return { success: false, reason: "no printer configured" };
+  }
+  const now = new Date();
+  const lines = [
+    "     *** TEST PRINT ***",
+    "",
+    "invoiceSolution POS",
+    `Interface: ${printerUrl}`,
+    `Time: ${now.toLocaleString()}`,
+    "",
+    "If you can read this, the",
+    "printer is working.",
+    "",
+    "0123456789  ABCDEFGHIJ",
+    "Rs 1,234.56   x2   18%",
+    "",
+  ].join("\n");
+
+  const transport = resolveTransport(printerUrl);
+  let mod: any;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    mod = require("node-thermal-printer");
+  } catch {
+    return { success: false, reason: "printer driver not installed" };
+  }
+  const ThermalPrinter = mod.printer;
+  const PrinterTypes = mod.types;
+  const printer = new ThermalPrinter({
+    type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
+    interface: transport.ctorInterface,
+    characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
+    width: 48,
+    options: { timeout: TIMEOUT_MS },
+  });
+  try {
+    if (transport.kind === "direct") {
+      const ok = await printer.isPrinterConnected();
+      if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
+    }
+    for (const l of lines.split("\n")) printer.println(l);
+    printer.cut();
+    if (transport.kind !== "direct") return await flushBuffer(transport, printer.getBuffer());
+    await printer.execute();
+    return { success: true };
+  } catch (e) {
+    return { success: false, reason: `test print failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
 export async function openCashDrawer(): Promise<{ success: boolean; reason?: string }> {
   const printerUrl = resolvePrinterInterface();
   if (!printerUrl) {
@@ -251,19 +311,17 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   } catch (e) {
     return { success: false, reason: "printer driver not installed" };
   }
-  const cupsQueue = printerUrl.startsWith("cups://")
-    ? printerUrl.slice("cups://".length).replace(/\/+$/, "")
-    : null;
+  const transport = resolveTransport(printerUrl);
   const ThermalPrinter = mod.printer;
   const PrinterTypes = mod.types;
   const printer = new ThermalPrinter({
     type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
-    interface: cupsQueue ? "tcp://127.0.0.1:1" : printerUrl,
+    interface: transport.ctorInterface,
     characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
     width: input.width,
     options: { timeout: TIMEOUT_MS },
   });
-  if (!cupsQueue) {
+  if (transport.kind === "direct") {
     const ok = await printer.isPrinterConnected();
     if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
   }
@@ -301,8 +359,8 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   printer.drawLine();
   printer.cut();
 
-  if (cupsQueue) {
-    return printViaCups(printer.getBuffer(), cupsQueue);
+  if (transport.kind !== "direct") {
+    return flushBuffer(transport, printer.getBuffer());
   }
   try {
     await printer.execute();
@@ -375,25 +433,25 @@ async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: s
   } catch {
     return { success: false, reason: "printer driver not installed" };
   }
-  const cupsQueue = printerUrl.startsWith("cups://")
-    ? printerUrl.slice("cups://".length).replace(/\/+$/, "")
-    : null;
+  const transport = resolveTransport(printerUrl);
   const ThermalPrinter = mod.printer;
   const PrinterTypes = mod.types;
   const printer = new ThermalPrinter({
     type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
-    interface: cupsQueue ? "tcp://127.0.0.1:1" : printerUrl,
+    interface: transport.ctorInterface,
     characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
     width: input.width,
     options: { timeout: TIMEOUT_MS },
   });
-  if (!cupsQueue) {
+  // Only the "direct" transport can/should probe connectivity; cups + windows
+  // flush the buffer through the OS spooler and have no live socket to probe.
+  if (transport.kind === "direct") {
     const ok = await printer.isPrinterConnected();
     if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
   }
   for (const line of text.split("\n")) printer.println(line);
   printer.cut();
-  if (cupsQueue) return printViaCups(printer.getBuffer(), cupsQueue);
+  if (transport.kind !== "direct") return flushBuffer(transport, printer.getBuffer());
   try {
     await printer.execute();
     return { success: true };
@@ -518,27 +576,27 @@ async function realPrint(
   // For "cups://<queue>" we build the ESC/POS buffer in memory and pipe it to
   // `lp -d <queue> -o raw`, bypassing node-thermal-printer's serial/tcp writer
   // (which can't address a CUPS queue). Everything else uses the native writer.
-  const cupsQueue = printerUrl.startsWith("cups://")
-    ? printerUrl.slice("cups://".length).replace(/\/+$/, "")
-    : null;
+  // Pick the transport: cups (mac/Linux USB), windows (winspool RAW), or direct
+  // (tcp/serial). cups + windows build the buffer here and flush via the OS.
+  const transport = resolveTransport(printerUrl);
 
   const ThermalPrinter = mod.printer;
   const PrinterTypes = mod.types;
   const printer = new ThermalPrinter({
     type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
-    // For CUPS we only use the lib to BUILD the ESC/POS buffer (getBuffer) and
-    // flush it ourselves via `lp` — we never open this interface. The lib's
-    // constructor still demands a valid interface string ("printer:auto" throws
-    // "No driver set!"), so pass a harmless dummy tcp address it never connects
-    // to. Everything else uses the real interface.
-    interface: cupsQueue ? "tcp://127.0.0.1:1" : printerUrl,
+    // For cups/windows we only use the lib to BUILD the ESC/POS buffer
+    // (getBuffer) and flush it ourselves — we never open this interface. The
+    // lib's constructor still demands a valid interface string
+    // ("printer:auto" throws "No driver set!"), so pass a harmless dummy tcp
+    // address it never connects to. The direct path uses the real interface.
+    interface: transport.ctorInterface,
     characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
     width: input.width,
     options: { timeout: TIMEOUT_MS },
   });
 
-  // CUPS path skips the live connectivity probe (the lib can't probe a queue).
-  if (!cupsQueue) {
+  // Only "direct" can probe a live socket; cups + windows flush via the spooler.
+  if (transport.kind === "direct") {
     const ok = await printer.isPrinterConnected();
     if (!ok) {
       console.error("[printer] not reachable at", printerUrl);
@@ -637,13 +695,48 @@ async function realPrint(
 
   printer.cut();
 
-  if (cupsQueue) {
-    // Flush the assembled ESC/POS bytes to the CUPS raw queue via `lp`.
-    return printViaCups(printer.getBuffer(), cupsQueue);
+  if (transport.kind !== "direct") {
+    // Flush the assembled ESC/POS bytes via the OS spooler (cups or windows).
+    return flushBuffer(transport, printer.getBuffer());
   }
 
   await printer.execute();
   return { success: true };
+}
+
+/**
+ * Decide how to reach the configured printer. Three transports:
+ *  - "cups"   → macOS/Linux USB-class printer, flushed via `lp -o raw`
+ *  - "windows"→ Windows installed/USB printer (e.g. SPEED SP-200), flushed via
+ *               the winspool RAW spooler (see win-print.ts)
+ *  - "direct" → node-thermal-printer opens the tcp:// / serial interface itself
+ *
+ * For cups/windows we only use node-thermal-printer to BUILD the ESC/POS buffer
+ * (getBuffer) and flush it ourselves — the lib's constructor still needs a
+ * valid interface string, so those paths pass a harmless dummy tcp address it
+ * never connects to.
+ */
+function resolveTransport(printerUrl: string): {
+  kind: "cups" | "windows" | "direct";
+  target: string;
+  ctorInterface: string;
+} {
+  if (printerUrl.startsWith("cups://")) {
+    return { kind: "cups", target: printerUrl.slice("cups://".length).replace(/\/+$/, ""), ctorInterface: "tcp://127.0.0.1:1" };
+  }
+  if (isWindowsInterface(printerUrl)) {
+    return { kind: "windows", target: windowsPrinterName(printerUrl), ctorInterface: "tcp://127.0.0.1:1" };
+  }
+  return { kind: "direct", target: printerUrl, ctorInterface: printerUrl };
+}
+
+/** Flush an assembled ESC/POS buffer over the chosen non-direct transport. */
+function flushBuffer(
+  transport: { kind: "cups" | "windows" | "direct"; target: string },
+  buffer: Buffer,
+): Promise<PrintResult> {
+  if (transport.kind === "cups") return printViaCups(buffer, transport.target);
+  return printRawWindows(buffer, transport.target); // "windows"
 }
 
 /**
@@ -701,19 +794,25 @@ async function realOpenDrawer(
   } catch {
     return { success: false, reason: "printer driver not installed" };
   }
+  const transport = resolveTransport(printerUrl);
   const ThermalPrinter = mod.printer;
   const PrinterTypes = mod.types;
   const printer = new ThermalPrinter({
     type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
-    interface: printerUrl,
+    interface: transport.ctorInterface,
     options: { timeout: TIMEOUT_MS },
   });
 
-  const ok = await printer.isPrinterConnected();
-  if (!ok) {
-    return { success: false, reason: `printer unreachable at ${printerUrl}` };
+  if (transport.kind === "direct") {
+    const ok = await printer.isPrinterConnected();
+    if (!ok) {
+      return { success: false, reason: `printer unreachable at ${printerUrl}` };
+    }
   }
   printer.openCashDrawer();   // ESC p 0 25 250 under the hood
+  if (transport.kind !== "direct") {
+    return flushBuffer(transport, printer.getBuffer());
+  }
   await printer.execute();
   return { success: true };
 }

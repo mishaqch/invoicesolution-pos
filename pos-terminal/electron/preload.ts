@@ -256,6 +256,12 @@ const api = {
       ipcRenderer.invoke("printer:print-kot", payload),
     printFolio: (payload: unknown): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
       ipcRenderer.invoke("printer:print-folio", payload),
+    /** Print a diagnostic slip. Pass an interface string to test before saving. */
+    test: (iface?: string): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
+      ipcRenderer.invoke("printer:test", iface),
+    /** List installed Windows printers (name + default) for the picker. */
+    listWindows: (): Promise<{ name: string; isDefault: boolean }[]> =>
+      ipcRenderer.invoke("printer:list-windows"),
   },
   drawer: {
     open: (): Promise<{ success: boolean; reason?: string }> =>
