@@ -139,50 +139,57 @@ export default function HardwareRoute() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {/* Windows USB printer picker — the common case for shops in PK.
-                Selecting one fills the interface as win:<PrinterName>. */}
-            {winPrinters.length > 0 && (
-              <div>
-                <Label>Installed printer (USB / Windows)</Label>
-                <select
-                  value={
-                    printerUrl.startsWith("win:")
-                      ? printerUrl.slice(4)
-                      : ""
-                  }
-                  onChange={(e) => setPrinterUrl(e.target.value ? `win:${e.target.value}` : "")}
-                  className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="">— pick your printer —</option>
-                  {winPrinters.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name}{p.isDefault ? " (default)" : ""}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Pick the thermal printer (e.g. your SPEED SP-200 / POS-80). This is
-                  the easiest option for a USB printer plugged into this PC.
-                </p>
-              </div>
-            )}
-
+            {/* USB printer on Windows: the operator types the EXACT Windows
+                printer name (Control Panel → Printers, or `wmic printer get
+                name`). Stored as win:<name>. A free-text field means any
+                printer works with no rebuild — the installed list below is
+                only an optional shortcut, never a hard dependency. */}
             <div>
-              <Label>Interface URL (advanced)</Label>
+              <Label>Printer name (USB / Windows)</Label>
               <Input
-                value={printerUrl}
-                onChange={(e) => setPrinterUrl(e.target.value)}
-                placeholder="win:POS-80"
+                value={printerUrl.startsWith("win:") ? printerUrl.slice(4) : ""}
+                onChange={(e) => setPrinterUrl(e.target.value ? `win:${e.target.value}` : "")}
+                placeholder="e.g. Thermal Small Printer"
               />
               <p className="mt-1 text-xs text-muted-foreground">
-                USB on Windows: <span className="font-mono">win:PrinterName</span> (or{" "}
-                <span className="font-mono">win:auto</span> for the default printer).{" "}
-                Network: <span className="font-mono">tcp://192.168.1.50:9100</span>.
+                Type the exact Windows printer name — see it in{" "}
+                <span className="font-mono">Printers &amp; scanners</span>, or run{" "}
+                <span className="font-mono">wmic printer get name</span>. Then click Test print.
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Leave blank to disable printing (receipts log to disk fallback).
-              </p>
+              {winPrinters.length > 0 && (
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                  <span>Detected:</span>
+                  {winPrinters.map((p) => (
+                    <button
+                      key={p.name}
+                      type="button"
+                      onClick={() => setPrinterUrl(`win:${p.name}`)}
+                      className="rounded border px-1.5 py-0.5 font-mono hover:bg-muted"
+                      title="Use this printer name"
+                    >
+                      {p.name}{p.isDefault ? " ★" : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer select-none">Advanced: full interface URL</summary>
+              <div className="mt-2 space-y-1">
+                <Input
+                  value={printerUrl}
+                  onChange={(e) => setPrinterUrl(e.target.value)}
+                  placeholder="win:Thermal Small Printer"
+                />
+                <p>
+                  USB on Windows: <span className="font-mono">win:PrinterName</span> (or{" "}
+                  <span className="font-mono">win:auto</span> for the default).{" "}
+                  Network: <span className="font-mono">tcp://192.168.1.50:9100</span>.{" "}
+                  Leave blank to disable printing.
+                </p>
+              </div>
+            </details>
             <div className="flex flex-wrap gap-2">
               <Button onClick={save} disabled={saving} size="sm">
                 {saving ? "Saving…" : "Save"}
