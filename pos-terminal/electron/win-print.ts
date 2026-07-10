@@ -145,12 +145,15 @@ public class RawPrinterHelper {
   [DllImport("winspool.drv", SetLastError=true)] public static extern bool StartPagePrinter(IntPtr hPrinter);
   [DllImport("winspool.drv", SetLastError=true)] public static extern bool EndPagePrinter(IntPtr hPrinter);
   [DllImport("winspool.drv", SetLastError=true)] public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, int dwCount, out int dwWritten);
-  public static void Send(string printer, string file) {
-    byte[] bytes = File.ReadAllBytes(file);
-    IntPtr h; DOCINFOW di = new DOCINFOW(); di.pDocName = "POS Receipt"; di.pDataType = "RAW";
+  // Try one specific spooler data type. Returns the Win32 error from
+  // StartDocPrinter (0 = success). Different drivers accept different types:
+  //   RAW  → real ESC/POS thermal drivers (POS-80, manufacturer driver)
+  //   TEXT → the "Generic / Text Only" driver (rejects RAW with Win32 1905)
+  static int TrySend(string printer, byte[] bytes, string dataType) {
+    IntPtr h; DOCINFOW di = new DOCINFOW(); di.pDocName = "POS Receipt"; di.pDataType = dataType;
     if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("OpenPrinter failed (Win32 " + Marshal.GetLastWin32Error() + "). Check the printer name.");
     try {
-      if (StartDocPrinter(h, 1, ref di) == 0) throw new Exception("StartDocPrinter failed (Win32 " + Marshal.GetLastWin32Error() + ")");
+      if (StartDocPrinter(h, 1, ref di) == 0) { return Marshal.GetLastWin32Error(); }
       try {
         if (!StartPagePrinter(h)) throw new Exception("StartPagePrinter failed (Win32 " + Marshal.GetLastWin32Error() + ")");
         IntPtr p = Marshal.AllocHGlobal(bytes.Length);
@@ -159,7 +162,43 @@ public class RawPrinterHelper {
         finally { Marshal.FreeHGlobal(p); }
         EndPagePrinter(h);
       } finally { EndDocPrinter(h); }
+      return 0;
     } finally { ClosePrinter(h); }
+  }
+  public static void Send(string printer, string file) {
+    byte[] bytes = File.ReadAllBytes(file);
+    // Prefer RAW (ESC/POS passes through untouched). If the installed driver
+    // rejects RAW (Generic/Text Only → Win32 1905), fall back to TEXT so the
+    // receipt still prints on whatever driver the operator has installed.
+    int err = TrySend(printer, bytes, "RAW");
+    if (err == 0) return;
+    if (err == 1905 || err == 2 || err == 3) {
+      // The driver rejected RAW (typically Generic/Text Only). Retry as TEXT,
+      // but first strip ESC/POS control bytes so the receipt reads cleanly
+      // instead of printing control-code garbage. Keep printable ASCII, tab,
+      // newline and carriage-return; drop the rest (init, cut, charset, QR…).
+      byte[] plain = StripControl(bytes);
+      int err2 = TrySend(printer, plain, "TEXT");
+      if (err2 == 0) return;
+      throw new Exception("StartDocPrinter failed for RAW (Win32 " + err + ") and TEXT (Win32 " + err2 + "). The printer driver may not support raw printing.");
+    }
+    throw new Exception("StartDocPrinter failed (Win32 " + err + ")");
+  }
+  static byte[] StripControl(byte[] input) {
+    System.Collections.Generic.List<byte> outb = new System.Collections.Generic.List<byte>(input.Length);
+    for (int i = 0; i < input.Length; i++) {
+      byte b = input[i];
+      // ESC (0x1B) and GS (0x1D) start multi-byte ESC/POS commands; skip the
+      // command intro bytes so their parameters don't print as noise. We keep
+      // it simple: drop ESC/GS and the immediate following byte, keep the rest.
+      if (b == 0x1B || b == 0x1D) { i++; continue; }
+      if (b == 0x0A || b == 0x0D || b == 0x09) { outb.Add(b); continue; } // LF/CR/TAB
+      if (b >= 0x20 && b <= 0x7E) { outb.Add(b); continue; }             // printable ASCII
+      // else: drop (non-printable / high-bit charset bytes)
+    }
+    // Ensure the paper advances a few lines at the end (no cut on text driver).
+    outb.Add(0x0A); outb.Add(0x0A); outb.Add(0x0A); outb.Add(0x0A);
+    return outb.ToArray();
   }
 }
 '@
