@@ -145,9 +145,12 @@ export function FolioDetail({
       // there's actual change to hand back).
       const printChange =
         isCash && changeMoney !== null && !cashShort && changeMoney.gt(Money.zero());
-      // Print the consolidated bill (non-fiscal for resort tenants).
-      await window.api.printer
-        .printFolio({
+      // Print the consolidated bill (non-fiscal for resort tenants). The
+      // checkout itself has already SUCCEEDED at this point — a print failure
+      // must NOT lose the sale, but we DO surface it so the cashier knows the
+      // slip didn't come out (and can reprint), instead of it failing silently.
+      try {
+        const pr = await window.api.printer.printFolio({
           business_name: tenant?.business_name ?? "Resort",
           ntn: tenant?.ntn ?? "",
           address: tenant?.address ?? undefined,
@@ -164,8 +167,21 @@ export function FolioDetail({
                 }
               : {}),
           },
-        })
-        .catch(() => {/* print failure shouldn't block checkout */});
+        });
+        if (pr?.success) {
+          toast.show({ message: "Checked out. Bill printed.", variant: "success" });
+        } else {
+          toast.show({
+            message: `Checked out, but printing failed: ${pr?.reason ?? "unknown"}.${pr?.fallbackPath ? ` Saved to ${pr.fallbackPath}` : ""}`,
+            variant: "destructive",
+          });
+        }
+      } catch (pe) {
+        toast.show({
+          message: `Checked out, but printing errored: ${errMsg(pe)}`,
+          variant: "destructive",
+        });
+      }
       onCheckedOut();
     } catch (e) {
       toast.show({ message: errMsg(e), variant: "destructive" });

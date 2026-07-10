@@ -449,7 +449,27 @@ async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: s
     const ok = await printer.isPrinterConnected();
     if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
   }
-  for (const line of text.split("\n")) printer.println(line);
+  // Business-name banner at the very top (the resort's "logo" line): centered,
+  // bold, double-size so TDCP's name headlines the slip. renderFolioText also
+  // includes the name in its body header, so print the styled banner then skip
+  // that first plain-text line to avoid printing the name twice.
+  const bodyLines = text.split("\n");
+  try {
+    printer.alignCenter();
+    printer.bold(true);
+    printer.setTextSize(1, 1);
+    printer.println(input.business_name.toUpperCase());
+    printer.setTextNormal();
+    printer.bold(false);
+    printer.alignLeft();
+    if (bodyLines.length && bodyLines[0].trim().toUpperCase().includes(input.business_name.trim().toUpperCase())) {
+      bodyLines.shift(); // drop the duplicate plain-text name line
+    }
+  } catch {
+    // Styling not supported on this driver — fall through to plain text
+    // (renderFolioText still has the name in the body).
+  }
+  for (const line of bodyLines) printer.println(line);
   printer.cut();
   if (transport.kind !== "direct") return flushBuffer(transport, printer.getBuffer());
   try {
