@@ -99,12 +99,16 @@ export function printRawWindows(
 
   // Write the ESC/POS bytes to a temp file; PowerShell reads it back as bytes
   // and hands them to WritePrinter. (Passing raw binary on the command line is
-  // not safe; a temp file is.)
+  // not safe; a temp file is.) The script itself is written to a .ps1 and run
+  // via -File, which is far more reliable than piping to `-Command -` (stdin
+  // buffering there was swallowing our success marker → false "exit 0" errors).
   let dir = "";
   let dataPath = "";
+  let scriptPath = "";
   try {
     dir = mkdtempSync(path.join(tmpdir(), "posprint-"));
     dataPath = path.join(dir, "job.bin");
+    scriptPath = path.join(dir, "print.ps1");
     writeFileSync(dataPath, buffer);
   } catch (e) {
     return Promise.resolve({ success: false, reason: `temp write failed: ${e instanceof Error ? e.message : String(e)}` });
@@ -112,18 +116,22 @@ export function printRawWindows(
 
   // PowerShell P/Invoke into winspool.drv. If no name is given, resolve the
   // default printer first. Prints as a RAW job (ESC/POS passes through
-  // untouched — the driver does NOT rasterize it).
+  // untouched — the driver does NOT rasterize it). We embed the printer name
+  // and data path as literal here-strings so odd characters/spaces are safe,
+  // and print an explicit PRINT_OK / PRINT_ERR: marker so the caller can tell
+  // real success from a driver/spooler failure regardless of exit code.
   const script = `
 $ErrorActionPreference = 'Stop'
-$printer = @'
+try {
+  $printer = @'
 ${printerName}
 '@.Trim()
-if (-not $printer) {
-  $printer = (Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1 -ExpandProperty Name)
-}
-if (-not $printer) { Write-Error 'No default printer'; exit 3 }
+  if (-not $printer) {
+    $printer = (Get-CimInstance Win32_Printer | Where-Object { $_.Default -eq $true } | Select-Object -First 1 -ExpandProperty Name)
+  }
+  if (-not $printer) { Write-Output 'PRINT_ERR: no printer name and no default printer'; exit 3 }
 
-$sig = @'
+  $sig = @'
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -140,14 +148,14 @@ public class RawPrinterHelper {
   public static void Send(string printer, string file) {
     byte[] bytes = File.ReadAllBytes(file);
     IntPtr h; DOCINFOW di = new DOCINFOW(); di.pDocName = "POS Receipt"; di.pDataType = "RAW";
-    if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("OpenPrinter failed: " + Marshal.GetLastWin32Error());
+    if (!OpenPrinter(printer, out h, IntPtr.Zero)) throw new Exception("OpenPrinter failed (Win32 " + Marshal.GetLastWin32Error() + "). Check the printer name.");
     try {
-      if (StartDocPrinter(h, 1, ref di) == 0) throw new Exception("StartDocPrinter failed: " + Marshal.GetLastWin32Error());
+      if (StartDocPrinter(h, 1, ref di) == 0) throw new Exception("StartDocPrinter failed (Win32 " + Marshal.GetLastWin32Error() + ")");
       try {
-        if (!StartPagePrinter(h)) throw new Exception("StartPagePrinter failed: " + Marshal.GetLastWin32Error());
+        if (!StartPagePrinter(h)) throw new Exception("StartPagePrinter failed (Win32 " + Marshal.GetLastWin32Error() + ")");
         IntPtr p = Marshal.AllocHGlobal(bytes.Length);
         try { Marshal.Copy(bytes, 0, p, bytes.Length); int written;
-          if (!WritePrinter(h, p, bytes.Length, out written)) throw new Exception("WritePrinter failed: " + Marshal.GetLastWin32Error()); }
+          if (!WritePrinter(h, p, bytes.Length, out written)) throw new Exception("WritePrinter failed (Win32 " + Marshal.GetLastWin32Error() + ")"); }
         finally { Marshal.FreeHGlobal(p); }
         EndPagePrinter(h);
       } finally { EndDocPrinter(h); }
@@ -155,12 +163,22 @@ public class RawPrinterHelper {
   }
 }
 '@
-Add-Type -TypeDefinition $sig -Language CSharp
-[RawPrinterHelper]::Send($printer, @'
+  Add-Type -TypeDefinition $sig -Language CSharp
+  [RawPrinterHelper]::Send($printer, @'
 ${dataPath}
 '@.Trim())
-Write-Output 'OK'
+  Write-Output 'PRINT_OK'
+} catch {
+  Write-Output ('PRINT_ERR: ' + $_.Exception.Message)
+  exit 1
+}
 `;
+
+  try {
+    writeFileSync(scriptPath, "﻿" + script, { encoding: "utf8" });
+  } catch (e) {
+    return Promise.resolve({ success: false, reason: `temp script write failed: ${e instanceof Error ? e.message : String(e)}` });
+  }
 
   return new Promise((resolve) => {
     let done = false;
@@ -178,8 +196,8 @@ Write-Output 'OK'
     try {
       child = spawn(
         "powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "-"],
-        { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
+        { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
       );
     } catch (e) {
       return finish({ success: false, reason: `powershell spawn failed: ${e instanceof Error ? e.message : String(e)}` });
@@ -198,15 +216,22 @@ Write-Output 'OK'
     });
     child.on("close", (code: number) => {
       clearTimeout(timer);
-      if (code === 0 && /OK/.test(stdout)) {
+      const out = (stdout + "\n" + stderr).trim();
+      // Success is signalled by our explicit marker — the most reliable signal.
+      // Fall back to exit code 0 (some environments strip stdout) but only when
+      // there is no explicit error marker.
+      if (/PRINT_OK/.test(out)) {
+        finish({ success: true });
+      } else if (/PRINT_ERR:/.test(out)) {
+        const m = out.match(/PRINT_ERR:[^\r\n]*/);
+        finish({ success: false, reason: `windows print failed: ${(m?.[0] ?? "unknown").replace("PRINT_ERR:", "").trim()}` });
+      } else if (code === 0) {
+        // Ran cleanly but produced no marker — treat as success (job spooled).
         finish({ success: true });
       } else {
-        const msg = (stderr || stdout || `exit ${code}`).trim().split(/\r?\n/).slice(0, 4).join(" ");
+        const msg = out ? out.split(/\r?\n/).slice(0, 4).join(" ") : `exit ${code}`;
         finish({ success: false, reason: `windows print failed: ${msg}` });
       }
     });
-
-    // Feed the script on stdin so we don't hit command-line length limits.
-    child.stdin?.end(script);
   });
 }
