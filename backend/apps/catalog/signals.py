@@ -15,11 +15,17 @@ from apps.tenants.models import Tenant
 
 from .models import TaxRate
 
+# applies_to: "goods" | "services" | "both". Services rates matter because
+# PRAL rejects the 18% goods rate on a services HS code (chapter 98) with
+# errorCode 0046 — services are valid only at 0/Exempt/5/15/16/17%. 16% is the
+# common services rate (e.g. commission agents); 15% covers ICT/other cases.
 DEFAULT_TAX_RATES = [
-    {"name": "Standard 18%", "rate": Decimal("18.00"), "is_default": True},
-    {"name": "Reduced 8%", "rate": Decimal("8.00"), "is_default": False},
-    {"name": "Zero rated", "rate": Decimal("0.00"), "is_default": False},
-    {"name": "Exempt", "rate": Decimal("0.00"), "is_default": False},
+    {"name": "Standard 18%", "rate": Decimal("18.00"), "is_default": True, "applies_to": "goods"},
+    {"name": "Reduced 8%", "rate": Decimal("8.00"), "is_default": False, "applies_to": "goods"},
+    {"name": "Zero rated", "rate": Decimal("0.00"), "is_default": False, "applies_to": "both"},
+    {"name": "Exempt", "rate": Decimal("0.00"), "is_default": False, "applies_to": "both"},
+    {"name": "Services 16%", "rate": Decimal("16.00"), "is_default": False, "applies_to": "services"},
+    {"name": "Services 15%", "rate": Decimal("15.00"), "is_default": False, "applies_to": "services"},
 ]
 
 
@@ -35,7 +41,7 @@ def seed_default_tax_rates(sender, instance: Tenant, created: bool, **kwargs):
                 tenant=instance,
                 name=row["name"],
                 rate=row["rate"],
-                applies_to="goods",
+                applies_to=row["applies_to"],
                 is_default=row["is_default"],
             )
             for row in DEFAULT_TAX_RATES
