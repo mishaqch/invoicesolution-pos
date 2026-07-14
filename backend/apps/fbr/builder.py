@@ -83,9 +83,13 @@ UOM_FBR_MAP: dict[str, str] = {
     "LOGS":    "Timber Logs",
     "1000U":   "Thousand Unit",
     # Generic / unmapped local codes that legitimately mean "each":
-    "NO":      "Numbers, pieces, units",
-    "SET":     "Numbers, pieces, units",
-    "OTHER":   "Numbers, pieces, units",
+    "NO":      "NO",
+    "SET":     "SET",
+    # "OTHER" maps to PRAL's literal "Others" unit — REQUIRED for services
+    # (HS chapter 98): PRAL rejects "Numbers, pieces, units" on a services HS
+    # code with 0099, but accepts "Others". (Confirmed against the sandbox
+    # validator for HS 9819.1300.)
+    "OTHER":   "Others",
 }
 
 INVOICE_TYPE_FBR_MAP: dict[str, str] = {
@@ -112,6 +116,7 @@ UOM_DISPLAY_LABELS: dict[str, str] = {
     "MMBTU":         "Million BTU (MMBTU)",
     "1000 kWh":      "1000 kWh",
     "Mega Watt":     "Mega Watt (MW)",
+    "Others":        "Others (services)",
 }
 
 
