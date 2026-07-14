@@ -320,10 +320,17 @@ def pick_scenario_id(invoice, environment: str) -> str | None:
         sro = (i.sro_schedule_no or "").upper()
         return "reduced rate" in st.lower() or "EIGHTH SCHEDULE" in sro
 
+    def _is_services(i):
+        # Services line: HS chapter 98, OR an explicit Services sale type.
+        from .builder import is_services_hs_code
+        st = (i.sale_type or "").strip().lower()
+        return is_services_hs_code(i.hs_code) or st == "services"
+
     all_exempt = bool(items) and all(_is_exempt(i) for i in items)
     all_zero_rate = bool(items) and all(_is_zero_rate(i) for i in items)
     all_third_schedule = bool(items) and all(_is_third_schedule(i) for i in items)
     all_reduced_rate = bool(items) and all(_is_reduced_rate(i) for i in items)
+    all_services = bool(items) and all(_is_services(i) for i in items)
     is_registered = (invoice.buyer_registration_type or "").lower() == "registered"
 
     def _pick(retail_code: str, fallback_code: str) -> str:
@@ -345,6 +352,12 @@ def pick_scenario_id(invoice, environment: str) -> str | None:
         return _pick("SN027", "SN008")
     if all_reduced_rate:
         return _pick("SN028", "SN005")
+    # Services (HS chapter 98 / saleType "Services") → SN019 ("Services (ICT
+    # Ordinance)"). Confirmed against the sandbox validator for HS 9819.1300:
+    # saleType "Services" + uoM "Others" + SN019 + a services-valid rate (16%)
+    # validates; SN002/goods does not (0204/0099/0046).
+    if all_services:
+        return "SN019"
     if is_registered:
         return "SN001"
     return _pick("SN026", "SN002")

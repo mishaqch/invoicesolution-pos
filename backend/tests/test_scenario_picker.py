@@ -52,13 +52,13 @@ def _invoice(tenant, branch, terminal, owner_user, *, registered=False):
     )
 
 
-def _add_item(invoice, product, *, fixed_notified=None, sale_type="Goods at standard rate (default)"):
+def _add_item(invoice, product, *, fixed_notified=None, sale_type="Goods at standard rate (default)", hs_code=None, uom_code="PCS", tax_rate=Decimal("18"), tax_amount=Decimal("18"), line_total=Decimal("118")):
     return SaleItem.objects.create(
         invoice=invoice, line_number=1, product=product,
-        product_name=product.name, product_sku=product.sku, uom_code="PCS",
+        product_name=product.name, product_sku=product.sku, uom_code=uom_code,
         quantity=Decimal("1"), unit_price=Decimal("100"),
-        tax_rate=Decimal("18"), tax_amount=Decimal("18"), line_total=Decimal("118"),
-        fixed_notified_value=fixed_notified, sale_type=sale_type,
+        tax_rate=tax_rate, tax_amount=tax_amount, line_total=line_total,
+        fixed_notified_value=fixed_notified, sale_type=sale_type, hs_code=hs_code,
     )
 
 
@@ -136,3 +136,43 @@ def test_exempt_without_sn006_falls_through(db, tenant, branch, terminal, owner_
     inv = _invoice(tenant, branch, terminal, owner_user)
     _add_item(inv, _product(tenant), sale_type="Exempt goods")
     assert pick_scenario_id(inv, "sandbox") in ("SN026", "SN002")
+
+
+# --- Services (HS chapter 98) ------------------------------------------------
+#
+# Regression for M/S QAMAR TRADERS: a services HS code (9819.1300, commission
+# agents) was submitted as goods (SN002 / "Goods…" saleType / "Numbers, pieces,
+# units" UoM / 18%) and PRAL rejected it (0099 UoM, then 0204 sale type, then
+# 0046 rate). Confirmed valid against the sandbox: Services + Others + SN019 +
+# a services rate (16%).
+
+def test_services_hs_code_picks_sn019(db, tenant, branch, terminal, owner_user):
+    _assign(tenant, ["SN001", "SN002", "SN019"])
+    inv = _invoice(tenant, branch, terminal, owner_user)
+    _add_item(inv, _product(tenant), hs_code="9819.1300",
+              sale_type="Goods at standard rate (default)")
+    assert pick_scenario_id(inv, "sandbox") == "SN019"
+
+
+def test_services_builder_emits_services_and_others_uom(db, tenant, branch, terminal, owner_user):
+    from apps.fbr.builder import build_item
+    inv = _invoice(tenant, branch, terminal, owner_user)
+    item = _add_item(
+        inv, _product(tenant), hs_code="9819.1300",
+        sale_type="Goods at standard rate (default)",  # goods default → must flip
+        uom_code="PCS",  # would map to "Numbers, pieces, units" for goods
+        tax_rate=Decimal("16"), tax_amount=Decimal("16"), line_total=Decimal("116"),
+    )
+    built = build_item(item)
+    assert built["saleType"] == "Services"
+    assert built["uoM"] == "Others"
+    assert built["rate"] == "16%"
+
+
+def test_goods_builder_unaffected_by_services_logic(db, tenant, branch, terminal, owner_user):
+    from apps.fbr.builder import build_item
+    inv = _invoice(tenant, branch, terminal, owner_user)
+    item = _add_item(inv, _product(tenant), hs_code="8703.2200")  # a goods HS code
+    built = build_item(item)
+    assert built["saleType"] == "Goods at standard rate (default)"
+    assert built["uoM"] == "Numbers, pieces, units"

@@ -171,6 +171,25 @@ def _to_money_number(d: Decimal | None) -> float:
     return float(Decimal(d).quantize(Decimal("0.01")))
 
 
+# Services HS codes in PRAL live under chapter 98 (98xx.xxxx — "SERVICES
+# PROVIDED OR RENDERED BY SPECIFIED PERSONS"). A services line has three FBR
+# requirements that differ from goods, all confirmed against the sandbox
+# validator for HS 9819.1300 (commission agents):
+#   - saleType MUST be "Services" (not "Goods at standard rate (default)")
+#   - uoM MUST be "Others"  (PRAL rejects "Numbers, pieces, units" here → 0099)
+#   - rate must be a services-valid rate (0/Exempt/5/15/16/17%) — NOT 18%,
+#     which is goods-only (→ 0046). We don't force the percentage (the operator
+#     sets it), but 18% on a service will still be rejected by PRAL by design.
+# Sandbox scenario for services is SN019 (see _scenario_for_item).
+SERVICES_SALE_TYPE = "Services"
+SERVICES_UOM_FBR = "Others"
+
+
+def is_services_hs_code(hs_code: str | None) -> bool:
+    """True if the HS code is a PRAL services code (chapter 98)."""
+    return (hs_code or "").strip().startswith("98")
+
+
 def build_item(item: SaleItem) -> dict[str, Any]:
     qty_dec = item.quantity
     qty_int = qty_dec.to_integral_value() if qty_dec == qty_dec.to_integral() else qty_dec
@@ -209,11 +228,23 @@ def build_item(item: SaleItem) -> dict[str, Any]:
         total_values = item.line_total
         sale_type = item.sale_type or "Goods at standard rate (default)"
 
+    # Services (HS chapter 98): PRAL requires saleType "Services" and uoM
+    # "Others". Apply these unless the operator explicitly chose a different,
+    # services-appropriate sale type (e.g. "Services (FED in ST Mode)"). We
+    # only auto-set when the sale type is unset or the goods default — never
+    # clobber a deliberate services variant.
+    services = is_services_hs_code(item.hs_code)
+    if services and (not item.sale_type or "goods" in sale_type.lower()):
+        sale_type = SERVICES_SALE_TYPE
+    # uoM: "Others" for services, unless the product carries a UoM that already
+    # maps to a services-valid string the operator set on purpose.
+    uom_fbr = SERVICES_UOM_FBR if services else map_uom(item.uom_code)
+
     return {
         "hsCode": item.hs_code or "",
         "productDescription": item.product_name,
         "rate": format_line_rate(item.tax_rate, sale_type),
-        "uoM": map_uom(item.uom_code),
+        "uoM": uom_fbr,
         "quantity": float(qty_int) if isinstance(qty_int, Decimal) else int(qty_int),
         "totalValues": _to_money_number(total_values),
         "valueSalesExcludingST": _to_money_number(value_excl_st),
