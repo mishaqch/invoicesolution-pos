@@ -32,7 +32,7 @@ import {
   useSaveProductModifierGroups,
 } from "@/lib/queries";
 import type { ProductBatch, StockLevel } from "@pos/shared/types";
-import { money, qty as fmtQty } from "@/lib/utils";
+import { money, priceInput, qty as fmtQty } from "@/lib/utils";
 
 interface FormValues {
   name: string;
@@ -195,10 +195,10 @@ export default function ProductEdit() {
         uom: existing.uom,
         tax_rate: existing.tax_rate ?? "",
         is_taxable: existing.is_taxable,
-        cost_price: existing.cost_price ?? "0",
-        sale_price: existing.sale_price,
-        retail_price: existing.retail_price ?? "",
-        min_sale_price: existing.min_sale_price ?? "",
+        cost_price: priceInput(existing.cost_price) || "0",
+        sale_price: priceInput(existing.sale_price),
+        retail_price: priceInput(existing.retail_price),
+        min_sale_price: priceInput(existing.min_sale_price),
         reorder_level: existing.reorder_level ?? "",
         is_active: existing.is_active,
         description: existing.description,

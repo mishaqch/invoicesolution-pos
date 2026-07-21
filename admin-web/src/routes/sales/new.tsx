@@ -26,6 +26,7 @@ import {
   type ManualInvoiceLine,
   type ManualInvoicePayment,
 } from "@/lib/queries";
+import { priceInput } from "@/lib/utils";
 
 // UUID v4 shape. Used to detect when `product.tax_rate` is the FK row
 // id (current backend serializer behaviour) instead of the numeric
@@ -401,7 +402,7 @@ export default function NewInvoiceRoute() {
         hs_code: p.hs_code ?? "",
         uom_code: p.uom ?? "PCS",
         quantity: "1",
-        unit_price: p.sale_price ?? "0",
+        unit_price: priceInput(p.sale_price) || "0",
         tax_rate: resolveTaxRate(p.tax_rate),
         is_taxable: !!p.is_taxable,
         discount_amount: "0",
