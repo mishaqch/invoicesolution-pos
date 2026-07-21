@@ -65,8 +65,10 @@ export function TotalsPane({ onHold }: Props) {
         <hr className="my-2" />
         <div className="flex items-end justify-between">
           <span className="text-sm font-semibold">TOTAL</span>
+          {/* Display-only: headline total rounded to whole rupees (450.08 →
+              "Rs 450"). The stored + FBR amount is unchanged. */}
           <span className="font-mono text-3xl font-bold">
-            Rs {totals.grand_total.display()}
+            Rs {totals.grand_total.displayWhole()}
           </span>
         </div>
       </div>

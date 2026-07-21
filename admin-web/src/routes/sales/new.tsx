@@ -26,7 +26,7 @@ import {
   type ManualInvoiceLine,
   type ManualInvoicePayment,
 } from "@/lib/queries";
-import { priceInput } from "@/lib/utils";
+import { priceInput, roundWhole } from "@/lib/utils";
 
 // UUID v4 shape. Used to detect when `product.tax_rate` is the FK row
 // id (current backend serializer behaviour) instead of the numeric
@@ -779,7 +779,10 @@ export default function NewInvoiceRoute() {
             </div>
             <div className="border-t pt-1.5 flex items-baseline justify-between text-base font-semibold">
               <span>Grand total</span>
-              <span className="font-mono">{rs(totals.grand)}</span>
+              {/* Display-only: round the headline total to whole rupees
+                  (450.08 → "Rs. 450"). The actual invoice/FBR amount is
+                  unchanged — only this display is rounded. */}
+              <span className="font-mono">Rs. {roundWhole(totals.grand)}</span>
             </div>
             {Object.entries(totals.byRate).filter(([rate]) => rate !== "0").length > 0 && (
               <div className="mt-2 border-t pt-2">

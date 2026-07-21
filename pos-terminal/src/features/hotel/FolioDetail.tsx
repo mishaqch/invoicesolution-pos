@@ -578,7 +578,7 @@ export function FolioDetail({
             <Row label="Subtotal" value={rs(bill.subtotal)} />
             <Row label="Tax" value={rs(bill.tax_total)} />
             <div className="mt-1 flex justify-between border-t pt-2 text-base font-bold">
-              <span>Grand total</span><span className="font-mono">Rs {rs(bill.grand_total)}</span>
+              <span>Grand total</span><span className="font-mono">Rs {Money.fromStr(bill.grand_total).displayWhole()}</span>
             </div>
             {Number(bill.paid_total) > 0 && <Row label="Paid" value={rs(bill.paid_total)} />}
           </div>

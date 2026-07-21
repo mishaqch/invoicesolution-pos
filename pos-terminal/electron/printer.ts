@@ -60,6 +60,12 @@ function money2(s: string | number | null | undefined): string {
   const n = Number(s ?? 0);
   return Number.isFinite(n) ? n.toFixed(2) : "0.00";
 }
+/** Whole-rupee display for a HEADLINE printed total (450.08 -> "450"). Half-up.
+ *  Presentation only — the stored / FBR amount is unchanged. */
+function moneyWhole(s: string | number | null | undefined): string {
+  const n = Number(s ?? 0);
+  return Number.isFinite(n) ? String(Math.round(n)) : "0";
+}
 function qtyFmt(s: string | number | null | undefined): string {
   // Quantities are whole units on a retail receipt — show "2", "20", not
   // "2.0000". Keep up to 3 decimals only if the item is genuinely fractional
@@ -528,7 +534,7 @@ function renderFolioText(input: FolioBillInput): string {
   L.push(rule);
   L.push(row("Subtotal", money2(f.subtotal)));
   L.push(row("Tax", money2(f.tax_total)));
-  L.push(row("GRAND TOTAL", money2(f.grand_total)));
+  L.push(row("GRAND TOTAL", moneyWhole(f.grand_total)));
   if (Number(f.paid_total) > 0) L.push(row("Paid", money2(f.paid_total)));
   // Cash tender/change, when the guest paid cash and got change back.
   if (f.tendered && Number(f.tendered) > 0) {
@@ -920,7 +926,7 @@ function renderBodyText(input: ReceiptInput): string {
     ["Subtotal", money2(input.invoice.subtotal)],
     ["Discount", money2(input.invoice.discount_total)],
     ["Tax", money2(input.invoice.tax_total)],
-    ["TOTAL", money2(input.invoice.grand_total)],
+    ["TOTAL", moneyWhole(input.invoice.grand_total)],
     ["Tendered", money2(input.invoice.paid_total)],
     ["Change", money2(input.invoice.change_given)],
   ];

@@ -18,6 +18,18 @@ export function money(value: string | number | null | undefined): string {
 }
 
 /**
+ * Round a money value to the nearest whole rupee, for DISPLAY of a headline
+ * total only (e.g. grand total 450.08 → "450"). Standard half-up rounding
+ * (450.50 → "451"). This is presentation only — the real invoice/FBR amount is
+ * unchanged. Returns a thousands-separated integer string ("1,450").
+ */
+export function roundWhole(value: string | number | null | undefined): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return "0";
+  return Math.round(n).toLocaleString("en-PK", { maximumFractionDigits: 0 });
+}
+
+/**
  * Normalize a stored price (DECIMAL(14,4), e.g. "388.0000") into a clean value
  * for an EDITABLE input — 2 decimals, no thousands separator, trailing ".00"
  * dropped when whole ("388", "388.50"). Use when seeding a NumberInput from a

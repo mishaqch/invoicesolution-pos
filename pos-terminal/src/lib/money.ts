@@ -135,6 +135,19 @@ export class Money {
     return `${negative ? "-" : ""}${displayInt}.${displayFrac.toString().padStart(2, "0")}`;
   }
 
+  /**
+   * Whole-rupee display for a HEADLINE total only (e.g. grand total 450.08 →
+   * "450"). Half-up rounding (450.50 → "451"). Presentation only — the stored
+   * value and the amount sent to FBR are unchanged.
+   */
+  displayWhole(): string {
+    const negative = this.micro < 0n;
+    const abs = negative ? -this.micro : this.micro;
+    // Add half a rupee (0.5 = SCALE/2) then floor to whole rupees.
+    const whole = (abs + SCALE / 2n) / SCALE;
+    return `${negative ? "-" : ""}${whole.toString()}`;
+  }
+
   toString() { return this.toStorageString(); }
 }
 
