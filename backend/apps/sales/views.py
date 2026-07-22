@@ -667,6 +667,29 @@ class InvoiceViewSet(
 
         invoice = self.get_object()
         tenant = invoice.tenant
+
+        # "Validate with FBR" is the DI-API dry-run — it ONLY applies to di_api
+        # tenants. Tenants on other connection types fiscalize through a
+        # different mechanism (POS ID, no DI-API validate), so firing a DI-API
+        # request for them builds a nonsensical URL against the wrong endpoint
+        # (e.g. ims.pral.com.pk/di_data/... for a PRA-cloud tenant). Guard it.
+        conn = getattr(tenant, "fbr_connection_type", "di_api")
+        if conn != "di_api":
+            _MSG = {
+                "pra_cloud": "This tenant uses PRA Cloud IMS (POS ID + Bearer "
+                             "token). There is no DI-API 'Validate' step — the "
+                             "invoice fiscalizes automatically on sync via the "
+                             "PRA cloud.",
+                "ims_sdc": "This tenant uses the IMS/SDC Fiscalization service "
+                           "(POS ID, local component). There is no DI-API "
+                           "'Validate' step — fiscalization happens through the "
+                           "SDC.",
+                "none": "This tenant is non-fiscal (no FBR/PRA). Invoices are "
+                        "not submitted for fiscalization.",
+            }.get(conn, f"'Validate with FBR' does not apply to this tenant "
+                        f"(connection type: {conn}).")
+            return Response({"detail": _MSG}, status=status.HTTP_400_BAD_REQUEST)
+
         token = (
             FbrToken.objects.filter(tenant=tenant, environment="production", is_active=True).first()
             or FbrToken.objects.filter(tenant=tenant, environment="sandbox", is_active=True).first()
