@@ -43,6 +43,15 @@ REQUEST_TIMEOUT = 30
 SUBMIT_PATH = "/api/IMSFiscal/GetInvoiceNumberByModel"
 HEALTH_PATH = "/api/IMSFiscal/get"
 
+# PRA (Punjab Revenue Authority) CLOUD IMS endpoints — the same POS-Component
+# invoice model as the local SDC, but posted from our server directly to PRAL's
+# cloud with a Bearer token (no local component on the shop machine). URLs per
+# the PRAL "POS Component User Manual" §6.4.2.
+PRA_CLOUD_URLS = {
+    "sandbox": "https://ims.pral.com.pk/ims/sandbox/api/Live/PostData",
+    "production": "https://ims.pral.com.pk/ims/production/api/Live/PostData",
+}
+
 
 class SdcError(Exception):
     """Base — SDC unreachable or returned an unusable response."""
@@ -190,6 +199,53 @@ def submit_invoice(*, invoice, pos_id: str) -> SdcResult:
         raise SdcTransientError(f"SDC non-JSON response: {r.text[:200]}") from exc
 
     logger.info("SDC fiscalized POSID=%s invoice=%s in %sms", pos_id, invoice.id, dur)
+    return parse_sdc_response(data)
+
+
+def submit_invoice_cloud(*, invoice, pos_id: str, token: str, environment: str) -> SdcResult:
+    """POST one invoice to PRA's CLOUD IMS (ims.pral.com.pk) with a Bearer token.
+
+    Reuses the exact same POS-Component payload + response parsing as the local
+    SDC path — only the transport differs (cloud URL + Authorization header). The
+    branch POS ID is embedded in the payload. Raises SdcTransientError (retryable,
+    e.g. network/5xx/timeout) or SdcRejectedError (validation/business/4xx).
+
+    NOTE: PRAL may IP-whitelist the calling server (see the manual §6.4.2). Until
+    the server IP is whitelisted, the connection is dropped at the TLS layer and
+    surfaces here as a transient (retryable) error — the invoice stays pending.
+    """
+    url = PRA_CLOUD_URLS.get(environment)
+    if not url:
+        raise SdcRejectedError(f"Unknown PRA cloud environment: {environment!r}")
+    payload = build_sdc_payload(invoice=invoice, pos_id=pos_id)
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    start = time.monotonic()
+    try:
+        r = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT)
+    except requests.Timeout as exc:
+        raise SdcTransientError(f"PRA cloud timeout: {exc}") from exc
+    except requests.RequestException as exc:
+        # Includes TLS/SSL errors (e.g. server not yet IP-whitelisted) —
+        # treat as transient so the invoice is retried, not hard-failed.
+        raise SdcTransientError(f"PRA cloud unreachable: {exc}") from exc
+    dur = int((time.monotonic() - start) * 1000)
+
+    if r.status_code == 401 or r.status_code == 403:
+        raise SdcRejectedError(f"PRA cloud auth failed ({r.status_code}): check the Bearer token. {r.text[:200]}")
+    if r.status_code >= 500:
+        raise SdcTransientError(f"PRA cloud {r.status_code} (server error) in {dur}ms")
+    if r.status_code >= 400:
+        raise SdcRejectedError(f"PRA cloud {r.status_code}: {r.text[:300]}")
+    try:
+        data = r.json()
+    except ValueError as exc:
+        raise SdcTransientError(f"PRA cloud non-JSON response: {r.text[:200]}") from exc
+
+    logger.info("PRA cloud fiscalized POSID=%s invoice=%s env=%s in %sms",
+                pos_id, invoice.id, environment, dur)
     return parse_sdc_response(data)
 
 

@@ -1,0 +1,139 @@
+"""PRA Cloud IMS submission path (fbr_connection_type='pra_cloud').
+
+When a tenant is configured for pra_cloud AND its branch has an FBR POS ID AND a
+PRA cloud token exists, the invoice is posted from OUR server to PRAL's cloud
+(ims.pral.com.pk/.../Live/PostData) with a Bearer token — reusing the same
+POS-Component payload/response as the local SDC. We mock the HTTP call and
+assert: the correct cloud URL + Bearer header + per-branch POSID are sent, the
+returned fiscal number persists, and the invoice goes valid. A TLS/network
+failure (e.g. server not yet IP-whitelisted) is transient → invoice not
+hard-failed on the first attempt.
+"""
+from __future__ import annotations
+
+import uuid
+from decimal import Decimal
+from unittest.mock import patch
+
+import pytest
+import requests
+
+from apps.catalog.models import Product, UnitOfMeasure
+from apps.fbr.models import FbrToken
+from apps.fbr.tasks import submit_invoice_to_fbr
+from apps.inventory.services.movements import record_movement
+from apps.sales.services import checkout
+from apps.tenants.models import Branch, Terminal
+
+
+@pytest.fixture
+def branch(db, tenant):
+    return Branch.objects.create(
+        tenant=tenant, name="AYUB SAB", code="BM1", address="x",
+        city="Lahore", province="PUNJAB", fbr_pos_id="196819",
+    )
+
+
+@pytest.fixture
+def cloud_setup(db, tenant, branch, owner_user):
+    tenant.fbr_connection_type = "pra_cloud"
+    tenant.save(update_fields=["fbr_connection_type"])
+    tok = FbrToken(tenant=tenant, environment="sandbox", is_active=True,
+                   api_endpoint="https://ims.pral.com.pk")
+    tok.token = "test-bearer-token-123"
+    tok.save()
+
+    term = Terminal.objects.create(tenant=tenant, branch=branch, name="C1",
+                                   device_fingerprint="prac-" + uuid.uuid4().hex[:8])
+    uom = UnitOfMeasure.objects.get(code="PCS")
+    p = Product.objects.create(tenant=tenant, name="Biryani", sku="BM-1", uom=uom,
+                               sale_price=Decimal("388"), cost_price=Decimal("100"))
+    record_movement(tenant_id=tenant.id, product=p, branch=branch,
+                    movement_type="opening_balance", quantity=Decimal("50"))
+    inv = checkout.create_invoice(
+        tenant_id=tenant.id, branch=branch, terminal=term, cashier=owner_user,
+        cash_session=None, customer=None,
+        cart_lines=[{"product": str(p.id), "quantity": "1", "unit_price": "388",
+                     "tax_rate": "16", "is_taxable": True}],
+        payments=[{"payment_method": "cash", "amount": "450.08"}],
+        client_uuid=str(uuid.uuid4()),
+    )
+    return inv
+
+
+def _mock_cloud_post(captured):
+    def fake_post(url, json=None, headers=None, timeout=None, **kw):
+        captured["url"] = url
+        captured["body"] = json
+        captured["headers"] = headers or {}
+
+        class _R:
+            status_code = 200
+            text = "ok"
+
+            def json(self_inner):
+                return {
+                    "InvoiceNumber": "9000052011142444901",
+                    "Code": "100",
+                    "Response": "Fiscal Invoice Number generated successfully.",
+                    "Errors": None,
+                }
+        return _R()
+    return patch("apps.fbr.sdc_client.requests.post", side_effect=fake_post)
+
+
+@pytest.mark.django_db
+def test_pra_cloud_path_posts_with_bearer_and_posid(cloud_setup, tenant):
+    inv = cloud_setup
+    captured = {}
+    with _mock_cloud_post(captured):
+        result = submit_invoice_to_fbr(str(inv.id))
+
+    assert result.get("via") == "pra_cloud", result
+    assert result.get("ok") is True
+    # Correct sandbox cloud URL
+    assert captured["url"] == "https://ims.pral.com.pk/ims/sandbox/api/Live/PostData"
+    # Bearer token header
+    assert captured["headers"].get("Authorization") == "Bearer test-bearer-token-123"
+    # Per-branch POS ID in the PRA payload
+    assert captured["body"]["POSID"] == 196819
+    # Fiscal number persisted, invoice valid
+    inv.refresh_from_db()
+    assert inv.status == "valid"
+    assert inv.fbr_invoice_number == "9000052011142444901"
+
+
+@pytest.mark.django_db
+def test_pra_cloud_tls_failure_is_transient(cloud_setup, tenant):
+    """A TLS/SSL error (server not yet IP-whitelisted) must be TRANSIENT — the
+    task schedules a Celery retry (raises Retry) rather than hard-failing the
+    invoice. Called directly (not via a worker), self.retry() raises Retry."""
+    from celery.exceptions import Retry
+    from apps.fbr.sdc_client import SdcTransientError
+
+    inv = cloud_setup
+
+    def boom(*a, **k):
+        raise requests.exceptions.SSLError("EOF occurred in violation of protocol")
+
+    # self.retry(exc=...) re-raises to signal a retry: called directly (not via a
+    # worker) it surfaces as the original transient error or a Retry — either way
+    # it is NOT a hard failure/reject.
+    with patch("apps.fbr.sdc_client.requests.post", side_effect=boom):
+        with pytest.raises((Retry, SdcTransientError)):
+            submit_invoice_to_fbr(str(inv.id))
+
+    inv.refresh_from_db()
+    # Not hard-failed — it was submitted and will be retried.
+    assert inv.status == "submitted"
+
+
+@pytest.mark.django_db
+def test_pra_cloud_deferred_without_token(cloud_setup, tenant):
+    """pra_cloud tenant with the token removed → defer cleanly (no crash)."""
+    inv = cloud_setup
+    FbrToken.objects.filter(tenant=tenant).update(is_active=False)
+    with patch("apps.fbr.sdc_client.requests.post") as post:
+        result = submit_invoice_to_fbr(str(inv.id))
+    post.assert_not_called()
+    assert result.get("deferred") == "no_pra_cloud_token", result

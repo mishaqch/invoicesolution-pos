@@ -61,6 +61,13 @@ DEFAULT_BUSINESS_MODE = "digital_invoicing"
 #             relays to FBR. Our server sends the POS ID to localhost:8524; NO
 #             Bearer token is used on this path, and there are NO sandbox
 #             scenarios (the IMS handles activation itself).
+#   pra_cloud — Punjab Revenue Authority (PRA/PRAL) CLOUD IMS. Same POS-Component
+#             invoice model as ims_sdc (POSID / USIN / Items[] / PCTCode), but
+#             posted from OUR server directly to PRAL's cloud
+#             (ims.pral.com.pk/.../Live/PostData) with a Bearer token — NO local
+#             component on the shop machine. Needs: the branch FBR POS ID + a PRA
+#             cloud token (stored per-tenant, encrypted). No DI-API scenarios.
+#             (PRAL may IP-whitelist the server for production.)
 #   none    — NON-FISCAL. The tenant is NOT connected to any tax authority
 #             (no FBR, no PRA/SRB). Invoices are created, synced and reported
 #             like normal, but are NEVER submitted for fiscalization — they
@@ -76,6 +83,7 @@ DEFAULT_BUSINESS_MODE = "digital_invoicing"
 FBR_CONNECTION_TYPES = (
     ("di_api", "Direct DI-API (PRAL Bearer token + scenarios)"),
     ("ims_sdc", "IMS / SDC Fiscalization service (POS ID, no token, no scenarios)"),
+    ("pra_cloud", "PRA Cloud IMS (POS ID + Bearer token, no local component)"),
     ("none", "Non-fiscal (no FBR / no tax-authority validation)"),
 )
 
