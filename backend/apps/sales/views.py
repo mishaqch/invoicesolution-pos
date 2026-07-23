@@ -551,6 +551,21 @@ class InvoiceViewSet(
         invoice.refresh_from_db()
         return Response(InvoiceSerializer(invoice).data)
 
+    @action(detail=True, methods=["get"], url_path="precheck",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def precheck(self, request, pk=None):
+        """LOCAL pre-submit check for a POS invoice — no FBR/PRA call.
+
+        The IMS cloud (Live/PostData) has no dry-run, so this is the "test
+        before submit" for POS invoices: we validate everything WE can (POS ID,
+        fields, tax/UoM/HS/saleType math, buyer id shape) and return a checklist
+        of issues. It CANNOT guarantee FBR acceptance — only the authority can —
+        but catches the common rejects before the operator commits.
+        """
+        from apps.fbr.precheck import precheck_pos_invoice
+        invoice = self.get_object()
+        return Response(precheck_pos_invoice(invoice))
+
     @action(detail=True, methods=["get"], url_path="fiscal-payload",
             permission_classes=[HasRolePerm.with_perm("sales.create")])
     def fiscal_payload(self, request, pk=None):

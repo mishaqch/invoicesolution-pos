@@ -1124,6 +1124,25 @@ export function useValidateInvoice() {
   });
 }
 
+export interface PrecheckIssue {
+  severity: "error" | "warning" | "info";
+  field: string;
+  message: string;
+}
+export interface PrecheckResult {
+  ok: boolean;
+  blocking: boolean;
+  issues: PrecheckIssue[];
+}
+
+/** Local pre-submit check for a POS invoice (no FBR call). GET, run on demand. */
+export function usePrecheckInvoice() {
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<PrecheckResult>(`/sales/invoices/${id}/precheck/`),
+  });
+}
+
 export function useCancelInvoiceItem() {
   const qc = useQueryClient();
   return useMutation({

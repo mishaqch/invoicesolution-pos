@@ -1,5 +1,6 @@
-import { ArrowLeft, CheckCircle2, Download, FilePlus2, FileText, Lock, Mail, MessageCircle, MoreHorizontal, Pencil, RefreshCw, Send, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, FilePlus2, FileText, Lock, Mail, MessageCircle, MoreHorizontal, Pencil, RefreshCw, Send, ShieldCheck, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 // See invoices.tsx for why this is a named import, not the default.
 import { QRCode } from "react-qr-code";
 
@@ -26,8 +27,10 @@ import {
   useEditInvoiceItem,
   useFbrSubmissions,
   useInvoice,
+  usePrecheckInvoice,
   useResubmitInvoice,
   useValidateInvoice,
+  type PrecheckResult,
   type AdminInvoice,
   type FbrSubmissionRow,
   type ValidateInvoiceResult,
@@ -85,6 +88,25 @@ export default function InvoiceDetail() {
   const editItem = useEditInvoiceItem();
   const resubmit = useResubmitInvoice();
   const validate = useValidateInvoice();
+  const precheck = usePrecheckInvoice();
+  const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(null);
+  const qc = useQueryClient();
+
+  // After a POS cloud fiscalization, the fiscal number arrives ASYNC (a worker
+  // posts to the authority cloud). Poll the invoice a few times so the QR +
+  // downloadable PDF appear on THIS page automatically, without a manual
+  // refresh. Stops as soon as fbr_invoice_number lands (or after ~20s).
+  async function pollForFbrNumber(invoiceId: string) {
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      await qc.invalidateQueries({ queryKey: ["invoice", invoiceId] });
+      const fresh = qc.getQueryData<AdminInvoice>(["invoice", invoiceId]);
+      if (fresh?.fbr_invoice_number) {
+        setFiscalMsg({ ok: true, text: `Fiscalized! FBR Invoice #${fresh.fbr_invoice_number} — QR + PDF are ready below.` });
+        return;
+      }
+    }
+  }
   const deleteDraft = useDeleteDraftInvoice();
   const [validateResult, setValidateResult] = useState<ValidateInvoiceResult | null>(null);
   const [fiscalizing, setFiscalizing] = useState(false);
@@ -297,6 +319,29 @@ export default function InvoiceDetail() {
         </Button>
         )}
 
+        {/* Check invoice (LOCAL pre-submit): the IMS cloud has no dry-run, so
+            this runs every check WE can (POS ID, fields, tax/UoM/HS math, buyer
+            id) WITHOUT calling FBR — catches common rejects before committing.
+            POS registrations only, until an FBR number exists. */}
+        {isPosFiscalizationTenant && !invoice.fbr_invoice_number && invoice.status !== "cancelled" && (
+          <Button
+            variant="outline"
+            disabled={precheck.isPending}
+            onClick={async () => {
+              setPrecheckResult(null);
+              try {
+                setPrecheckResult(await precheck.mutateAsync(invoice.id));
+              } catch (e) {
+                setFiscalMsg({ ok: false, text: extractApiErrorMessage(e) });
+              }
+            }}
+            title="Run a local validity check (fields, POS ID, tax math) before fiscalizing. Does not call FBR."
+          >
+            <ShieldCheck className={`mr-1 h-4 w-4 ${precheck.isPending ? "animate-pulse" : ""}`} />
+            {precheck.isPending ? "Checking…" : "Check invoice"}
+          </Button>
+        )}
+
         {/* Fiscalize a POS registration via the CLOUD (server-side). We no
             longer use a local SDC on the shop machine — the server posts the
             invoice to the tax authority's cloud IMS (FBR gw.fbr.gov.pk/imsp or
@@ -309,14 +354,17 @@ export default function InvoiceDetail() {
             onClick={async () => {
               setFiscalizing(true);
               setFiscalMsg(null);
+              setPrecheckResult(null);
               try {
                 const updated = await resubmit.mutateAsync(invoice.id);
                 if (updated.fbr_invoice_number) {
-                  setFiscalMsg({ ok: true, text: `Fiscalized! FBR Invoice #${updated.fbr_invoice_number}` });
+                  setFiscalMsg({ ok: true, text: `Fiscalized! FBR Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.` });
                 } else {
                   // Queued/submitting — the fiscal number lands async via the
-                  // cloud; the page refetches and will show it shortly.
-                  setFiscalMsg({ ok: true, text: "Sent to FBR — fiscal number will appear once the cloud responds." });
+                  // cloud. Poll the invoice so the QR + PDF appear here without
+                  // a manual refresh.
+                  setFiscalMsg({ ok: true, text: "Sent to FBR — waiting for the fiscal number…" });
+                  void pollForFbrNumber(invoice.id);
                 }
               } catch (e) {
                 setFiscalMsg({ ok: false, text: extractApiErrorMessage(e) });
@@ -467,7 +515,48 @@ export default function InvoiceDetail() {
           }
         >
           {fiscalMsg.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <X className="mt-0.5 h-4 w-4 shrink-0" />}
-          <div>{fiscalMsg.text}{fiscalMsg.ok ? " — refresh to see the QR on the invoice/PDF." : ""}</div>
+          <div>{fiscalMsg.text}</div>
+        </div>
+      )}
+
+      {/* Local pre-submit check results (POS invoices). */}
+      {precheckResult && (
+        <div
+          role="status"
+          className={
+            precheckResult.blocking
+              ? "rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm dark:border-red-700 dark:bg-red-950"
+              : precheckResult.issues.some((i) => i.severity === "warning")
+                ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-700 dark:bg-amber-950"
+                : "rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm dark:border-emerald-700 dark:bg-emerald-950"
+          }
+        >
+          <div className="mb-1 font-medium">
+            {precheckResult.blocking
+              ? "Fix these before fiscalizing:"
+              : precheckResult.issues.length === 0
+                ? "Looks good — no issues found. (Note: only FBR can confirm final acceptance.)"
+                : "No blockers — a couple of things to double-check:"}
+          </div>
+          {precheckResult.issues.length > 0 && (
+            <ul className="space-y-0.5">
+              {precheckResult.issues.map((iss, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-0.5">
+                    {iss.severity === "error" ? "❌" : iss.severity === "warning" ? "⚠️" : "ℹ️"}
+                  </span>
+                  <span>
+                    <span className="font-mono text-xs text-muted-foreground">{iss.field}</span>{" "}
+                    {iss.message}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-1.5 text-xs text-muted-foreground">
+            This is a local check — it does not contact FBR. FBR/PRA POS has no
+            dry-run; the authority confirms only on the real submission.
+          </div>
         </div>
       )}
 
