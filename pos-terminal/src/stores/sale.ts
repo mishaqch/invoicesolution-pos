@@ -207,6 +207,31 @@ export interface CartTotals {
   grand_total: Money;
 }
 
+// Payment-driven services tax (PRA card rule). Given the tenant's standard +
+// card-reduced services rates and whether the sale is FULLY card-paid, return
+// the lines with services (HS chapter 98) rates swapped to the right rate.
+// Only swaps between the two configured rates — never touches goods lines or a
+// deliberately-custom rate. Returns the lines unchanged when the tenant hasn't
+// configured a card-reduced rate (feature off).
+const _isServicesHs = (hs?: string | null) => (hs || "").trim().startsWith("98");
+const _normRate = (r?: string | null) => String(Number(r || 0));
+export function applyPaymentServicesRate(
+  lines: CartLine[],
+  opts: { standardRate?: string | null; cardRate?: string | null; allCard: boolean },
+): CartLine[] {
+  const std = opts.standardRate ? _normRate(opts.standardRate) : null;
+  const card = opts.cardRate ? _normRate(opts.cardRate) : null;
+  if (!std || !card) return lines; // feature off
+  const target = opts.allCard ? card : std;
+  const swappable = new Set([std, card]);
+  return lines.map((l) => {
+    if (!_isServicesHs(l.hs_code)) return l;
+    if (!swappable.has(_normRate(l.tax_rate))) return l; // custom rate — leave it
+    if (_normRate(l.tax_rate) === target) return l;
+    return { ...l, tax_rate: target };
+  });
+}
+
 export function quoteCart(state: Pick<SaleState, "lines" | "cartDiscountPct">): CartTotals {
   const quoted: QuotedLine[] = state.lines.map((l) => {
     const gross = Money.fromStr(l.unit_price).mulScalar(l.quantity);

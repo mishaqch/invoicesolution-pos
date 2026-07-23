@@ -19,7 +19,7 @@ import { usePaymentMethods } from "@/features/payment/usePaymentMethods";
 import { usePosContext } from "@/features/sale/usePosContext";
 import { Money } from "@/lib/money";
 import { newClientUuid } from "@/lib/uuid";
-import { quoteCart, useSaleStore } from "@/stores/sale";
+import { applyPaymentServicesRate, quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 import { useTenderStore, type PaymentMethodCode, type Tender } from "@/stores/tender";
 
@@ -31,6 +31,7 @@ export default function PaymentRoute() {
   const clientUuid = useSaleStore((s) => s.clientUuid);
   const ctx = usePosContext();
   const user = useSessionStore((s) => s.user);
+  const tenant = useSessionStore((s) => s.tenant);
 
   const tenders = useTenderStore((s) => s.tenders);
   const addTender = useTenderStore((s) => s.add);
@@ -52,8 +53,26 @@ export default function PaymentRoute() {
     return null;
   }
 
-  const totals = quoteCart({ lines, cartDiscountPct });
+  // Payment-driven services tax (PRA card rule). The reduced card rate applies
+  // ONLY when the WHOLE bill is card — any cash/other tender → standard rate on
+  // the whole invoice. Before any tender is added we show the standard rate so
+  // the cashier sees the "pay fully by card to save" case, not a false low total.
+  const CARD_METHODS = new Set<PaymentMethodCode>(["card_credit", "card_debit"]);
+  const allCard = tenders.length > 0 && tenders.every((t) => CARD_METHODS.has(t.payment_method));
+  const adjustedLines = applyPaymentServicesRate(lines, {
+    standardRate: tenant?.services_tax_rate_standard ?? null,
+    cardRate: tenant?.services_tax_rate_card ?? null,
+    allCard,
+  });
+
+  const totals = quoteCart({ lines: adjustedLines, cartDiscountPct });
   const grand = totals.grand_total;
+
+  // Show the card-rate note only when this tenant has a reduced card rate AND
+  // the cart actually has a services line whose rate the swap can touch.
+  const cardRateActive =
+    !!tenant?.services_tax_rate_card &&
+    lines.some((l) => (l.hs_code || "").trim().startsWith("98"));
   const tendered = totalTendered();
   const remaining = grand.sub(tendered);
   const complete = isComplete(grand);
@@ -316,6 +335,26 @@ export default function PaymentRoute() {
               </div>
             </div>
           </div>
+
+          {cardRateActive && (
+            <div
+              className={`rounded-md border px-3 py-2 text-xs ${
+                allCard
+                  ? "border-success/40 bg-success-soft text-success-soft-foreground"
+                  : "border-primary/30 bg-primary/5 text-muted-foreground"
+              }`}
+            >
+              {allCard
+                ? `Card payment — services taxed at the reduced ${Number(
+                    tenant?.services_tax_rate_card,
+                  )}% (card rate).`
+                : `Standard ${Number(
+                    tenant?.services_tax_rate_standard ?? 16,
+                  )}% services rate. Pay the full bill by card to use the reduced ${Number(
+                    tenant?.services_tax_rate_card,
+                  )}% rate.`}
+            </div>
+          )}
 
           <TenderList tenders={tenders} onRemove={removeTender} />
 
