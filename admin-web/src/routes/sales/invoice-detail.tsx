@@ -102,7 +102,7 @@ export default function InvoiceDetail() {
       await qc.invalidateQueries({ queryKey: ["invoice", invoiceId] });
       const fresh = qc.getQueryData<AdminInvoice>(["invoice", invoiceId]);
       if (fresh?.fbr_invoice_number) {
-        setFiscalMsg({ ok: true, text: `Fiscalized! FBR Invoice #${fresh.fbr_invoice_number} — QR + PDF are ready below.` });
+        setFiscalMsg({ ok: true, done: true, text: `Fiscalized! FBR Invoice #${fresh.fbr_invoice_number} — QR + PDF are ready below.` });
         return;
       }
     }
@@ -110,7 +110,21 @@ export default function InvoiceDetail() {
   const deleteDraft = useDeleteDraftInvoice();
   const [validateResult, setValidateResult] = useState<ValidateInvoiceResult | null>(null);
   const [fiscalizing, setFiscalizing] = useState(false);
-  const [fiscalMsg, setFiscalMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // `done` marks a FINAL success (fiscal number issued) — those auto-dismiss;
+  // errors and the "waiting…" progress message stay until replaced.
+  const [fiscalMsg, setFiscalMsg] = useState<{ ok: boolean; text: string; done?: boolean } | null>(null);
+  const [fiscalMsgFading, setFiscalMsgFading] = useState(false);
+
+  // Auto-dismiss a final fiscalization-success banner: hold ~5s, fade out over
+  // ~0.6s, then remove. Only for `done` success — never for errors or the
+  // in-progress "waiting…" message.
+  useEffect(() => {
+    if (!fiscalMsg?.ok || !fiscalMsg.done) return;
+    setFiscalMsgFading(false);
+    const fade = setTimeout(() => setFiscalMsgFading(true), 5000);
+    const clear = setTimeout(() => { setFiscalMsg(null); setFiscalMsgFading(false); }, 5600);
+    return () => { clearTimeout(fade); clearTimeout(clear); };
+  }, [fiscalMsg]);
   const [showConfirm, setShowConfirm] = useState(false);
   const [reason, setReason] = useState("");
   const [itemPrompt, setItemPrompt] = useState<{ id: string; reason: string } | null>(null);
@@ -358,7 +372,7 @@ export default function InvoiceDetail() {
               try {
                 const updated = await resubmit.mutateAsync(invoice.id);
                 if (updated.fbr_invoice_number) {
-                  setFiscalMsg({ ok: true, text: `Fiscalized! FBR Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.` });
+                  setFiscalMsg({ ok: true, done: true, text: `Fiscalized! FBR Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.` });
                 } else {
                   // Queued/submitting — the fiscal number lands async via the
                   // cloud. Poll the invoice so the QR + PDF appear here without
@@ -509,9 +523,11 @@ export default function InvoiceDetail() {
         <div
           role="status"
           className={
-            fiscalMsg.ok
-              ? "flex items-start gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-100"
-              : "flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100"
+            "flex items-start gap-2 rounded-md border px-3 py-2 text-sm transition-all duration-500 ease-out "
+            + (fiscalMsg.ok
+              ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-100"
+              : "border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100")
+            + (fiscalMsgFading ? " -translate-y-1 opacity-0" : " opacity-100")
           }
         >
           {fiscalMsg.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <X className="mt-0.5 h-4 w-4 shrink-0" />}
