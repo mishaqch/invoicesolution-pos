@@ -28,6 +28,25 @@ class _PaymentSerializer(serializers.Serializer):
     payment_method = serializers.CharField()
     amount = serializers.DecimalField(max_digits=14, decimal_places=4)
 
+    # Method-specific proof fields the POS terminal collects (card slip, wallet
+    # tx id, cheque number, …). All optional here; the per-method adapter owns
+    # which are required. Without these a plain Serializer DROPS them and card
+    # sales fail server-side with "card_last4: Required." even though the
+    # cashier keyed the slip. Mirrors CheckoutPaymentSerializer.
+    card_last4 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_auth_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_rrn = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_terminal_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    wallet_transaction_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    wallet_phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    raast_transaction_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    raast_iban = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    cheque_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    bank_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    cheque_date = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    bank_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    bank_account_last4 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
 
 class IngestInvoiceSerializer(serializers.Serializer):
     """POST /api/sync/invoices/."""

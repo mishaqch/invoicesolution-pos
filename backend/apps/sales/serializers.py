@@ -131,6 +131,31 @@ class CheckoutPaymentSerializer(serializers.Serializer):
     )
     amount = serializers.DecimalField(max_digits=14, decimal_places=4)
 
+    # Method-specific proof fields. All optional HERE — the per-method payment
+    # adapter (apps/payments/adapters/*) is the single owner of which are
+    # actually required (e.g. card_last4/card_auth_code are mandatory at the POS
+    # terminal, optional for back-office manual invoicing). Without these
+    # declarations a plain Serializer silently DROPS them, so the adapter would
+    # never see the card slip the cashier keyed and would raise "Required."
+    # Card (card_credit / card_debit)
+    card_last4 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_auth_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_rrn = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    card_terminal_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Wallet (easypaisa / jazzcash)
+    wallet_transaction_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    wallet_phone = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Raast
+    raast_transaction_id = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    raast_iban = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Cheque
+    cheque_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    bank_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    cheque_date = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    # Bank transfer
+    bank_reference = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    bank_account_last4 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
 
 class CheckoutSerializer(serializers.Serializer):
     """Body of POST /api/sales/invoices/checkout/ and /manual/.

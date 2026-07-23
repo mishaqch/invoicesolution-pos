@@ -305,10 +305,11 @@ def _create_invoice_from_payload(*, tenant_id, terminal_id, payload, request=Non
         table_id=payload.get("table"),
         covers=payload.get("covers"),
         cart_discount_pct=payload.get("cart_discount_pct", 0),
-        payments=[
-            {"payment_method": p["payment_method"], "amount": p["amount"]}
-            for p in payload["payments"]
-        ],
+        # Pass the WHOLE payment dict, not just method+amount — the per-method
+        # adapter needs the proof fields (card_last4, cheque_number, …). Card
+        # details are mandatory on this POS path (require_card_details defaults
+        # to True): the cashier had the physical slip at the till.
+        payments=[dict(p) for p in payload["payments"]],
         client_uuid=payload["client_uuid"],
         notes=payload.get("notes"),
         local_invoice_number=payload.get("local_invoice_number"),
