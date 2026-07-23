@@ -216,17 +216,30 @@ export default function NewInvoiceRoute() {
 
   const clientUuidRef = useRef<string>(uuidv4());
 
-  // Pre-pick first branch + terminal once available.
+  // Pre-pick the first branch once available.
   useEffect(() => {
     if (!branchId && branches.data?.results?.[0]) {
       setBranchId(branches.data.results[0].id);
     }
   }, [branches.data, branchId]);
+
+  // Keep the terminal consistent with the selected branch. A terminal can only
+  // sell under its OWN branch (the server enforces this), so the terminal MUST
+  // belong to `branchId`. When the branch changes — or on first load — pick the
+  // first terminal in that branch; if the current terminal isn't in the branch,
+  // replace it. (The old code pre-picked the GLOBAL first terminal independent
+  // of the branch, which mismatched for multi-branch tenants like PEER TRADERS.)
   useEffect(() => {
-    if (!terminalId && terminals.data?.results?.[0]) {
-      setTerminalId(terminals.data.results[0].id);
+    const all = terminals.data?.results ?? [];
+    if (all.length === 0) return;
+    // Terminals in the selected branch (or all, if no branch chosen yet).
+    const inBranch = branchId ? all.filter((t) => t.branch === branchId) : all;
+    const current = all.find((t) => t.id === terminalId);
+    const currentInBranch = current && (!branchId || current.branch === branchId);
+    if (!currentInBranch) {
+      setTerminalId(inBranch[0]?.id ?? "");
     }
-  }, [terminals.data, terminalId]);
+  }, [terminals.data, branchId, terminalId]);
 
   // Warehouses for the (possibly implicit) invoice branch. When the tenant has
   // no explicit branch picker, the implicit branch's warehouses still show —
