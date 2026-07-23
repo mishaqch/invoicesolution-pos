@@ -50,13 +50,30 @@ REQUEST_TIMEOUT = 30
 SUBMIT_PATH = "/api/IMSFiscal/GetInvoiceNumberByModel"
 HEALTH_PATH = "/api/IMSFiscal/get"
 
-# PRA (Punjab Revenue Authority) CLOUD IMS endpoints — the same POS-Component
-# invoice model as the local SDC, but posted from our server directly to PRAL's
-# cloud with a Bearer token (no local component on the shop machine). URLs per
-# the PRAL "POS Component User Manual" §6.4.2.
+# PRA (Punjab Revenue Authority) CLOUD IMS endpoints — same POS-Component invoice
+# model + Bearer-token contract as FBR POS, posted from our server (no local
+# component). See FISCALIZATION_ARCHITECTURE.md.
+#
+# ENDPOINT HISTORY (important):
+#   • The old PRA manual documented ims.pral.com.pk/ims/{env}/api/Live/PostData.
+#     That host is IP-blocked for our server (TLS handshake dropped) — PRA never
+#     whitelisted us there.
+#   • FBR and PRA e-IMS are UNIFIED behind PRAL's gateway gw.fbr.gov.pk, which
+#     our server IS whitelisted for. So we post PRA invoices to the gateway, not
+#     the blocked pral.com.pk host.
+#   • gw.fbr.gov.pk/ims/production/api/Live/PostData is a RETIRED bulk endpoint
+#     (returns Code 112 "Bulk data upload no more available"). The current
+#     single-invoice path is imsp/v1/api/Live/PostData (same as FBR POS,
+#     verified live) — a taxpayer token must be SUBSCRIBED to that imsp/v1 API
+#     (via PRA/PRAL registration) for it to return Code 100.
+#
+# Default to the current gateway path; overridable per-deploy via
+# FBR_PRA_CLOUD_URL env in case PRA issues a distinct path/tier.
+_PRA_DEFAULT_URL = "https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData"
+_pra_url = getattr(settings, "FBR_PRA_CLOUD_URL", "") or _PRA_DEFAULT_URL
 PRA_CLOUD_URLS = {
-    "sandbox": "https://ims.pral.com.pk/ims/sandbox/api/Live/PostData",
-    "production": "https://ims.pral.com.pk/ims/production/api/Live/PostData",
+    "sandbox": _pra_url,
+    "production": _pra_url,
 }
 
 # FBR (federal) CLOUD IMS endpoint — SAME Live/PostData contract as PRA (Bearer

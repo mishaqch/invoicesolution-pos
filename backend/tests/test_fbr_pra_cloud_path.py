@@ -91,8 +91,10 @@ def test_pra_cloud_path_posts_with_bearer_and_posid(cloud_setup, tenant):
 
     assert result.get("via") == "pra_cloud", result
     assert result.get("ok") is True
-    # Correct sandbox cloud URL
-    assert captured["url"] == "https://ims.pral.com.pk/ims/sandbox/api/Live/PostData"
+    # PRA now posts to the unified gateway single-invoice path (the old
+    # ims.pral.com.pk host is IP-blocked; ims/production Live/PostData is a
+    # retired bulk endpoint). Overridable via FBR_PRA_CLOUD_URL.
+    assert captured["url"] == "https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData"
     # Bearer token header
     assert captured["headers"].get("Authorization") == "Bearer test-bearer-token-123"
     # Per-branch POS ID in the PRA payload

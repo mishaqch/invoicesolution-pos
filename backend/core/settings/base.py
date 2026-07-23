@@ -51,6 +51,10 @@ PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="")
 # path only. The SDC is a Windows service installed centrally; one SDC serves
 # many POS IDs (POSID is per-invoice). See apps/fbr/sdc_client.py.
 FBR_SDC_BASE_URL = env("FBR_SDC_BASE_URL", default="")
+# Optional override for the PRA cloud IMS submit URL. Empty → the code default
+# (gw.fbr.gov.pk/imsp/v1/api/Live/PostData). Set this if PRA issues a distinct
+# path/tier for a taxpayer. See apps/fbr/sdc_client.PRA_CLOUD_URLS.
+FBR_PRA_CLOUD_URL = env("FBR_PRA_CLOUD_URL", default="")
 
 # ---------------------------------------------------------------------------
 # Apps
