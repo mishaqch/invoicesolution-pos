@@ -137,3 +137,68 @@ def test_pra_cloud_deferred_without_token(cloud_setup, tenant):
         result = submit_invoice_to_fbr(str(inv.id))
     post.assert_not_called()
     assert result.get("deferred") == "no_pra_cloud_token", result
+
+
+# --- FBR cloud (imsp Live/PostData) ------------------------------------------
+# FBR POS (POS-DI / IsCloud) fiscalizes via gw.fbr.gov.pk/imsp/v1/api/Live/PostData
+# with a per-branch Bearer token — same Live/PostData contract as PRA, on FBR's
+# gateway. Verified live for PEER TRADERS (fiscal no. 194444FGQK...).
+
+@pytest.mark.django_db
+def test_fbr_cloud_path_used_for_di_api_pos_branch(db, tenant, owner_user):
+    from apps.tenants.models import Branch, Terminal
+    from apps.catalog.models import Product, UnitOfMeasure
+    from apps.inventory.services.movements import record_movement
+    from apps.sales.services import checkout
+    from apps.fbr.models import BranchFbrToken
+
+    tenant.fbr_connection_type = "di_api"
+    tenant.save(update_fields=["fbr_connection_type"])
+    br = Branch.objects.create(tenant=tenant, name="PEER", code="PT1", address="x",
+                               city="Lahore", province="PUNJAB", fbr_pos_id="194444")
+    term = Terminal.objects.create(tenant=tenant, branch=br, name="C1",
+                                   device_fingerprint="fbrc-" + uuid.uuid4().hex[:8])
+    bt = BranchFbrToken(branch=br, tenant_id=tenant.id, environment="production",
+                        is_active=True, api_endpoint="https://gw.fbr.gov.pk")
+    bt.token = "fbr-pos-bearer-xyz"
+    bt.save()
+    uom = UnitOfMeasure.objects.get(code="PCS")
+    p = Product.objects.create(tenant=tenant, name="Item", sku="FBR-1", uom=uom,
+                               sale_price=Decimal("100"), cost_price=Decimal("50"))
+    record_movement(tenant_id=tenant.id, product=p, branch=br,
+                    movement_type="opening_balance", quantity=Decimal("10"))
+    inv = checkout.create_invoice(
+        tenant_id=tenant.id, branch=br, terminal=term, cashier=owner_user,
+        cash_session=None, customer=None,
+        cart_lines=[{"product": str(p.id), "quantity": "1", "unit_price": "100",
+                     "tax_rate": "18", "is_taxable": True}],
+        payments=[{"payment_method": "cash", "amount": "118"}],
+        client_uuid=str(uuid.uuid4()),
+    )
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None, **kw):
+        captured["url"] = url
+        captured["headers"] = headers or {}
+        captured["posid"] = (json or {}).get("POSID")
+
+        class _R:
+            status_code = 200
+            text = "ok"
+
+            def json(self_inner):
+                return {"InvoiceNumber": "194444FGQK99999999", "Code": "100",
+                        "Response": "Invoice received successfully"}
+        return _R()
+
+    with patch("apps.fbr.sdc_client.requests.post", side_effect=fake_post):
+        result = submit_invoice_to_fbr(str(inv.id))
+
+    assert result.get("via") == "fbr_cloud", result
+    assert result.get("ok") is True
+    assert captured["url"] == "https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData"
+    assert captured["headers"].get("Authorization") == "Bearer fbr-pos-bearer-xyz"
+    assert captured["posid"] == 194444
+    inv.refresh_from_db()
+    assert inv.status == "valid"
+    assert inv.fbr_invoice_number == "194444FGQK99999999"

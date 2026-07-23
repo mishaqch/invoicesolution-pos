@@ -95,6 +95,24 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
     if conn == "ims_sdc" and sdc_client.sdc_configured() and branch_pos_id:
         return _submit_via_sdc(self, invoice=invoice, tenant=tenant, pos_id=branch_pos_id)
 
+    # --- FBR CLOUD IMS path (POS-DI / IsCloud registrations) -------------
+    # An FBR POS registration (POS-DI, IsCloud=1) fiscalizes through FBR's cloud
+    # IMS — gw.fbr.gov.pk/imsp/v1/api/Live/PostData with its per-POS Bearer token
+    # (a BranchFbrToken) — NOT the di_data DI-API. Signal: a di_api tenant whose
+    # invoice BRANCH has a POS ID and an active branch token. Same Live/PostData
+    # contract as PRA, on FBR's (already-whitelisted) gateway. Verified live for
+    # PEER TRADERS (POS ID 194444). Pure Digital-Invoicing tenants have no branch
+    # POS ID → they fall through to the di_data DI-API token path below.
+    if conn == "di_api" and branch_pos_id:
+        fbr_branch_token = BranchFbrToken.objects.filter(
+            branch_id=invoice.branch_id, is_active=True,
+        ).first()
+        if fbr_branch_token is not None:
+            return _submit_via_fbr_cloud(
+                self, invoice=invoice, tenant=tenant, pos_id=branch_pos_id,
+                token=fbr_branch_token,
+            )
+
     # --- PRA CLOUD path --------------------------------------------------
     # PRA (Punjab Revenue Authority) cloud IMS: same POS-Component invoice model
     # as the SDC, but posted from OUR server to ims.pral.com.pk with a Bearer
@@ -377,30 +395,50 @@ def _submit_via_sdc(self, *, invoice, tenant, pos_id: str) -> dict:
 
 
 def _submit_via_pra_cloud(self, *, invoice, tenant, pos_id: str, token) -> dict:
-    """Fiscalize an invoice through PRA's CLOUD IMS (Bearer token) for the given
-    branch POS ID. Mirrors _submit_via_sdc — same retry/fail semantics and
-    success persistence — but posts to ims.pral.com.pk instead of a local SDC."""
+    """Fiscalize via PRA's cloud IMS (ims.pral.com.pk)."""
+    return _submit_via_cloud(
+        self, invoice=invoice, tenant=tenant, pos_id=pos_id, token=token,
+        authority="pra",
+    )
+
+
+def _submit_via_fbr_cloud(self, *, invoice, tenant, pos_id: str, token) -> dict:
+    """Fiscalize via FBR's cloud IMS (gw.fbr.gov.pk/imsp/v1/api/Live/PostData)."""
+    return _submit_via_cloud(
+        self, invoice=invoice, tenant=tenant, pos_id=pos_id, token=token,
+        authority="fbr",
+    )
+
+
+def _submit_via_cloud(self, *, invoice, tenant, pos_id: str, token, authority: str) -> dict:
+    """Fiscalize an invoice through a cloud IMS (PRA or FBR) with a Bearer token
+    for the given branch POS ID. Mirrors _submit_via_sdc — same retry/fail
+    semantics and success persistence — but posts to the authority's cloud
+    Live/PostData endpoint instead of a local SDC. `authority` = "pra" | "fbr"."""
     from apps.fbr import sdc_client
 
+    au = authority.upper()
     invoice.status = "submitted"
     invoice.fbr_submitted_at = timezone.now()
     invoice.save(update_fields=["status", "fbr_submitted_at", "updated_at"])
 
     attempt = self.request.retries + 1
     environment = token.environment
+    via = f"{au}_CLOUD"
 
     def _log_failure(exc):
         FbrSubmission.objects.create(
             tenant_id=tenant.id, invoice=invoice, environment=environment,
             endpoint="postinvoicedata",
-            request_payload={"POSID": pos_id, "via": "PRA_CLOUD"},
+            request_payload={"POSID": pos_id, "via": via},
             response_payload=None, http_status=None, status_code="01",
             attempt_number=attempt, error_message=str(exc)[:1000],
         )
 
     try:
         res = sdc_client.submit_invoice_cloud(
-            invoice=invoice, pos_id=pos_id, token=token.token, environment=environment,
+            invoice=invoice, pos_id=pos_id, token=token.token,
+            environment=environment, authority=authority,
         )
     except sdc_client.SdcTransientError as exc:
         _log_failure(exc)
@@ -408,19 +446,19 @@ def _submit_via_pra_cloud(self, *, invoice, tenant, pos_id: str, token) -> dict:
         if attempt_idx >= len(_BACKOFF_S):
             _mark_invoice_failed(invoice, str(exc))
             return {"failed": "max_retries", "error": str(exc)}
-        logger.warning("Transient PRA cloud error for %s; retry in %ss: %s",
-                       invoice.id, _BACKOFF_S[attempt_idx], exc)
+        logger.warning("Transient %s cloud error for %s; retry in %ss: %s",
+                       au, invoice.id, _BACKOFF_S[attempt_idx], exc)
         raise self.retry(exc=exc, countdown=_BACKOFF_S[attempt_idx])
     except sdc_client.SdcRejectedError as exc:
         _log_failure(exc)
         _mark_invoice_failed(invoice, str(exc))
         notify(
             tenant_id=tenant.id, notification_type="fbr.submission_failed",
-            title=f"PRA cloud submission failed: {invoice.local_invoice_number}",
+            title=f"{au} cloud submission failed: {invoice.local_invoice_number}",
             message=str(exc)[:500], severity="warning",
             data={"invoice_id": str(invoice.id)},
         )
-        return {"failed": "pra_cloud_rejected", "error": str(exc)}
+        return {"failed": f"{authority}_cloud_rejected", "error": str(exc)}
 
     fbr_no = res.fbr_invoice_number
     qr_payload = res.qr_payload or build_qr_payload(
@@ -430,12 +468,12 @@ def _submit_via_pra_cloud(self, *, invoice, tenant, pos_id: str, token) -> dict:
     FbrSubmission.objects.create(
         tenant_id=tenant.id, invoice=invoice, environment=environment,
         endpoint="postinvoicedata",
-        request_payload={"POSID": pos_id, "via": "PRA_CLOUD"},
+        request_payload={"POSID": pos_id, "via": via},
         response_payload=res.raw, http_status=200, status_code="00",
         fbr_invoice_number=fbr_no, attempt_number=attempt,
     )
     _persist_fbr_success(invoice, tenant, fbr_no, qr_payload)
-    return {"ok": True, "fbr_invoice_number": fbr_no, "via": "pra_cloud"}
+    return {"ok": True, "fbr_invoice_number": fbr_no, "via": f"{authority}_cloud"}
 
 
 def _persist_fbr_success(invoice, tenant, fbr_no: str, qr_payload: str) -> None:
