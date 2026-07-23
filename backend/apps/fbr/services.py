@@ -438,7 +438,16 @@ def cancel_invoice_with_fbr(
     # FBR-compliance review — or worse, hits PRAL under the wrong POS.)
     token = token_for_invoice(invoice)
 
-    if token is not None and invoice.fbr_invoice_number:
+    # POS cloud tenants (pra_cloud / FBR POS via the cloud IMS) do NOT have the
+    # DI-API cancelinvoice endpoint — the IMS cloud cancels via a credit-note
+    # invoice (InvoiceType=3), not a cancel call. Don't fire a DI-API cancel that
+    # their gateway would reject; record the local cancel and skip the PRAL
+    # round-trip. (A full IMS credit-note hand-off is a follow-up, gated on the
+    # confirmed cloud endpoint — see FISCALIZATION_ARCHITECTURE.md.)
+    conn = getattr(invoice.tenant, "fbr_connection_type", "di_api")
+    is_pos_cloud = conn == "pra_cloud" or (conn == "di_api" and getattr(invoice.branch, "fbr_pos_id", None))
+
+    if token is not None and invoice.fbr_invoice_number and not is_pos_cloud:
         client = FbrClient(
             environment=token.environment, token=token.token,
             endpoint_base=token.api_endpoint or "https://gw.fbr.gov.pk",

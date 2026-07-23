@@ -202,3 +202,65 @@ def test_fbr_cloud_path_used_for_di_api_pos_branch(db, tenant, owner_user):
     inv.refresh_from_db()
     assert inv.status == "valid"
     assert inv.fbr_invoice_number == "194444FGQK99999999"
+
+
+# --- Gap fix: PRA POS prefers a per-branch token (multi-branch support) ------
+
+@pytest.mark.django_db
+def test_pra_cloud_prefers_branch_token(db, tenant, owner_user):
+    """A pra_cloud tenant with a per-branch BranchFbrToken must submit under THAT
+    token (each PRA POS branch = its own registration), not only the tenant
+    token. Previously the branch token set on the Branches page was ignored."""
+    from apps.tenants.models import Branch, Terminal
+    from apps.catalog.models import Product, UnitOfMeasure
+    from apps.inventory.services.movements import record_movement
+    from apps.sales.services import checkout
+    from apps.fbr.models import BranchFbrToken, FbrToken
+
+    tenant.fbr_connection_type = "pra_cloud"
+    tenant.save(update_fields=["fbr_connection_type"])
+    # A tenant token exists too — the branch token must WIN.
+    tt = FbrToken(tenant=tenant, environment="production", is_active=True,
+                  api_endpoint="https://ims.pral.com.pk")
+    tt.token = "tenant-level-token"
+    tt.save()
+    br = Branch.objects.create(tenant=tenant, name="AYUB", code="BM1", address="x",
+                               city="Lahore", province="PUNJAB", fbr_pos_id="196819")
+    bt = BranchFbrToken(branch=br, tenant_id=tenant.id, environment="production",
+                        is_active=True, api_endpoint="https://ims.pral.com.pk")
+    bt.token = "branch-pos-token"
+    bt.save()
+    term = Terminal.objects.create(tenant=tenant, branch=br, name="C1",
+                                   device_fingerprint="prab-" + uuid.uuid4().hex[:8])
+    uom = UnitOfMeasure.objects.get(code="PCS")
+    p = Product.objects.create(tenant=tenant, name="Biryani", sku="BM-2", uom=uom,
+                               sale_price=Decimal("100"), cost_price=Decimal("50"))
+    record_movement(tenant_id=tenant.id, product=p, branch=br,
+                    movement_type="opening_balance", quantity=Decimal("10"))
+    inv = checkout.create_invoice(
+        tenant_id=tenant.id, branch=br, terminal=term, cashier=owner_user,
+        cash_session=None, customer=None,
+        cart_lines=[{"product": str(p.id), "quantity": "1", "unit_price": "100",
+                     "tax_rate": "16", "is_taxable": True}],
+        payments=[{"payment_method": "cash", "amount": "116"}],
+        client_uuid=str(uuid.uuid4()),
+    )
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None, **kw):
+        captured["headers"] = headers or {}
+
+        class _R:
+            status_code = 200
+            text = "ok"
+
+            def json(self_inner):
+                return {"InvoiceNumber": "196819PRA00000001", "Code": "100", "Response": "ok"}
+        return _R()
+
+    with patch("apps.fbr.sdc_client.requests.post", side_effect=fake_post):
+        result = submit_invoice_to_fbr(str(inv.id))
+
+    assert result.get("via") == "pra_cloud", result
+    # Submitted under the BRANCH token, not the tenant token.
+    assert captured["headers"].get("Authorization") == "Bearer branch-pos-token"

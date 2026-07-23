@@ -114,18 +114,26 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
             )
 
     # --- PRA CLOUD path --------------------------------------------------
-    # PRA (Punjab Revenue Authority) cloud IMS: same POS-Component invoice model
-    # as the SDC, but posted from OUR server to ims.pral.com.pk with a Bearer
-    # token — no local component. Route here when the tenant is configured for
-    # pra_cloud AND the branch has a POS ID AND a PRA cloud token exists. The
-    # token is a tenant-level FbrToken (reused; it stores env + encrypted token).
+    # PRA (Punjab Revenue Authority) cloud IMS: same POS-Component invoice model,
+    # posted from OUR server to the PRA cloud with a Bearer token — no local
+    # component. Route here when the tenant is pra_cloud AND the branch has a POS
+    # ID AND a token exists.
+    #
+    # Token selection mirrors FBR POS (each branch is its own POS registration
+    # with its OWN token): prefer the invoice branch's BranchFbrToken, then fall
+    # back to a tenant-level FbrToken (single-branch tenants set it via the setup
+    # wizard). This lets a multi-branch PRA tenant give each outlet its own POS
+    # ID + token from the Branches page, and stops a branch token set there from
+    # being silently ignored.
     if getattr(tenant, "fbr_connection_type", None) == "pra_cloud" and branch_pos_id:
         cloud_token = (
-            FbrToken.objects.filter(tenant=tenant, environment="production", is_active=True).first()
+            BranchFbrToken.objects.filter(branch_id=invoice.branch_id, is_active=True).first()
+            or FbrToken.objects.filter(tenant=tenant, environment="production", is_active=True).first()
             or FbrToken.objects.filter(tenant=tenant, environment="sandbox", is_active=True).first()
         )
         if cloud_token is None:
-            logger.info("No PRA cloud token for tenant %s — deferring", tenant.id)
+            logger.info("No PRA cloud token for tenant %s / branch %s — deferring",
+                        tenant.id, invoice.branch_id)
             return {"deferred": "no_pra_cloud_token"}
         return _submit_via_pra_cloud(
             self, invoice=invoice, tenant=tenant, pos_id=branch_pos_id,
