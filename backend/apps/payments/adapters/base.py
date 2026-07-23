@@ -43,8 +43,16 @@ class PaymentAdapter(ABC):
         amount: Decimal,
         data: dict,
         user=None,
+        require_details: bool = True,
     ) -> Payment:
-        """Persist the Payment row + any side effects (ledger, drawer, etc.)."""
+        """Persist the Payment row + any side effects (ledger, drawer, etc.).
+
+        require_details: when False, method-specific proof fields that are
+        normally mandatory (e.g. card_last4 / card_auth_code) become optional.
+        Set False for back-office MANUAL invoicing, where the operator keys an
+        invoice after the fact and may not have the physical card slip — the
+        POS terminal keeps the strict default (the cashier has the slip in hand).
+        """
 
     # Optional refund hook — Phase 6 returns will use this.
     def can_refund_locally(self) -> bool:

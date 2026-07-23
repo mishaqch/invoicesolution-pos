@@ -1286,7 +1286,10 @@ export default function NewInvoiceRoute() {
  * validates server-side (apps/payments/adapters/<method>.py):
  *
  *   card_credit / card_debit  → card_last4 (4 digits) + card_auth_code
- *                               (6 digits); RRN optional
+ *                               (6 digits); ALL OPTIONAL for back-office manual
+ *                               invoicing (the /manual/ endpoint passes
+ *                               require_card_details=False). The POS terminal
+ *                               keeps them mandatory. RRN always optional.
  *   easypaisa / jazzcash       → wallet_transaction_id
  *   raast                      → raast_transaction_id
  *   cheque                     → cheque_number, bank_name, cheque_date
@@ -1311,8 +1314,8 @@ function PaymentExtraFields({
           maxLength={4}
           value={payment.card_last4 ?? ""}
           onChange={(v) => onChange({ card_last4: v })}
-          placeholder="Last 4 digits"
-          aria-label="Card last 4 digits"
+          placeholder="Last 4 digits (optional)"
+          aria-label="Card last 4 digits (optional)"
           className="text-xs"
         />
         <NumberInput
@@ -1320,8 +1323,8 @@ function PaymentExtraFields({
           maxLength={6}
           value={payment.card_auth_code ?? ""}
           onChange={(v) => onChange({ card_auth_code: v })}
-          placeholder="Auth code (6 digits)"
-          aria-label="Card auth code"
+          placeholder="Auth code (optional)"
+          aria-label="Card auth code (optional)"
           className="text-xs"
         />
         <Input

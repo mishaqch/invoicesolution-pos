@@ -28,6 +28,11 @@ export interface Tenant {
   fbr_connection_type?: FbrConnectionType;
   /** Enabled modules. The `hotel` module surfaces the Stays/Rooms folio flow. */
   modules_enabled?: string[];
+  /** Payment-driven services tax rates (PRA card rule). When a sale is paid
+   *  FULLY by card, services lines use the reduced rate; else the standard.
+   *  card rate null/absent → the auto-swap is OFF. Percent strings, e.g. "16". */
+  services_tax_rate_standard?: string;
+  services_tax_rate_card?: string | null;
 }
 
 export interface TenantMembership {

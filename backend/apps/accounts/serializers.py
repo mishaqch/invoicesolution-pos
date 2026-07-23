@@ -30,6 +30,9 @@ class TenantBriefSerializer(serializers.ModelSerializer):
             # modules_enabled lets the terminal gate optional features — e.g. the
             # `hotel` module surfaces the Stays/Rooms (guest folio) flow.
             "modules_enabled",
+            # Payment-driven services tax rates: the terminal recomputes services
+            # tax at checkout from the selected payment method (card → reduced).
+            "services_tax_rate_standard", "services_tax_rate_card",
         )
 
 

@@ -21,6 +21,7 @@ class StoreCreditAdapter(PaymentAdapter):
     @transaction.atomic
     def record_payment(
         self, *, invoice: Invoice, amount: Decimal, data: dict, user=None,
+        require_details: bool = True,  # unused (no proof fields)
     ) -> Payment:
         if invoice.customer is None:
             raise PaymentValidationError({

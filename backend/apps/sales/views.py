@@ -386,6 +386,11 @@ class InvoiceViewSet(
                 reason=v.get("reason"),
                 reason_notes=v.get("reason_notes"),
                 request=request,
+                # Back-office manual invoicing: the operator keys the invoice
+                # after the fact and may not have the card slip, so card_last4 /
+                # card_auth_code are optional here (the POS terminal keeps them
+                # mandatory — cashier has the slip in hand).
+                require_card_details=False,
             )
         except DjValidationError as exc:
             from rest_framework.exceptions import ValidationError as DrfValidationError

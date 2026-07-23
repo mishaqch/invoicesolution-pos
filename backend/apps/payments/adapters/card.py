@@ -12,10 +12,18 @@ from .base import PaymentAdapter, PaymentValidationError, _digits
 class _CardAdapterBase(PaymentAdapter):
     method: str  # set by subclass
 
-    def validate_input(self, data: dict) -> dict:
+    def validate_input(self, data: dict, *, require_details: bool = True) -> dict:
+        # Back-office MANUAL invoicing (require_details=False) may omit the card
+        # slip fields entirely; but if a value IS supplied it must still be the
+        # right shape. When required (POS terminal), empty raises "Required."
+        def _card_digits(value, *, length, field):
+            if not require_details and (value is None or value == ""):
+                return None
+            return _digits(value, length=length, field=field)
+
         return {
-            "card_last4": _digits(data.get("card_last4"), length=4, field="card_last4"),
-            "card_auth_code": _digits(
+            "card_last4": _card_digits(data.get("card_last4"), length=4, field="card_last4"),
+            "card_auth_code": _card_digits(
                 data.get("card_auth_code"), length=6, field="card_auth_code",
             ),
             # RRN optional per INTEGRATIONS.md §2.2. Format varies by acquirer
@@ -29,8 +37,9 @@ class _CardAdapterBase(PaymentAdapter):
 
     def record_payment(
         self, *, invoice: Invoice, amount: Decimal, data: dict, user=None,
+        require_details: bool = True,
     ) -> Payment:
-        clean = self.validate_input(data)
+        clean = self.validate_input(data, require_details=require_details)
         return Payment.objects.create(
             tenant_id=invoice.tenant_id,
             invoice=invoice,

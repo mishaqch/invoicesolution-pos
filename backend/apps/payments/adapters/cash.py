@@ -17,6 +17,7 @@ class CashAdapter(PaymentAdapter):
 
     def record_payment(
         self, *, invoice: Invoice, amount: Decimal, data: dict, user=None,
+        require_details: bool = True,  # unused (cash has no proof fields)
     ) -> Payment:
         return Payment.objects.create(
             tenant_id=invoice.tenant_id,

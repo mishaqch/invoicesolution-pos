@@ -55,6 +55,11 @@ def create_invoice(
     table_id=None,
     covers: int | None = None,
     request=None,
+    # Card proof fields (card_last4 / card_auth_code) are mandatory at the POS
+    # terminal (the cashier has the slip in hand). Back-office MANUAL invoicing
+    # keys invoices after the fact and may not have the slip — it passes False
+    # so those fields become optional. Other methods are unaffected.
+    require_card_details: bool = True,
 ) -> Invoice:
     """Create an invoice (sale, debit-note, or credit-note).
 
@@ -313,6 +318,7 @@ def create_invoice(
             amount=Decimal(str(p["amount"])),
             data=p,
             user=cashier,
+            require_details=require_card_details,
         )
 
     # Customer ledger entry — only for registered customers (per Phase 2 plan).

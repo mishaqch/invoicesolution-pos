@@ -28,6 +28,7 @@ class BankTransferAdapter(PaymentAdapter):
 
     def record_payment(
         self, *, invoice: Invoice, amount: Decimal, data: dict, user=None,
+        require_details: bool = True,  # unused (bank fields always required)
     ) -> Payment:
         clean = self.validate_input(data)
         return Payment.objects.create(
