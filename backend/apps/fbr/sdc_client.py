@@ -9,10 +9,17 @@ the **SDC** — a local .NET/IIS Windows service listening on :8524 — which ho
 the POS registration (POS ID + Code), performs the activation handshake, talks
 to FBR (esp.fbr.gov.pk), and hands a fiscal invoice number + QR back.
 
-The SDC can be installed ONCE on a central (Windows) server and serve MANY POS
-IDs: the POS ID is a field in each request, so one SDC fiscalizes invoices for
-every branch, each under its own registered POS ID. Our Linux app server can't
-host the SDC itself, so it POSTs invoices to the SDC over the network:
+A local SDC is bound to ONE POS registration at install (POS ID + Access Code
+entered once, stored locally); the local :8524 POST has no per-request auth, so
+one SDC is NOT a multi-tenant router (verified against FBR/PRA specs — see
+FISCALIZATION_ARCHITECTURE.md). PREFER THE CLOUD PATH: both authorities expose a
+token-based cloud API that needs NO local component —
+
+    FBR: gw.fbr.gov.pk/di_data/v1/di/postinvoicedata  (apps.fbr.client.FbrClient)
+    PRA: ims.pral.com.pk/.../Live/PostData            (submit_invoice_cloud below)
+
+This local-SDC client remains only for tenants that genuinely run a reachable
+SDC (e.g. a shared branch machine). Contract:
 
     POST  {FBR_SDC_BASE_URL}/api/IMSFiscal/GetInvoiceNumberByModel
     body: { "POSID": <branch posid>, ...invoice fields... }
