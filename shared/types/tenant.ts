@@ -11,7 +11,7 @@ export type SubscriptionStatus =
 export type Vertical = "grocery" | "pharmacy" | "restaurant";
 
 /** HOW the tenant reaches a tax authority. "none" = non-fiscal (no FBR/PRA). */
-export type FbrConnectionType = "di_api" | "ims_sdc" | "none";
+export type FbrConnectionType = "di_api" | "ims_sdc" | "pra_cloud" | "none";
 
 export interface Tenant {
   id: string;

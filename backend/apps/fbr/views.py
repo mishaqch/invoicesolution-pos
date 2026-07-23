@@ -266,15 +266,23 @@ class ActivateProductionTokenView(APIView):
         # Same normalisation as sandbox — see comment in
         # SubmitSandboxTokenView.
         endpoint_base = _normalise_pral_base(v["api_endpoint"])
-        # The scenario-gate bypass is for tokens FBR already issued after
-        # sandbox testing on its own portal. It overrides a compliance gate,
-        # so only platform staff (not tenant admins) may use it. A tenant
-        # passing the flag is silently ignored.
+        # POS fiscalization tenants (pra_cloud / ims_sdc) have NO sandbox
+        # scenarios at all — the tax authority issues the production token
+        # directly. So the scenario gate simply doesn't apply to them and the
+        # bypass is automatic (not a security override).
+        #
+        # For DI-API tenants the bypass IS a compliance override (activate a
+        # token FBR already issued after sandbox testing on its own portal), so
+        # it stays platform-staff-only; a tenant passing the flag is ignored.
+        conn = getattr(tenant, "fbr_connection_type", "di_api")
+        is_pos_fiscalization = conn in ("pra_cloud", "ims_sdc")
         is_platform = bool(
             getattr(request.user, "is_superuser", False)
             or getattr(request.user, "is_platform_staff", False)
         )
-        bypass = bool(v.get("scenarios_cleared_externally")) and is_platform
+        bypass = is_pos_fiscalization or (
+            bool(v.get("scenarios_cleared_externally")) and is_platform
+        )
         try:
             obj = activate_production_token(
                 tenant=tenant, token=v["token"], api_endpoint=endpoint_base,

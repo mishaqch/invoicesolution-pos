@@ -54,6 +54,13 @@ export default function FbrSetupWizard() {
   // "POS connections" (per-branch FBR terminal status) is a POS concept. A
   // Digital-Invoicing-only back-office tenant has no POS terminals, so hide it.
   const isDigitalOnly = modules?.business_mode === "digital_invoicing";
+  // Connection type decides whether the DI-API scenario flow applies at all.
+  // pra_cloud (PRA cloud IMS) and ims_sdc (local IMS) are POS registrations —
+  // FBR/PRA issues the production token directly, with NO sandbox scenarios to
+  // pass. So for those tenants we skip the whole scenario gate and show a
+  // direct "activate production token" card.
+  const connType = modules?.fbr_connection_type ?? "di_api";
+  const isPosFiscalization = connType === "pra_cloud" || connType === "ims_sdc";
   const submitSandbox = useSubmitSandboxToken();
   const activateProd = useActivateProductionToken();
   const test = useTestFbrToken();
@@ -158,7 +165,11 @@ export default function FbrSetupWizard() {
       await activateProd.mutateAsync({
         token: prodToken,
         api_endpoint: prodEndpoint,
-        scenarios_cleared_externally: isPlatformStaff && bypassScenarios,
+        // POS fiscalization (pra_cloud / ims_sdc) has no sandbox scenarios, so
+        // the tax authority already cleared them — always bypass our gate.
+        // DI-API tenants keep the platform-staff-only manual bypass.
+        scenarios_cleared_externally:
+          isPosFiscalization || (isPlatformStaff && bypassScenarios),
       });
       setProdToken("");
       setProdTest(null);
@@ -442,15 +453,30 @@ export default function FbrSetupWizard() {
         <CardHeader>
           <CardTitle className="text-sm">Production token</CardTitle>
           <CardDescription>
-            Activate production once every eligible scenario passes in
-            sandbox.{" "}
-            <Link to="/fbr/scenarios" className="underline-offset-2 hover:underline">
-              Run scenarios →
-            </Link>
+            {isPosFiscalization ? (
+              <>
+                This is a POS registration ({connType === "pra_cloud"
+                  ? "PRA Cloud IMS"
+                  : "IMS / SDC"}). The tax authority issues the production token
+                directly — there are <strong>no sandbox scenarios</strong> to
+                pass. Paste the production POS ID token below and activate.
+              </>
+            ) : (
+              <>
+                Activate production once every eligible scenario passes in
+                sandbox.{" "}
+                <Link to="/fbr/scenarios" className="underline-offset-2 hover:underline">
+                  Run scenarios →
+                </Link>
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {!status?.all_scenarios_passed && !isPlatformStaff ? (
+          {/* POS fiscalization (pra_cloud / ims_sdc): NO scenario gate — the
+              production token can be activated directly. DI-API tenants keep
+              the scenario gate below. */}
+          {!isPosFiscalization && !status?.all_scenarios_passed && !isPlatformStaff ? (
             <p className="text-sm text-amber-700">
               Production activation is locked until every eligible
               scenario reports <strong>success</strong>. Status:{" "}

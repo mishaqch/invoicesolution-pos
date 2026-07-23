@@ -19,7 +19,7 @@ export interface ModuleCatalogEntry {
   forced: boolean;
 }
 
-export type FbrConnectionType = "di_api" | "ims_sdc";
+export type FbrConnectionType = "di_api" | "ims_sdc" | "pra_cloud" | "none";
 export type BusinessMode = "pos" | "digital_invoicing" | "both";
 /** The KIND of shop — decides which sections the UI surfaces (pharmacy gets
  *  batch/expiry/supplier tools; restaurant gets tables/menu/kitchen). Mirrors
