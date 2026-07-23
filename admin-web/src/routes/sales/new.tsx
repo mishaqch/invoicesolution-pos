@@ -47,6 +47,14 @@ interface DraftLine {
   discount_amount: string;
 }
 
+// PRA (Punjab) restaurant rule: services paid by CARD get a reduced sales-tax
+// rate; cash/other pays the standard rate. These are the two services rates.
+const SERVICES_STANDARD_RATE = "16";
+const SERVICES_CARD_REDUCED_RATE = "8";
+const CARD_METHODS = new Set(["card_credit", "card_debit"]);
+// An HS code in chapter 98 is a services line (matches the backend rule).
+const isServicesHs = (hs: string) => (hs || "").trim().startsWith("98");
+
 const PAYMENT_METHODS: ManualInvoicePayment["payment_method"][] = [
   "cash", "card_credit", "card_debit", "easypaisa", "jazzcash", "raast",
   "cheque", "bank_transfer", "store_credit",
@@ -213,8 +221,42 @@ export default function NewInvoiceRoute() {
     { payment_method: "cash", amount: "0" },
   ]);
   const [error, setError] = useState<string | null>(null);
+  const [autoRateNote, setAutoRateNote] = useState<string | null>(null);
 
   const clientUuidRef = useRef<string>(uuidv4());
+
+  // PRA card-payment reduced rate: when EVERY payment is a card (credit/debit),
+  // services lines (HS chapter 98) get the reduced services rate (8%); when the
+  // payment is not card-only, they revert to the standard rate (16%). This
+  // recomputes the line rate + a visible note whenever payments or lines change.
+  // Only touches services lines whose rate is currently one of the two services
+  // rates — never clobbers a rate the operator set deliberately to something
+  // else, and never touches goods lines.
+  const paymentMethodsKey = payments.map((p) => p.payment_method).join(",");
+  useEffect(() => {
+    const servicesLines = lines.filter((l) => isServicesHs(l.hs_code));
+    if (servicesLines.length === 0) { setAutoRateNote(null); return; }
+    const hasPayment = payments.length > 0;
+    const allCard = hasPayment && payments.every((p) => CARD_METHODS.has(p.payment_method));
+    const target = allCard ? SERVICES_CARD_REDUCED_RATE : SERVICES_STANDARD_RATE;
+    const swappable = new Set([SERVICES_STANDARD_RATE, SERVICES_CARD_REDUCED_RATE]);
+
+    let changed = false;
+    const next = lines.map((l) => {
+      if (!isServicesHs(l.hs_code)) return l;
+      if (!swappable.has(String(l.tax_rate))) return l; // operator set a custom rate — leave it
+      if (String(l.tax_rate) === target) return l;
+      changed = true;
+      return { ...l, tax_rate: target };
+    });
+    if (changed) setLines(next);
+    setAutoRateNote(
+      allCard
+        ? `Card payment: services taxed at the reduced ${SERVICES_CARD_REDUCED_RATE}% (PRA card rate).`
+        : `Standard ${SERVICES_STANDARD_RATE}% services rate applied. Pay by card to use the reduced ${SERVICES_CARD_REDUCED_RATE}% rate.`,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethodsKey, lines.length, lines.map((l) => l.hs_code).join(",")]);
 
   // Pre-pick the first branch once available.
   useEffect(() => {
@@ -1072,6 +1114,11 @@ export default function NewInvoiceRoute() {
             </Button>
           </CardHeader>
           <CardContent className="space-y-3">
+            {autoRateNote && (
+              <div className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-100">
+                {autoRateNote}
+              </div>
+            )}
             {payments.map((p, idx) => (
               <div key={idx} className="space-y-2 rounded-md border p-2">
                 <div className="grid grid-cols-12 gap-2">
