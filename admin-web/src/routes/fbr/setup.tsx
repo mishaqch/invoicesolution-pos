@@ -95,12 +95,15 @@ export default function FbrSetupWizard() {
     const pr = status?.production?.api_endpoint;
     if (pr && prodEndpoint === PRAL_DEFAULT_URL) {
       setProdEndpoint(pr);
+    } else if (!pr && isPosFiscalization && prodEndpoint === PRAL_DEFAULT_URL) {
+      // PRA POS cloud posts to the PRAL IMS host, not the FBR gateway.
+      setProdEndpoint("https://ims.pral.com.pk");
     }
     // We deliberately omit the local field values from deps — this
     // effect should fire when the SAVED value loads, not on every
     // keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.sandbox?.api_endpoint, status?.production?.api_endpoint]);
+  }, [status?.sandbox?.api_endpoint, status?.production?.api_endpoint, isPosFiscalization]);
 
   async function onTestSandbox() {
     setError(null);
@@ -193,6 +196,23 @@ export default function FbrSetupWizard() {
         </p>
       </div>
 
+      {/* POS-fiscalization tenants (pra_cloud / ims_sdc) have NO sandbox +
+          scenario flow — the tax authority issues the production token
+          directly. Hide the whole DI-API sandbox/scenario section for them and
+          go straight to the production-token card below. */}
+      {isPosFiscalization && (
+        <Card>
+          <CardContent className="pt-6 text-sm text-muted-foreground">
+            This is a <strong>POS registration</strong>
+            {connType === "pra_cloud" ? " (PRA Cloud IMS)" : " (IMS / SDC)"}.
+            There is no sandbox or scenario testing — just add the production
+            token issued for your POS ID in the card below.
+          </CardContent>
+        </Card>
+      )}
+
+      {!isPosFiscalization && (
+      <>
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Steps</CardTitle>
@@ -445,6 +465,8 @@ export default function FbrSetupWizard() {
           </form>
         </CardContent>
       </Card>
+      </>
+      )}
 
       {/* =========================================================
           PRODUCTION
