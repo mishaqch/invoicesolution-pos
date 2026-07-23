@@ -51,16 +51,28 @@ const STEPS = [
 export default function FbrSetupWizard() {
   const { data: status } = useFbrStatus();
   const { data: modules } = useModules();
+  const { data: posStatus } = useFbrPosStatus();
   // "POS connections" (per-branch FBR terminal status) is a POS concept. A
   // Digital-Invoicing-only back-office tenant has no POS terminals, so hide it.
   const isDigitalOnly = modules?.business_mode === "digital_invoicing";
-  // Connection type decides whether the DI-API scenario flow applies at all.
-  // pra_cloud (PRA cloud IMS) and ims_sdc (local IMS) are POS registrations —
-  // FBR/PRA issues the production token directly, with NO sandbox scenarios to
-  // pass. So for those tenants we skip the whole scenario gate and show a
-  // direct "activate production token" card.
   const connType = modules?.fbr_connection_type ?? "di_api";
-  const isPosFiscalization = connType === "pra_cloud" || connType === "ims_sdc";
+  // SCENARIOS ARE ONLY FOR DIGITAL INVOICING (BACK-OFFICE). Every POS
+  // registration — FBR POS (di_api + POS ID → FBR cloud IMS), PRA POS
+  // (pra_cloud), or local IMS (ims_sdc) — gets its production token issued
+  // directly by the tax authority with NO sandbox scenarios. Detect "this is a
+  // POS registration" broadly:
+  //   • connection type is a POS cloud/IMS type, OR
+  //   • business mode includes POS, OR
+  //   • any branch has an FBR POS ID (the definitive per-outlet signal).
+  // Only a pure Digital-Invoicing back-office tenant (no POS anywhere) sees the
+  // scenario gate.
+  const anyBranchHasPosId = (posStatus?.branches ?? []).some((b) => !!b.fbr_pos_id);
+  const isPosFiscalization =
+    connType === "pra_cloud" ||
+    connType === "ims_sdc" ||
+    modules?.business_mode === "pos" ||
+    modules?.business_mode === "both" ||
+    anyBranchHasPosId;
   const submitSandbox = useSubmitSandboxToken();
   const activateProd = useActivateProductionToken();
   const test = useTestFbrToken();
@@ -191,22 +203,30 @@ export default function FbrSetupWizard() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">FBR / PRAL setup</h1>
         <p className="text-sm text-muted-foreground">
-          Connect your tenant to FBR's Digital Invoicing. Tokens are
-          stored encrypted (Fernet) and never displayed back.
+          {isPosFiscalization
+            ? "Connect this POS registration to the tax authority's cloud fiscalization. Tokens are stored encrypted (Fernet) and never displayed back."
+            : "Connect your tenant to FBR's Digital Invoicing. Tokens are stored encrypted (Fernet) and never displayed back."}
         </p>
       </div>
 
-      {/* POS-fiscalization tenants (pra_cloud / ims_sdc) have NO sandbox +
-          scenario flow — the tax authority issues the production token
-          directly. Hide the whole DI-API sandbox/scenario section for them and
-          go straight to the production-token card below. */}
+      {/* POS registrations (FBR POS via di_api→FBR cloud IMS, PRA POS via
+          pra_cloud, or local IMS via ims_sdc) have NO sandbox + scenario flow —
+          the tax authority issues the production token directly against the POS
+          ID. Hide the whole DI-API sandbox/scenario section and go straight to
+          the production-token card below. Scenarios are Digital-Invoicing only. */}
       {isPosFiscalization && (
         <Card>
           <CardContent className="pt-6 text-sm text-muted-foreground">
             This is a <strong>POS registration</strong>
-            {connType === "pra_cloud" ? " (PRA Cloud IMS)" : " (IMS / SDC)"}.
-            There is no sandbox or scenario testing — just add the production
-            token issued for your POS ID in the card below.
+            {connType === "pra_cloud"
+              ? " (PRA Cloud IMS)"
+              : connType === "ims_sdc"
+                ? " (IMS / SDC)"
+                : " (FBR Cloud IMS)"}
+            . Fiscalization runs from our server via the tax authority's cloud —
+            <strong> no scenario testing</strong> (that is for Digital Invoicing
+            back-office only) and no software on the shop machine. Just add the
+            production token issued for your POS ID in the card below.
           </CardContent>
         </Card>
       )}
@@ -479,9 +499,17 @@ export default function FbrSetupWizard() {
               <>
                 This is a POS registration ({connType === "pra_cloud"
                   ? "PRA Cloud IMS"
-                  : "IMS / SDC"}). The tax authority issues the production token
-                directly — there are <strong>no sandbox scenarios</strong> to
-                pass. Paste the production POS ID token below and activate.
+                  : connType === "ims_sdc"
+                    ? "IMS / SDC"
+                    : "FBR Cloud IMS"}). The tax authority issues the production
+                token directly against your POS ID — there are{" "}
+                <strong>no sandbox scenarios</strong> to pass. Paste the
+                production token below and activate. (Per-outlet POS tokens can
+                also be managed on the{" "}
+                <Link to="/branches" className="underline-offset-2 hover:underline">
+                  Branches page
+                </Link>
+                .)
               </>
             ) : (
               <>
