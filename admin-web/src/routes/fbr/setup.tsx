@@ -505,12 +505,17 @@ export default function FbrSetupWizard() {
               {status?.passed_scenarios.length ?? 0} passed /{" "}
               {status?.eligible_scenarios.length ?? 0} eligible.
             </p>
-          ) : status?.production?.has_token ? (
-            <p className="text-sm text-green-700">
-              Production is active. Submissions go to live FBR.
-            </p>
           ) : (
             <form onSubmit={onActivateProd} className="space-y-3">
+              {/* If a token is already on file, show an "active" banner ABOVE
+                  the form (not instead of it) so the operator can still rotate
+                  the token — otherwise there'd be no UI way to change it. */}
+              {status?.production?.has_token && (
+                <div className="rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+                  Production is active. Submissions go to live FBR. Paste a new
+                  token below to rotate it, or leave blank to keep the current one.
+                </div>
+              )}
               <div>
                 <Label htmlFor="pr-endpoint">API endpoint</Label>
                 <Input
