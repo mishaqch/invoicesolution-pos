@@ -690,13 +690,23 @@ class InvoiceViewSet(
                         f"(connection type: {conn}).")
             return Response({"detail": _MSG}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Token selection MUST mirror the submit task (tasks.submit_invoice_to_fbr)
+        # so validate and submit use the SAME credential — otherwise a validate
+        # could pass under a token the submit would never use. FBR POS: the
+        # invoice's BRANCH has its own DI Bearer token (BranchFbrToken); prefer
+        # it. Digital Invoicing back-office: no branch token, use the tenant
+        # token. Both expose .token/.environment/.api_endpoint.
+        from apps.fbr.models import BranchFbrToken
+
         token = (
-            FbrToken.objects.filter(tenant=tenant, environment="production", is_active=True).first()
+            BranchFbrToken.objects.filter(branch_id=invoice.branch_id, is_active=True).first()
+            or FbrToken.objects.filter(tenant=tenant, environment="production", is_active=True).first()
             or FbrToken.objects.filter(tenant=tenant, environment="sandbox", is_active=True).first()
         )
         if token is None:
             return Response(
-                {"detail": "No FBR token configured for this tenant."},
+                {"detail": "No FBR token configured for this tenant/branch. Add "
+                           "the DI token for this POS registration first."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

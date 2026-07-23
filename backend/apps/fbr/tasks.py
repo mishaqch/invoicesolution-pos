@@ -73,17 +73,26 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
         )
         return {"skipped": "non_fiscal", "status": invoice.status}
 
-    # --- SDC (Fiscalization Service) path — evaluated FIRST ---------------
-    # POS/IMS-type registrations fiscalize through the SDC (a central Windows
-    # service holding the POS ID + Code), NOT via our DI-API tokens. So if the
-    # SDC is configured AND this branch has an FBR POS ID, route here BEFORE any
-    # token logic — these tenants have no DI-API Bearer token at all. One SDC
-    # serves many POS IDs (POSID is per-request). DI-API tenants (no SDC
-    # configured, or branch without a POS ID) fall through to the token path.
+    # Connection type is authoritative for HOW we fiscalize:
+    #   di_api    → FBR cloud Digital Invoicing API (Bearer token, gw.fbr.gov.pk).
+    #               This is the PREFERRED FBR POS path — no local SDC. Falls
+    #               through to the token-selection block below (branch POS token
+    #               for POS registrations, else tenant token for DI).
+    #   pra_cloud → PRA cloud IMS (Bearer token, ims.pral.com.pk).
+    #   ims_sdc   → local/hosted SDC Windows service (legacy; only if a reachable
+    #               SDC is actually configured).
+    # See FISCALIZATION_ARCHITECTURE.md.
     from apps.fbr import sdc_client
 
+    conn = getattr(tenant, "fbr_connection_type", "di_api")
     branch_pos_id = getattr(invoice.branch, "fbr_pos_id", None)
-    if sdc_client.sdc_configured() and branch_pos_id:
+
+    # --- SDC (local Fiscalization Service) path — ims_sdc ONLY ------------
+    # Only route to the local SDC when the tenant is explicitly ims_sdc AND a
+    # reachable SDC is configured AND the branch has a POS ID. A di_api (FBR
+    # cloud) tenant must NEVER be hijacked to the SDC just because it happens to
+    # carry a branch POS ID — its POS ID is used in the DI cloud payload instead.
+    if conn == "ims_sdc" and sdc_client.sdc_configured() and branch_pos_id:
         return _submit_via_sdc(self, invoice=invoice, tenant=tenant, pos_id=branch_pos_id)
 
     # --- PRA CLOUD path --------------------------------------------------

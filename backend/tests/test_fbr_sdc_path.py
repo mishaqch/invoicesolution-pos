@@ -76,6 +76,10 @@ def _mock_sdc_post(captured):
 @pytest.mark.django_db
 def test_sdc_path_used_when_configured_and_branch_has_posid(settings, setup, tenant):
     settings.FBR_SDC_BASE_URL = "http://sdc-host:8524"
+    # The SDC path is for ims_sdc tenants ONLY — a di_api (FBR cloud) tenant with
+    # a branch POS ID must go to the DI-API, not the SDC. Mark this tenant ims_sdc.
+    tenant.fbr_connection_type = "ims_sdc"
+    tenant.save(update_fields=["fbr_connection_type"])
     inv = setup
     captured = {}
     with _mock_sdc_post(captured):
@@ -132,3 +136,17 @@ def test_sdc_skipped_when_branch_has_no_posid(settings, db, tenant, owner_user):
         result = submit_invoice_to_fbr(str(inv.id))
     sdc_post.assert_not_called()
     assert result.get("via") != "sdc"
+
+
+@pytest.mark.django_db
+def test_di_api_tenant_never_uses_sdc_even_with_posid(settings, setup, tenant):
+    """FBR CLOUD regression: a di_api tenant whose branch HAS a POS ID must NOT
+    be hijacked to the SDC even when an SDC is configured — its POS ID goes in
+    the DI cloud payload instead. (Default tenant fixture is di_api.)"""
+    settings.FBR_SDC_BASE_URL = "http://sdc-host:8524"
+    assert tenant.fbr_connection_type == "di_api"  # default
+    inv = setup  # branch has fbr_pos_id 194444
+    with patch("apps.fbr.sdc_client.requests.post") as sdc_post:
+        result = submit_invoice_to_fbr(str(inv.id))
+    sdc_post.assert_not_called()          # SDC never touched
+    assert result.get("via") != "sdc"     # went to the DI-API path (defers: no token here)
