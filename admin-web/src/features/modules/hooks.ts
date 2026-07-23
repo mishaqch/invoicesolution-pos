@@ -36,6 +36,11 @@ export interface ModulesPayload {
   fbr_connection_type: FbrConnectionType;
   // Presentation vertical — grocery vs pharmacy. UI-only; does not gate access.
   vertical: Vertical;
+  // Payment-driven services tax rates (PRA card rule). When an invoice is paid
+  // FULLY by card, services lines use the reduced rate; otherwise the standard
+  // rate. `services_tax_rate_card` null → the auto-swap is OFF for this tenant.
+  services_tax_rate_standard?: string;
+  services_tax_rate_card?: string | null;
 }
 
 /** Module keys (mirrors apps/tenants/modules.py — keep in sync). */

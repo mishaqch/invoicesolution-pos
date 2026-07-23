@@ -295,6 +295,14 @@ class TenantModulesView(APIView):
             # Presentation vertical (grocery vs pharmacy) — admin-web surfaces
             # pharmacy-only sections (batch/expiry/suppliers) only for pharmacy.
             "vertical": tenant.vertical,
+            # Payment-driven services tax rates (PRA card rule). The frontends
+            # apply the reduced rate when an invoice is FULLY card-paid, else the
+            # standard rate. card rate null → feature off.
+            "services_tax_rate_standard": str(tenant.services_tax_rate_standard),
+            "services_tax_rate_card": (
+                str(tenant.services_tax_rate_card)
+                if tenant.services_tax_rate_card is not None else None
+            ),
         })
 
 

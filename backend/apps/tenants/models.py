@@ -6,6 +6,8 @@ are noted inline.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
@@ -113,6 +115,20 @@ class Tenant(models.Model):
         max_length=10,
         choices=FBR_CONNECTION_TYPES,
         default=DEFAULT_FBR_CONNECTION_TYPE,
+    )
+
+    # Payment-method-driven services tax rates (PRA/Punjab restaurant rule).
+    # When an invoice is paid ENTIRELY by card, services lines use the reduced
+    # rate; otherwise the standard rate. Both are percentages (e.g. 16.00 / 8.00).
+    # NULL card-reduced rate → the feature is OFF for the tenant (no auto-swap).
+    services_tax_rate_standard = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("16.00"),
+        help_text="Standard services sales-tax % (cash / non-card payments).",
+    )
+    services_tax_rate_card = models.DecimalField(
+        max_digits=5, decimal_places=2, blank=True, null=True,
+        help_text="Reduced services sales-tax % for FULLY-card payments (PRA "
+                  "card rate, e.g. 8.00). Leave blank to disable the auto-swap.",
     )
 
     # FBR-defined taxonomy. Wire values are the exact strings PRAL

@@ -48,12 +48,13 @@ interface DraftLine {
 }
 
 // PRA (Punjab) restaurant rule: services paid by CARD get a reduced sales-tax
-// rate; cash/other pays the standard rate. These are the two services rates.
-const SERVICES_STANDARD_RATE = "16";
-const SERVICES_CARD_REDUCED_RATE = "8";
+// rate; cash/other pays the standard rate. The two rates are configured
+// per-tenant (services_tax_rate_standard / services_tax_rate_card) — see below.
 const CARD_METHODS = new Set(["card_credit", "card_debit"]);
 // An HS code in chapter 98 is a services line (matches the backend rule).
 const isServicesHs = (hs: string) => (hs || "").trim().startsWith("98");
+// Normalize a rate string/number to a compact form for comparison ("16.00"→"16").
+const normRate = (r: string | number): string => String(Number(r));
 
 const PAYMENT_METHODS: ManualInvoicePayment["payment_method"][] = [
   "cash", "card_credit", "card_debit", "easypaisa", "jazzcash", "raast",
@@ -232,31 +233,37 @@ export default function NewInvoiceRoute() {
   // Only touches services lines whose rate is currently one of the two services
   // rates — never clobbers a rate the operator set deliberately to something
   // else, and never touches goods lines.
+  // Per-tenant services rates. Card-reduced null/absent → feature OFF.
+  const stdRate = modules?.services_tax_rate_standard ? normRate(modules.services_tax_rate_standard) : null;
+  const cardRate = modules?.services_tax_rate_card ? normRate(modules.services_tax_rate_card) : null;
   const paymentMethodsKey = payments.map((p) => p.payment_method).join(",");
   useEffect(() => {
+    // Off unless the tenant has BOTH a standard and a card-reduced services rate.
+    if (!stdRate || !cardRate) { setAutoRateNote(null); return; }
     const servicesLines = lines.filter((l) => isServicesHs(l.hs_code));
     if (servicesLines.length === 0) { setAutoRateNote(null); return; }
+    // Reduced rate ONLY when the invoice is FULLY card-paid (any cash → standard).
     const hasPayment = payments.length > 0;
     const allCard = hasPayment && payments.every((p) => CARD_METHODS.has(p.payment_method));
-    const target = allCard ? SERVICES_CARD_REDUCED_RATE : SERVICES_STANDARD_RATE;
-    const swappable = new Set([SERVICES_STANDARD_RATE, SERVICES_CARD_REDUCED_RATE]);
+    const target = allCard ? cardRate : stdRate;
+    const swappable = new Set([stdRate, cardRate]);
 
     let changed = false;
     const next = lines.map((l) => {
       if (!isServicesHs(l.hs_code)) return l;
-      if (!swappable.has(String(l.tax_rate))) return l; // operator set a custom rate — leave it
-      if (String(l.tax_rate) === target) return l;
+      if (!swappable.has(normRate(l.tax_rate))) return l; // operator set a custom rate — leave it
+      if (normRate(l.tax_rate) === target) return l;
       changed = true;
       return { ...l, tax_rate: target };
     });
     if (changed) setLines(next);
     setAutoRateNote(
       allCard
-        ? `Card payment: services taxed at the reduced ${SERVICES_CARD_REDUCED_RATE}% (PRA card rate).`
-        : `Standard ${SERVICES_STANDARD_RATE}% services rate applied. Pay by card to use the reduced ${SERVICES_CARD_REDUCED_RATE}% rate.`,
+        ? `Card payment: services taxed at the reduced ${cardRate}% (card rate).`
+        : `Standard ${stdRate}% services rate applied. Pay fully by card to use the reduced ${cardRate}% rate.`,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentMethodsKey, lines.length, lines.map((l) => l.hs_code).join(",")]);
+  }, [paymentMethodsKey, lines.length, lines.map((l) => l.hs_code).join(","), stdRate, cardRate]);
 
   // Pre-pick the first branch once available.
   useEffect(() => {
