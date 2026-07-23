@@ -10,7 +10,7 @@ import {
 } from "@/features/invoices/status";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { ApiError } from "@/lib/api";
+import { ApiError, extractApiErrorMessage } from "@/lib/api";
 import { money, qty } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,110 +58,6 @@ async function openPdf(invoiceId: string, invoiceNumber: string, download: boole
   setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 }
 
-/** SDC base URL on THIS machine (where the FBR Fiscalization Service runs).
- *  Overridable per-install via localStorage("fbr_sdc_base") if the SDC isn't
- *  on the default localhost:8524 (e.g. a LAN machine). */
-function sdcBase(): string {
-  try {
-    return localStorage.getItem("fbr_sdc_base") || "http://localhost:8524";
-  } catch {
-    return "http://localhost:8524";
-  }
-}
-
-type FiscalizeOutcome =
-  | { ok: true; fbrNumber: string; already?: boolean }
-  | { ok: false; stage: "payload" | "sdc" | "save"; message: string };
-
-/**
- * One-click FBR fiscalization via the LOCAL SDC.
- *
- * Runs entirely from the machine the user is on (same machine as the FBR SDC):
- *   1. cloud → give me the SDC request body for this invoice (/fiscal-payload/)
- *   2. browser → POST it to the local SDC (localhost:8524/api/IMSFiscal/...)
- *   3. cloud ← save the returned fiscal number (/fiscal-result/, idempotent)
- *
- * Returns a structured outcome so the UI can show a precise, friendly message
- * (e.g. "SDC not reachable — is the FBR service running on this PC?").
- */
-async function fiscalizeViaSdc(invoiceId: string): Promise<FiscalizeOutcome> {
-  const access = useAuthStore.getState().access;
-  const authHeaders: Record<string, string> = access
-    ? { Authorization: `Bearer ${access}` }
-    : {};
-
-  // 1) Get the SDC request body from the cloud.
-  let payloadResp: Response;
-  try {
-    payloadResp = await fetch(`/api/sales/invoices/${invoiceId}/fiscal-payload/`, {
-      headers: authHeaders,
-    });
-  } catch (e) {
-    return { ok: false, stage: "payload", message: `Could not reach the server: ${e}` };
-  }
-  if (!payloadResp.ok) {
-    return { ok: false, stage: "payload", message: `Server error ${payloadResp.status}` };
-  }
-  const info = await payloadResp.json();
-  if (info.already_fiscalized) {
-    return { ok: true, fbrNumber: info.fbr_invoice_number, already: true };
-  }
-  if (!info.branch_fbr_pos_id || !info.sdc_payload) {
-    return {
-      ok: false, stage: "payload",
-      message: "This branch has no FBR POS ID configured. Set it on the Branches page.",
-    };
-  }
-
-  // 2) POST to the LOCAL SDC on this machine.
-  let sdcData: { InvoiceNumber?: string; Code?: string; Response?: string; Errors?: unknown };
-  try {
-    const sdcResp = await fetch(`${sdcBase()}${info.sdc_submit_path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(info.sdc_payload),
-    });
-    if (!sdcResp.ok) {
-      return { ok: false, stage: "sdc", message: `FBR SDC returned HTTP ${sdcResp.status}` };
-    }
-    sdcData = await sdcResp.json();
-  } catch (e) {
-    return {
-      ok: false, stage: "sdc",
-      message:
-        "Couldn't reach the FBR SDC on this computer (localhost:8524). " +
-        "Make sure the FBR Fiscalization service is running on this PC.",
-    };
-  }
-
-  const code = String(sdcData.Code ?? "");
-  const fbrNumber = (sdcData.InvoiceNumber ?? "").trim();
-  if (code && code !== "100") {
-    return { ok: false, stage: "sdc", message: `FBR SDC: ${sdcData.Response || code}` };
-  }
-  if (sdcData.Errors) {
-    return { ok: false, stage: "sdc", message: `FBR SDC error: ${JSON.stringify(sdcData.Errors)}` };
-  }
-  if (!fbrNumber) {
-    return { ok: false, stage: "sdc", message: "FBR SDC returned no invoice number." };
-  }
-
-  // 3) Save the fiscal number back to the cloud (idempotent).
-  try {
-    const saveResp = await fetch(`/api/sales/invoices/${invoiceId}/fiscal-result/`, {
-      method: "POST",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ fbr_invoice_number: fbrNumber }),
-    });
-    if (!saveResp.ok) {
-      return { ok: false, stage: "save", message: `Couldn't save the FBR number (HTTP ${saveResp.status})` };
-    }
-    const saved = await saveResp.json();
-    return { ok: true, fbrNumber: saved.fbr_invoice_number || fbrNumber, already: saved.already };
-  } catch (e) {
-    return { ok: false, stage: "save", message: `Couldn't save the FBR number: ${e}` };
-  }
-}
 
 function timeUntilDeadline(deadline: string | null): { remaining: string; expired: boolean } | null {
   if (!deadline) return null;
@@ -240,10 +136,12 @@ export default function InvoiceDetail() {
     !invoice.fbr_invoice_number
     && (invoice.status === "pending_sync" || invoice.status === "failed");
 
-  // POS/SDC tenant: branch has an FBR POS ID. These fiscalize via the local
-  // SDC, NOT the direct DI-API — so show the SDC button and hide the DI-API
-  // Validate/Submit buttons (which need a tenant token SDC tenants lack).
-  const isSdcTenant = !!invoice.branch_fbr_pos_id;
+  // POS registration: the invoice's branch has an FBR POS ID. These fiscalize
+  // via the tax authority's CLOUD IMS from our server (FBR gw.fbr.gov.pk/imsp
+  // or PRA ims.pral.com.pk) using the branch POS token — NOT the direct DI-API
+  // tenant-token flow. So show the one-click "Fiscalize with FBR" (cloud)
+  // button and hide the DI-API Validate/Submit buttons.
+  const isPosFiscalizationTenant = !!invoice.branch_fbr_pos_id;
 
   const canCancel =
     isFbrAccepted
@@ -357,7 +255,7 @@ export default function InvoiceDetail() {
         {/* DI-API "Validate with FBR" — only for DI-API tenants. Hidden for
             SDC/POS tenants (they use the SDC button below; the DI-API path
             would error with "no token"). */}
-        {!isSdcTenant && (
+        {!isPosFiscalizationTenant && (
         <Button
           variant="outline"
           onClick={async () => {
@@ -399,37 +297,39 @@ export default function InvoiceDetail() {
         </Button>
         )}
 
-        {/* Fiscalize via the LOCAL FBR SDC (POS/IMS tenants). Runs from THIS
-            machine: cloud builds the SDC body → browser POSTs it to the FBR
-            Fiscalization service on localhost:8524 → cloud saves the returned
-            fiscal number (idempotent). Shown until the invoice has an FBR
-            number. This is how POS-DI registrations get fiscalized. */}
-        {isSdcTenant && !invoice.fbr_invoice_number && invoice.status !== "cancelled" && (
+        {/* Fiscalize a POS registration via the CLOUD (server-side). We no
+            longer use a local SDC on the shop machine — the server posts the
+            invoice to the tax authority's cloud IMS (FBR gw.fbr.gov.pk/imsp or
+            PRA ims.pral.com.pk) with the branch's POS token and stores the
+            fiscal number + QR. Shown until the invoice has an FBR number. */}
+        {isPosFiscalizationTenant && !invoice.fbr_invoice_number && invoice.status !== "cancelled" && (
           <Button
             variant="default"
             disabled={fiscalizing}
             onClick={async () => {
               setFiscalizing(true);
               setFiscalMsg(null);
-              const r = await fiscalizeViaSdc(invoice.id);
-              setFiscalizing(false);
-              if (r.ok) {
-                setFiscalMsg({
-                  ok: true,
-                  text: r.already
-                    ? `Already fiscalized. FBR #${r.fbrNumber}`
-                    : `Fiscalized! FBR Invoice #${r.fbrNumber}`,
-                });
-              } else {
-                setFiscalMsg({ ok: false, text: r.message });
+              try {
+                const updated = await resubmit.mutateAsync(invoice.id);
+                if (updated.fbr_invoice_number) {
+                  setFiscalMsg({ ok: true, text: `Fiscalized! FBR Invoice #${updated.fbr_invoice_number}` });
+                } else {
+                  // Queued/submitting — the fiscal number lands async via the
+                  // cloud; the page refetches and will show it shortly.
+                  setFiscalMsg({ ok: true, text: "Sent to FBR — fiscal number will appear once the cloud responds." });
+                }
+              } catch (e) {
+                setFiscalMsg({ ok: false, text: extractApiErrorMessage(e) });
+              } finally {
+                setFiscalizing(false);
               }
             }}
-            title="Send this invoice to the FBR Fiscalization service running on this computer to get a fiscal invoice number + QR"
+            title="Submit this invoice to the tax authority's cloud fiscalization (from our server) to get a fiscal invoice number + QR"
           >
             <CheckCircle2
               className={`mr-1 h-4 w-4 ${fiscalizing ? "animate-pulse" : ""}`}
             />
-            {fiscalizing ? "Fiscalizing…" : "Fiscalize with FBR (SDC)"}
+            {fiscalizing ? "Fiscalizing…" : "Fiscalize with FBR"}
           </Button>
         )}
 
@@ -439,7 +339,7 @@ export default function InvoiceDetail() {
             yet sent to FBR). The operator clicks Submit when ready;
             PRAL then issues the FBR Invoice Number on success. Failed
             submissions can be retried via the same button. */}
-        {!isSdcTenant
+        {!isPosFiscalizationTenant
           && (invoice.status === "failed" || invoice.status === "pending_sync")
           && !invoice.fbr_invoice_number && (
           <Button
