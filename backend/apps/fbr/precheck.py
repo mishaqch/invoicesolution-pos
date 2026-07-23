@@ -20,9 +20,14 @@ from .builder import (
 )
 
 
-# Rates FBR/PRA accept for a services line (chapter-98 HS). 18% is goods-only.
-_SERVICES_VALID_RATES = {Decimal("0"), Decimal("5"), Decimal("15"),
-                         Decimal("16"), Decimal("17")}
+# Common services rates (chapter-98 HS). This is NOT exhaustive — provinces and
+# payment methods add reduced rates (e.g. PRA/Punjab allows a REDUCED rate such
+# as 8% for card/digital payments at restaurants, and 5% for some sectors). So
+# an unlisted rate is a WARNING to double-check, never a hard block — only the
+# tax authority is the real validator. 18% is the goods standard rate; on a
+# services line it's usually wrong, so we still nudge, but don't stop the sale.
+_SERVICES_COMMON_RATES = {Decimal("0"), Decimal("5"), Decimal("8"),
+                          Decimal("15"), Decimal("16"), Decimal("17")}
 
 
 def _issue(severity, field, message):
@@ -88,11 +93,13 @@ def precheck_pos_invoice(invoice) -> dict:
         if not (it.uom_code or "").strip():
             issues.append(_issue("error", tag, "Unit of measure is missing."))
 
-        # Services (HS chapter 98): must be a services-valid rate + Others UoM.
+        # Services (HS chapter 98): sanity-check the rate (WARNING only — the
+        # valid set varies by province + payment method, e.g. an 8% reduced rate
+        # for card/digital payments, so we never hard-block on it) and the UoM.
         if is_services_hs_code(it.hs_code):
-            if rate not in _SERVICES_VALID_RATES:
-                issues.append(_issue("error", tag,
-                                     f"Services HS code {it.hs_code} can't use {rate}% — use 0/5/15/16/17% (16% is typical). 18% is goods-only."))
+            if rate not in _SERVICES_COMMON_RATES:
+                issues.append(_issue("warning", tag,
+                                     f"{rate}% is unusual for a services HS code ({it.hs_code}). Common services rates are 0/5/8/15/16/17% (8% typically applies to card/digital payments). Double-check it's correct for your case — the authority validates on submission."))
             if map_uom(it.uom_code) != "Others":
                 issues.append(_issue("warning", tag,
                                      "Services lines use UoM 'Others' — the server sends that automatically, but the product's UoM differs."))
