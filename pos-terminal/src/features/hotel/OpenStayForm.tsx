@@ -52,6 +52,9 @@ export function OpenStayForm({
     guest_phone: "",
     guest_email: "",
     guest_address: "",
+    // Accompanying partner (e.g. a couple) — both optional.
+    partner_name: "",
+    partner_cnic: "",
     check_in: localNow(),
     expected_check_out: localNow(1),
   });
@@ -98,6 +101,8 @@ export function OpenStayForm({
         guest_phone: form.guest_phone.trim(),
         guest_email: form.guest_email.trim() || undefined,
         guest_address: form.guest_address.trim() || undefined,
+        partner_name: form.partner_name.trim() || undefined,
+        partner_cnic: form.partner_cnic.trim() || undefined,
         check_in: new Date(form.check_in).toISOString(),
         expected_check_out: new Date(form.expected_check_out).toISOString(),
       });
@@ -138,6 +143,23 @@ export function OpenStayForm({
           <Field label="Address (optional)">
             <input className={inp()} value={form.guest_address} onChange={(e) => set("guest_address", e.target.value)} placeholder="City / address" />
           </Field>
+
+          {/* Accompanying partner (e.g. a couple). Optional — record a second
+              person's name + CNIC when they share the stay. Not billed
+              separately; the folio stays one guest bill. */}
+          <div className="rounded-lg border border-dashed border-input p-3">
+            <div className="mb-2 text-xs font-semibold text-muted-foreground">
+              Accompanying partner <span className="font-normal">(optional — e.g. spouse)</span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Partner full name">
+                <input className={inp()} value={form.partner_name} onChange={(e) => set("partner_name", e.target.value)} placeholder="e.g. Fatima Khan" />
+              </Field>
+              <Field label="Partner CNIC">
+                <input className={inp()} value={form.partner_cnic} onChange={(e) => set("partner_cnic", e.target.value)} placeholder="35201-1234567-2" inputMode="numeric" />
+              </Field>
+            </div>
+          </div>
 
           <Field label={`Rooms * ${roomIds.length ? `(${roomIds.length} selected)` : ""}`} error={errors.room}>
             <div className={`max-h-56 overflow-auto rounded-md border p-1 ${errors.room ? "border-destructive" : "border-input"}`}>

@@ -64,6 +64,8 @@ def open_stay(
     expected_check_out: dt.datetime | None = None,
     guest_email: str = "",
     guest_address: str = "",
+    partner_name: str = "",
+    partner_cnic: str = "",
     notes: str = "",
     client_uuid=None,
 ) -> GuestFolio:
@@ -110,6 +112,8 @@ def open_stay(
         guest_phone=guest_phone,
         guest_email=guest_email or "",
         guest_address=guest_address or "",
+        partner_name=partner_name or "",
+        partner_cnic=partner_cnic or "",
         room=primary,                 # primary room (backward compat + summary)
         check_in=booked[0]["check_in"],
         expected_check_out=booked[0]["expected_check_out"],
@@ -321,6 +325,8 @@ _EDITABLE_GUEST_FIELDS = {
     "guest_phone": "guest_phone",
     "guest_email": "guest_email",
     "guest_address": "guest_address",
+    "partner_name": "partner_name",
+    "partner_cnic": "partner_cnic",
     "notes": "notes",
 }
 
@@ -729,6 +735,8 @@ def consolidated_bill(folio: GuestFolio) -> dict:
             "phone": folio.guest_phone,
             "email": folio.guest_email,
             "address": folio.guest_address,
+            "partner_name": folio.partner_name,
+            "partner_cnic": folio.partner_cnic,
         },
         "room": (
             {

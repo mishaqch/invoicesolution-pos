@@ -155,6 +155,8 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
                 expected_check_out=v.get("expected_check_out"),
                 guest_email=v.get("guest_email", ""),
                 guest_address=v.get("guest_address", ""),
+                partner_name=v.get("partner_name", ""),
+                partner_cnic=v.get("partner_cnic", ""),
                 notes=v.get("notes", ""),
             )
         except DjangoValidationError as e:
@@ -264,7 +266,8 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
                 fields={
                     k: v[k] for k in (
                         "guest_name", "guest_cnic", "guest_phone",
-                        "guest_email", "guest_address", "notes",
+                        "guest_email", "guest_address",
+                        "partner_name", "partner_cnic", "notes",
                     ) if k in v
                 },
                 check_in=v.get("check_in") if dates_changed else None,

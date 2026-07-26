@@ -111,6 +111,12 @@ class GuestFolio(TenantScopedModel):
     guest_email = models.EmailField(max_length=254, blank=True)
     guest_address = models.TextField(blank=True)
 
+    # Accompanying partner (e.g. a couple checking in). Optional — recorded at
+    # reception when a second person shares the stay. Not billed separately; the
+    # folio stays a single guest bill.
+    partner_name = models.CharField(max_length=255, blank=True)
+    partner_cnic = models.CharField(max_length=20, blank=True)
+
     # Primary room (first/main room). A folio can hold SEVERAL rooms under the
     # same guest via FolioRoom (below) — one guest, many rooms, one bill. This
     # FK is kept for the primary room + backward compatibility.

@@ -35,11 +35,12 @@ ROOM_HS = "9963.0000"   # Accommodation services (best-effort; non-fiscal anyway
 
 # Rooms — TDCP Kallar Kahar real tariff. Tax is a FIXED AMOUNT per night (not %),
 # scaled by nights × rooms. Each tuple:
-#   (type, sku, nightly_base, nightly_tax, count)  →  base + tax = total/night
+#   (type, sku, nightly_base, nightly_tax, room_numbers)  →  base + tax = total/night
+# room_numbers are the ACTUAL floor numbers at the resort (not sequential 1..n).
 ROOM_TYPES = [
-    ("VIP",      "ROOM-VIP", "8820", "1680", 5),   # base 8820 + tax 1680 = 10500
-    ("Deluxe",   "ROOM-DLX", "6300", "1200", 5),   # base 6300 + tax 1200 = 7500
-    ("Standard", "ROOM-STD", "5040",  "960", 6),   # base 5040 + tax  960 = 6000
+    ("VIP",    "ROOM-VIP", "8820", "1680", ["101", "102", "109", "110", "116"]),  # 10500/night
+    ("Deluxe", "ROOM-DLX", "6300", "1200", ["111", "112", "113", "114", "115"]),  # 7500/night
+    ("Standard", "ROOM-STD", "5040", "960", ["107", "108"]),                       # 6000/night
 ]
 
 # Full restaurant menu, transcribed from the TDCP Lake Resort Kallar Kahar menu
@@ -269,7 +270,9 @@ class Command(BaseCommand):
 
         n_room_products = 0
         n_rooms = 0
-        for room_type, sku, base, tax_amt, count in ROOM_TYPES:
+        # Every room number we intend to keep — used to prune stale rooms below.
+        wanted_numbers: set[str] = set()
+        for room_type, sku, base, tax_amt, room_numbers in ROOM_TYPES:
             product, _ = Product.objects.get_or_create(
                 tenant=tenant, sku=sku,
                 defaults={
@@ -291,11 +294,12 @@ class Command(BaseCommand):
             product.save(update_fields=["name", "sale_price", "category", "uom", "updated_at"])
             n_room_products += 1
 
-            # Individual rooms: VIP-1..5, Deluxe-1..5, Standard-1..6.
-            prefix = {"VIP": "VIP", "Deluxe": "DLX", "Standard": "STD"}.get(room_type, room_type[:3].upper())
-            for i in range(1, count + 1):
-                Room.objects.get_or_create(
-                    tenant=tenant, branch=branch, room_number=f"{prefix}-{i}",
+            # Individual rooms keyed by their ACTUAL floor number (VIP: 101/102/
+            # 109/110/116, Deluxe: 111-115, Standard: 107/108).
+            for i, number in enumerate(room_numbers, start=1):
+                wanted_numbers.add(number)
+                room, _ = Room.objects.get_or_create(
+                    tenant=tenant, branch=branch, room_number=number,
                     defaults={
                         "room_type": room_type,
                         "nightly_base": Decimal(base),
@@ -305,7 +309,37 @@ class Command(BaseCommand):
                         "status": "available",
                     },
                 )
+                # Keep type/pricing/product in sync on re-run (e.g. a room number
+                # that previously existed under a different type).
+                room.room_type = room_type
+                room.nightly_base = Decimal(base)
+                room.nightly_tax = Decimal(tax_amt)
+                room.product = product
+                room.display_order = n_room_products * 100 + i
+                room.is_active = True
+                room.save(update_fields=[
+                    "room_type", "nightly_base", "nightly_tax", "product",
+                    "display_order", "is_active", "updated_at",
+                ])
                 n_rooms += 1
+
+        # Prune rooms that are NOT in the new list (e.g. the old sequential
+        # VIP-1..5 / DLX-1..5 / STD-1..6). Only delete rooms with no folio
+        # history; otherwise deactivate them so past bills stay intact.
+        n_pruned = 0
+        stale = Room.objects.filter(tenant=tenant, branch=branch).exclude(
+            room_number__in=wanted_numbers,
+        )
+        for r in stale:
+            if r.folios.exists() or r.folio_rooms.exists():
+                if r.is_active or r.status != "maintenance":
+                    r.is_active = False
+                    r.status = "maintenance"
+                    r.save(update_fields=["is_active", "status", "updated_at"])
+                    n_pruned += 1
+            else:
+                r.delete()
+                n_pruned += 1
 
         # 8) Restaurant menu items.
         n_menu = 0
@@ -340,7 +374,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("\n=== TDCP Kallar Kahar demo ready (NON-FISCAL) ==="))
         self.stdout.write(f"Business : {tenant.business_name}  (NTN {tenant.ntn})")
         self.stdout.write(f"Tax      : 16% food (PST) + fixed per-night room tax (VIP 1680 / Deluxe 1200 / Standard 960)")
-        self.stdout.write(f"Rooms    : {n_rooms} ({n_room_products} types)   Menu items: {n_menu}   Tables: 8")
+        self.stdout.write(f"Rooms    : {n_rooms} ({n_room_products} types), {n_pruned} stale pruned   Menu items: {n_menu}   Tables: 8")
         self.stdout.write(f"Modules  : hotel + restaurant enabled (folios + rooms)")
         self.stdout.write("")
         self.stdout.write(self.style.WARNING("Admin-web login (admin/client.invoicesolution.pk):"))

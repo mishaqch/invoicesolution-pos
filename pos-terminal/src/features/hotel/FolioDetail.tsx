@@ -199,6 +199,8 @@ export function FolioDetail({
       guest_phone: bill.guest.phone,
       guest_email: bill.guest.email || "",
       guest_address: bill.guest.address || "",
+      partner_name: bill.guest.partner_name || "",
+      partner_cnic: bill.guest.partner_cnic || "",
       // datetime-local wants "YYYY-MM-DDTHH:mm".
       check_in: bill.check_in ? toLocalInput(bill.check_in) : undefined,
       expected_check_out: bill.expected_check_out ? toLocalInput(bill.expected_check_out) : undefined,
@@ -438,6 +440,8 @@ export function FolioDetail({
             <Info label="CNIC" value={bill.guest.cnic} />
             <Info label="Phone" value={bill.guest.phone} />
             {bill.guest.email && <Info label="Email" value={bill.guest.email} />}
+            {bill.guest.partner_name && <Info label="Partner" value={bill.guest.partner_name} />}
+            {bill.guest.partner_cnic && <Info label="Partner CNIC" value={bill.guest.partner_cnic} />}
             <Info label="Check-in" value={fmtDate(bill.check_in)} />
             {bill.check_out && <Info label="Check-out" value={fmtDate(bill.check_out)} />}
             {bill.guest.address && (
@@ -471,6 +475,12 @@ export function FolioDetail({
                 </Field>
                 <Field label="Address" full>
                   <input className={inputCls} value={editForm.guest_address ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_address: e.target.value }))} />
+                </Field>
+                <Field label="Partner name (optional)">
+                  <input className={inputCls} value={editForm.partner_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, partner_name: e.target.value }))} />
+                </Field>
+                <Field label="Partner CNIC (optional)">
+                  <input className={inputCls} value={editForm.partner_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, partner_cnic: e.target.value }))} />
                 </Field>
                 <Field label="Check-in">
                   <input type="datetime-local" className={inputCls} value={editForm.check_in ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, check_in: e.target.value }))} />

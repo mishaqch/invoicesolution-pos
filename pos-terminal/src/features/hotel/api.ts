@@ -70,7 +70,7 @@ export interface FolioBill {
   id: string;
   folio_number: string;
   status: string;
-  guest: { name: string; cnic: string; phone: string; email: string; address: string };
+  guest: { name: string; cnic: string; phone: string; email: string; address: string; partner_name?: string; partner_cnic?: string };
   room: { number: string; type: string; nightly_total: string } | null;
   rooms: FolioBillRoom[];
   check_in: string | null;
@@ -93,6 +93,8 @@ export interface OpenStayBody {
   guest_phone: string;
   guest_email?: string;
   guest_address?: string;
+  partner_name?: string;
+  partner_cnic?: string;
   check_in?: string;
   expected_check_out?: string;
   notes?: string;
@@ -165,6 +167,8 @@ export interface UpdateStayBody {
   guest_phone?: string;
   guest_email?: string;
   guest_address?: string;
+  partner_name?: string;
+  partner_cnic?: string;
   notes?: string;
   check_in?: string;
   expected_check_out?: string | null;

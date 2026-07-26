@@ -53,6 +53,13 @@ class OpenStaySerializer(serializers.Serializer):
     guest_phone = serializers.CharField(max_length=20)
     guest_email = serializers.EmailField(required=False, allow_blank=True, default="")
     guest_address = serializers.CharField(required=False, allow_blank=True, default="")
+    # Optional accompanying partner (e.g. a couple). Not billed separately.
+    partner_name = serializers.CharField(
+        max_length=255, required=False, allow_blank=True, default="",
+    )
+    partner_cnic = serializers.CharField(
+        max_length=20, required=False, allow_blank=True, default="",
+    )
     check_in = serializers.DateTimeField(required=False)
     expected_check_out = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
@@ -98,6 +105,8 @@ class UpdateStaySerializer(serializers.Serializer):
     guest_phone = serializers.CharField(max_length=20, required=False)
     guest_email = serializers.EmailField(required=False, allow_blank=True)
     guest_address = serializers.CharField(required=False, allow_blank=True)
+    partner_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    partner_cnic = serializers.CharField(max_length=20, required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True)
     check_in = serializers.DateTimeField(required=False)
     expected_check_out = serializers.DateTimeField(required=False, allow_null=True)
