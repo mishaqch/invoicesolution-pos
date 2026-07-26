@@ -35,10 +35,23 @@ export default function TodayInvoicesRoute() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const todayPrefix = new Date().toISOString().slice(0, 10);
+    // "Today" is the PAKISTAN business day, not UTC. created_at is stored UTC,
+    // so a sale at 11pm PKT is 18:00 UTC (same day) but a sale at 1am PKT is the
+    // PREVIOUS UTC day — comparing UTC-date prefixes filed those under the wrong
+    // day and hid them. Compare on the Asia/Karachi calendar date instead.
+    const pkDate = (ts?: string | null): string => {
+      if (!ts) return "";
+      const d = new Date(ts);
+      if (Number.isNaN(d.getTime())) return String(ts).slice(0, 10);
+      // en-CA yields YYYY-MM-DD; force the Pakistan zone regardless of the
+      // machine's locale/timezone.
+      return d.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+    };
+    const todayPk = pkDate(new Date().toISOString());
+
     const loadLocal = () =>
       window.api.sales.list({ limit: 200 }).then((all) =>
-        all.filter((r) => r.created_at?.startsWith(todayPrefix)),
+        all.filter((r) => pkDate(r.created_at) === todayPk),
       );
 
     async function run() {
@@ -58,7 +71,7 @@ export default function TodayInvoicesRoute() {
         const server = await listServerInvoices({ terminal: terminalId ?? undefined, limit: 200 });
         const localIds = new Set(local.map((r) => r.id));
         const missing = server.filter(
-          (s) => (s.created_at ?? "").startsWith(todayPrefix) && !localIds.has(s.id),
+          (s) => pkDate(s.created_at) === todayPk && !localIds.has(s.id),
         );
         if (missing.length) {
           await mirrorServerInvoices(missing);
