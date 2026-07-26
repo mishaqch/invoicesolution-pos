@@ -89,6 +89,12 @@ const TIMEOUT_MS = 5000;
 // success screen if the cashier is still there).
 const FBR_PENDING_NOTICE = "FBR: pending - added when online";
 
+// Invisible marker prefixed to the folio bill's header text lines (business
+// name / address / contact) so the printer can drop them when a logo image is
+// printed at the top instead. Uses a control char that never appears in normal
+// text and is stripped before printing.
+const HEADER_TAG = "\x00HDR\x00";
+
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -134,7 +140,11 @@ function resolveCharset(): string {
  * the asset is missing so printing degrades to QR-only rather than failing.
  */
 function resolveFbrLogoPath(): string | null {
-  const rel = "fbr-logo-thermal.png";
+  return resolveAssetPath("fbr-logo-thermal.png");
+}
+
+/** Resolve a bundled electron/assets file across dev + asar/out layouts. */
+function resolveAssetPath(rel: string): string | null {
   const candidates = [
     // dev: cwd is the pos-terminal package root
     path.resolve(process.cwd(), "electron/assets", rel),
@@ -146,6 +156,16 @@ function resolveFbrLogoPath(): string | null {
     path.resolve(__dirname, "../electron/assets", rel),
   ];
   return candidates.find((p) => existsSync(p)) ?? null;
+}
+
+/**
+ * The tenant's receipt-header logo, printed centered at the top of the bill
+ * INSTEAD of the business-name text banner. Black, thermal-ready PNG (~384px
+ * wide) bundled at electron/assets/receipt-logo.png. Returns null if absent, in
+ * which case the print falls back to the text banner.
+ */
+function resolveReceiptLogoPath(): string | null {
+  return resolveAssetPath("receipt-logo.png");
 }
 
 
@@ -455,27 +475,43 @@ async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: s
     const ok = await printer.isPrinterConnected();
     if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
   }
-  // Business-name banner at the very top (the resort's "logo" line): centered,
-  // bold, double-size so TDCP's name headlines the slip. renderFolioText also
-  // includes the name in its body header, so print the styled banner then skip
-  // that first plain-text line to avoid printing the name twice.
+  // Header: prefer the tenant LOGO (black thermal PNG) centered at the very top.
+  // When present, it REPLACES the business-name/address/contact text block —
+  // renderFolioText tags those lines so we can drop them here. If the logo asset
+  // is missing, fall back to the bold business-name text banner.
   const bodyLines = text.split("\n");
-  try {
-    printer.alignCenter();
-    printer.bold(true);
-    printer.setTextSize(1, 1);
-    printer.println(input.business_name.toUpperCase());
-    printer.setTextNormal();
-    printer.bold(false);
-    printer.alignLeft();
-    if (bodyLines.length && bodyLines[0].trim().toUpperCase().includes(input.business_name.trim().toUpperCase())) {
-      bodyLines.shift(); // drop the duplicate plain-text name line
+  const logoPath = resolveReceiptLogoPath();
+  let logoPrinted = false;
+  if (logoPath) {
+    try {
+      printer.alignCenter();
+      await printer.printImage(logoPath);
+      printer.alignLeft();
+      logoPrinted = true;
+    } catch {
+      logoPrinted = false; // printing the image failed → use text banner
     }
-  } catch {
-    // Styling not supported on this driver — fall through to plain text
-    // (renderFolioText still has the name in the body).
   }
-  for (const line of bodyLines) printer.println(line);
+  if (logoPrinted) {
+    // Drop ALL header text lines (name/address/contact) so the logo stands
+    // alone at the top.
+    while (bodyLines.length && bodyLines[0].startsWith(HEADER_TAG)) bodyLines.shift();
+  } else {
+    // No logo — print the styled business-name banner, then drop just the
+    // tagged NAME line so it isn't repeated (keep address/contact in the body).
+    try {
+      printer.alignCenter();
+      printer.bold(true);
+      printer.setTextSize(1, 1);
+      printer.println(input.business_name.toUpperCase());
+      printer.setTextNormal();
+      printer.bold(false);
+      printer.alignLeft();
+    } catch { /* styling unsupported — body still has the name */ }
+    if (bodyLines.length && bodyLines[0].startsWith(HEADER_TAG)) bodyLines.shift();
+  }
+  // Strip the header tag from any remaining tagged lines before printing.
+  for (const line of bodyLines) printer.println(line.startsWith(HEADER_TAG) ? line.slice(HEADER_TAG.length) : line);
   printer.cut();
   if (transport.kind !== "direct") return flushBuffer(transport, printer.getBuffer());
   try {
@@ -497,9 +533,11 @@ function renderFolioText(input: FolioBillInput): string {
   const f = input.folio;
   const L: string[] = [];
 
-  L.push(center(input.business_name.toUpperCase()));
-  if (input.address) L.push(center(input.address));
-  if (input.contact) L.push(center(input.contact));
+  // Tag the header text lines so realPrintFolio can drop them when a logo is
+  // printed at the top instead (see HEADER_TAG usage there).
+  L.push(HEADER_TAG + center(input.business_name.toUpperCase()));
+  if (input.address) L.push(HEADER_TAG + center(input.address));
+  if (input.contact) L.push(HEADER_TAG + center(input.contact));
   L.push("");
   L.push(center("GUEST BILL"));
   L.push(rule);
