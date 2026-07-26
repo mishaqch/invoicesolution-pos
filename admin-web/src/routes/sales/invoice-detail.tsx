@@ -377,10 +377,18 @@ export default function InvoiceDetail() {
                 const updated = await resubmit.mutateAsync(invoice.id);
                 if (updated.fbr_invoice_number) {
                   setFiscalMsg({ ok: true, done: true, text: `Fiscalized! ${authority} Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.` });
+                } else if (updated.status === "failed") {
+                  // The submission already came back REJECTED (no number, status
+                  // failed). Don't show a hopeful "waiting…" — tell the operator
+                  // it failed and point at the log with the exact error.
+                  setFiscalMsg({
+                    ok: false,
+                    text: `${authority} rejected this invoice — no fiscal number issued. See the ${authority} submissions log below for the exact error.`,
+                  });
                 } else {
-                  // Queued/submitting — the fiscal number lands async via the
-                  // cloud. Poll the invoice so the QR + PDF appear here without
-                  // a manual refresh.
+                  // Genuinely queued/submitting — the fiscal number lands async
+                  // via the cloud. Poll so the QR + PDF appear without a manual
+                  // refresh.
                   setFiscalMsg({ ok: true, text: `Sent to ${authority} — waiting for the fiscal number…` });
                   void pollForFbrNumber(invoice.id);
                 }
@@ -595,7 +603,7 @@ export default function InvoiceDetail() {
           Auto-refetches the invoice (the mutation's onSuccess does
           this); the status badge in the title row updates as soon
           as the worker processes the task. */}
-      {resubmit.isSuccess && !invoice.fbr_invoice_number && (
+      {resubmit.isSuccess && !invoice.fbr_invoice_number && invoice.status !== "failed" && (
         <div
           role="status"
           aria-live="polite"
@@ -603,8 +611,8 @@ export default function InvoiceDetail() {
         >
           <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
           <div>
-            <strong>Queued for submission to FBR.</strong> A worker is
-            picking it up — refresh in a few seconds to see the FBR
+            <strong>Queued for submission to {authority}.</strong> A worker is
+            picking it up — refresh in a few seconds to see the {authority}
             invoice number, or watch the submissions log below for the
             new roundtrip.
           </div>
@@ -859,7 +867,7 @@ export default function InvoiceDetail() {
         </CardContent>
       </Card>
 
-      <FbrSubmissionsPanel invoiceId={invoice.id} />
+      <FbrSubmissionsPanel invoiceId={invoice.id} authority={authority} />
 
       {showConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1296,7 +1304,7 @@ function MoreActionsMenu({ items }: { items: MoreActionsItem[] }) {
  * (REVOKE UPDATE/DELETE in apps/fbr/0002), so this is also our
  * legal-retention audit log.
  */
-function FbrSubmissionsPanel({ invoiceId }: { invoiceId: string }) {
+function FbrSubmissionsPanel({ invoiceId, authority = "FBR" }: { invoiceId: string; authority?: string }) {
   const { data, isLoading } = useFbrSubmissions({ invoice: invoiceId });
   const rows = data?.results ?? [];
 
@@ -1304,7 +1312,7 @@ function FbrSubmissionsPanel({ invoiceId }: { invoiceId: string }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">FBR submissions log</CardTitle>
+          <CardTitle className="text-sm">{authority} submissions log</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">Loading…</p>
@@ -1316,12 +1324,12 @@ function FbrSubmissionsPanel({ invoiceId }: { invoiceId: string }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">FBR submissions log</CardTitle>
+          <CardTitle className="text-sm">{authority} submissions log</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            No FBR roundtrips recorded yet. This invoice hasn't been
-            submitted to PRAL.
+            No {authority} roundtrips recorded yet. This invoice hasn't been
+            submitted to {authority}.
           </p>
         </CardContent>
       </Card>
@@ -1332,7 +1340,7 @@ function FbrSubmissionsPanel({ invoiceId }: { invoiceId: string }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-sm">
-          FBR submissions log{" "}
+          {authority} submissions log{" "}
           <span className="text-muted-foreground font-normal">
             ({rows.length} roundtrip{rows.length === 1 ? "" : "s"})
           </span>
