@@ -36,6 +36,7 @@ import {
   type ValidateInvoiceResult,
 } from "@/lib/queries";
 import { useAuthStore } from "@/stores/auth";
+import { useFbrConnectionType } from "@/features/modules/hooks";
 
 async function openPdf(invoiceId: string, invoiceNumber: string, download: boolean) {
   const access = useAuthStore.getState().access;
@@ -81,6 +82,9 @@ const DEBIT_NOTE_REFERENCEABLE_STATUSES = new Set([
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  // Tax authority this tenant fiscalizes with. PRA POS tenants (pra_cloud)
+  // must see "PRA" on the buttons/messages; everyone else sees "FBR".
+  const authority = useFbrConnectionType() === "pra_cloud" ? "PRA" : "FBR";
   const { data: invoice, isLoading } = useInvoice(id);
   const cancel = useCancelInvoice();
   const cancelItem = useCancelInvoiceItem();
@@ -102,7 +106,7 @@ export default function InvoiceDetail() {
       await qc.invalidateQueries({ queryKey: ["invoice", invoiceId] });
       const fresh = qc.getQueryData<AdminInvoice>(["invoice", invoiceId]);
       if (fresh?.fbr_invoice_number) {
-        setFiscalMsg({ ok: true, done: true, text: `Fiscalized! FBR Invoice #${fresh.fbr_invoice_number} — QR + PDF are ready below.` });
+        setFiscalMsg({ ok: true, done: true, text: `Fiscalized! ${authority} Invoice #${fresh.fbr_invoice_number} — QR + PDF are ready below.` });
         return;
       }
     }
@@ -324,12 +328,12 @@ export default function InvoiceDetail() {
             }
           }}
           loading={validate.isPending}
-          title="Dry-run validate this invoice against FBR's PRAL — no submission, just a lint check"
+          title={`Dry-run validate this invoice against ${authority}'s PRAL — no submission, just a lint check`}
         >
           <CheckCircle2
             className={`mr-1 h-4 w-4 ${validate.isPending ? "animate-pulse" : ""}`}
           />
-          {validate.isPending ? "Validating…" : "Validate with FBR"}
+          {validate.isPending ? "Validating…" : `Validate with ${authority}`}
         </Button>
         )}
 
@@ -372,12 +376,12 @@ export default function InvoiceDetail() {
               try {
                 const updated = await resubmit.mutateAsync(invoice.id);
                 if (updated.fbr_invoice_number) {
-                  setFiscalMsg({ ok: true, done: true, text: `Fiscalized! FBR Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.` });
+                  setFiscalMsg({ ok: true, done: true, text: `Fiscalized! ${authority} Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.` });
                 } else {
                   // Queued/submitting — the fiscal number lands async via the
                   // cloud. Poll the invoice so the QR + PDF appear here without
                   // a manual refresh.
-                  setFiscalMsg({ ok: true, text: "Sent to FBR — waiting for the fiscal number…" });
+                  setFiscalMsg({ ok: true, text: `Sent to ${authority} — waiting for the fiscal number…` });
                   void pollForFbrNumber(invoice.id);
                 }
               } catch (e) {
@@ -391,7 +395,7 @@ export default function InvoiceDetail() {
             <CheckCircle2
               className={`mr-1 h-4 w-4 ${fiscalizing ? "animate-pulse" : ""}`}
             />
-            {fiscalizing ? "Fiscalizing…" : "Fiscalize with FBR"}
+            {fiscalizing ? "Fiscalizing…" : `Fiscalize with ${authority}`}
           </Button>
         )}
 
@@ -421,7 +425,7 @@ export default function InvoiceDetail() {
               ? "Submitting…"
               : invoice.status === "failed"
                 ? "Retry submission"
-                : "Submit to FBR"}
+                : `Submit to ${authority}`}
           </Button>
         )}
 
@@ -551,7 +555,7 @@ export default function InvoiceDetail() {
             {precheckResult.blocking
               ? "Fix these before fiscalizing:"
               : precheckResult.issues.length === 0
-                ? "Looks good — no issues found. (Note: only FBR can confirm final acceptance.)"
+                ? `Looks good — no issues found. (Note: only ${authority} can confirm final acceptance.)`
                 : "No blockers — a couple of things to double-check:"}
           </div>
           {precheckResult.issues.length > 0 && (
@@ -570,8 +574,8 @@ export default function InvoiceDetail() {
             </ul>
           )}
           <div className="mt-1.5 text-xs text-muted-foreground">
-            This is a local check — it does not contact FBR. FBR/PRA POS has no
-            dry-run; the authority confirms only on the real submission.
+            This is a local check — it does not contact {authority}. {authority} POS
+            has no dry-run; the authority confirms only on the real submission.
           </div>
         </div>
       )}
@@ -726,7 +730,7 @@ export default function InvoiceDetail() {
               {invoice.fbr_invoice_number && (
                 <>
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1">
-                    FBR Invoice #
+                    {authority} Invoice #
                   </div>
                   {/* PRAL formats the number as 13-char seller NTN +
                       14-char unique tail. Visually separate them so

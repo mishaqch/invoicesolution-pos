@@ -61,14 +61,28 @@ HEALTH_PATH = "/api/IMSFiscal/get"
 #   • FBR and PRA e-IMS are UNIFIED behind PRAL's gateway gw.fbr.gov.pk, which
 #     our server IS whitelisted for. So we post PRA invoices to the gateway, not
 #     the blocked pral.com.pk host.
-#   • gw.fbr.gov.pk/ims/production/api/Live/PostData is a RETIRED bulk endpoint
-#     (returns Code 112 "Bulk data upload no more available"). The current
-#     single-invoice path is imsp/v1/api/Live/PostData (same as FBR POS,
-#     verified live) — a taxpayer token must be SUBSCRIBED to that imsp/v1 API
-#     (via PRA/PRAL registration) for it to return Code 100.
+#   • The gateway exposes Live/PostData under TWO different API-Manager products:
+#     the OLD `ims/production` and the CURRENT `imsp/v1`. A taxpayer token is
+#     subscribed to at most one; hitting an unsubscribed one returns WSO2 fault
+#     900908 "Resource forbidden" (an API-SUBSCRIPTION error — NOT an IP block,
+#     which fails earlier at TLS/nginx, and NOT a bad token, which is 900901).
+#   • VERIFIED LIVE 2026-07-26 with BIRYANI MASTER's PRA production token
+#     (…5e49d6):
+#       - imsp/v1/api/Live/PostData   → 403 900908  (token NOT subscribed here)
+#       - ims/production/…/PostData   → auth passes, but PRA returns
+#                                       Code 112 "Bulk data upload functionality
+#                                       is no more available" (operation RETIRED
+#                                       on the old product — dead for singles too)
+#     So RIGHT NOW this token can't fiscalize on EITHER product: the working
+#     product (imsp/v1) rejects it at subscription, and the subscribed product
+#     (ims/production) has a retired operation. The remaining action is PRA/PRAL
+#     SIDE: subscribe this taxpayer's application/token to the imsp/v1 API. Once
+#     they do, this default path returns Code 100 with no code change (FBR
+#     federal POS tokens already work on imsp/v1 — see FBR_CLOUD_URLS + PEER
+#     TRADERS' verified 194444FGQK… fiscal number).
 #
-# Default to the current gateway path; overridable per-deploy via
-# FBR_PRA_CLOUD_URL env in case PRA issues a distinct path/tier.
+# Default PRA to the CURRENT imsp/v1 product (the non-retired one). Overridable
+# per-deploy via FBR_PRA_CLOUD_URL if PRA directs a token to a different tier.
 _PRA_DEFAULT_URL = "https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData"
 _pra_url = getattr(settings, "FBR_PRA_CLOUD_URL", "") or _PRA_DEFAULT_URL
 PRA_CLOUD_URLS = {
