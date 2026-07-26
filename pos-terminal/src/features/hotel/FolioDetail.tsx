@@ -25,6 +25,9 @@ import {
   type Room,
   type UpdateStayBody,
 } from "@/features/hotel/api";
+import {
+  cnicMask, phoneMask, formatCnic, formatPkMobile, isValidCnic, isValidPkMobile,
+} from "@/features/hotel/validation";
 import type { CartLine } from "@/stores/sale";
 
 function errMsg(e: unknown): string {
@@ -210,10 +213,28 @@ export function FolioDetail({
 
   async function saveEdit() {
     if (!bill) return;
+    // Validate PK CNIC / phone before sending (guards the server's 20-char /
+    // format rules). Only checks fields the operator actually changed.
+    if (editForm.guest_cnic !== undefined && !isValidCnic(editForm.guest_cnic)) {
+      toast.show({ message: "CNIC must be 13 digits (e.g. 35201-1234567-1).", variant: "destructive" });
+      return;
+    }
+    if (editForm.guest_phone !== undefined && !isValidPkMobile(editForm.guest_phone)) {
+      toast.show({ message: "Enter a valid PK mobile (e.g. 0300-1234567).", variant: "destructive" });
+      return;
+    }
+    if (editForm.partner_cnic && !isValidCnic(editForm.partner_cnic)) {
+      toast.show({ message: "Partner CNIC must be 13 digits (e.g. 35201-1234567-1).", variant: "destructive" });
+      return;
+    }
     setBusy(true);
     try {
-      // Convert the datetime-local strings back to ISO for the API.
+      // Convert the datetime-local strings back to ISO for the API, and send
+      // canonical CNIC / phone so they stay clean and under the length limit.
       const body: UpdateStayBody = { ...editForm };
+      if (body.guest_cnic !== undefined) body.guest_cnic = formatCnic(body.guest_cnic);
+      if (body.guest_phone !== undefined) body.guest_phone = formatPkMobile(body.guest_phone);
+      if (body.partner_cnic) body.partner_cnic = formatCnic(body.partner_cnic);
       if (body.check_in) body.check_in = new Date(body.check_in).toISOString();
       if (body.expected_check_out)
         body.expected_check_out = new Date(body.expected_check_out).toISOString();
@@ -465,10 +486,10 @@ export function FolioDetail({
                   <input className={inputCls} value={editForm.guest_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_name: e.target.value }))} />
                 </Field>
                 <Field label="CNIC">
-                  <input className={inputCls} value={editForm.guest_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_cnic: e.target.value }))} />
+                  <input className={inputCls} value={editForm.guest_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_cnic: cnicMask(e.target.value) }))} inputMode="numeric" maxLength={15} placeholder="35201-1234567-1" />
                 </Field>
                 <Field label="Phone">
-                  <input className={inputCls} value={editForm.guest_phone ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_phone: e.target.value }))} />
+                  <input className={inputCls} value={editForm.guest_phone ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_phone: phoneMask(e.target.value) }))} inputMode="tel" maxLength={12} placeholder="0300-1234567" />
                 </Field>
                 <Field label="Email">
                   <input className={inputCls} value={editForm.guest_email ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_email: e.target.value }))} />
@@ -480,7 +501,7 @@ export function FolioDetail({
                   <input className={inputCls} value={editForm.partner_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, partner_name: e.target.value }))} />
                 </Field>
                 <Field label="Partner CNIC (optional)">
-                  <input className={inputCls} value={editForm.partner_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, partner_cnic: e.target.value }))} />
+                  <input className={inputCls} value={editForm.partner_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, partner_cnic: cnicMask(e.target.value) }))} inputMode="numeric" maxLength={15} placeholder="35201-1234567-2" />
                 </Field>
                 <Field label="Check-in">
                   <input type="datetime-local" className={inputCls} value={editForm.check_in ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, check_in: e.target.value }))} />

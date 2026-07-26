@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { rs } from "@/lib/money";
 
 import { listRooms, openStay, type Room } from "@/features/hotel/api";
+import {
+  cnicMask, phoneMask, formatCnic, formatPkMobile, isValidCnic, isValidPkMobile,
+} from "@/features/hotel/validation";
 
 function errMsg(e: unknown): string {
   const anyE = e as { data?: Record<string, unknown>; status?: number };
@@ -36,6 +39,7 @@ function nightsBetween(checkIn: string, checkOut: string): number {
     Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
   return Math.max(1, days);
 }
+
 
 export function OpenStayForm({
   onCancel,
@@ -82,9 +86,19 @@ export function OpenStayForm({
 
   function validate(): boolean {
     const e: Record<string, string> = {};
-    if (!form.guest_name.trim()) e.guest_name = "Required";
-    if (!form.guest_cnic.trim()) e.guest_cnic = "Required";
-    if (!form.guest_phone.trim()) e.guest_phone = "Required";
+    // Primary guest name, CNIC, phone are MANDATORY.
+    if (!form.guest_name.trim()) e.guest_name = "Guest name is required";
+
+    if (!form.guest_cnic.trim()) e.guest_cnic = "CNIC is required";
+    else if (!isValidCnic(form.guest_cnic)) e.guest_cnic = "CNIC must be 13 digits (e.g. 35201-1234567-1)";
+
+    if (!form.guest_phone.trim()) e.guest_phone = "Phone is required";
+    else if (!isValidPkMobile(form.guest_phone)) e.guest_phone = "Enter a valid PK mobile (e.g. 0300-1234567)";
+
+    // Partner is optional, but if a CNIC is typed it must be valid.
+    if (form.partner_cnic.trim() && !isValidCnic(form.partner_cnic))
+      e.partner_cnic = "CNIC must be 13 digits (e.g. 35201-1234567-1)";
+
     if (roomIds.length === 0) e.room = "Pick at least one room";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -97,12 +111,14 @@ export function OpenStayForm({
       const bill = await openStay({
         rooms: roomIds,
         guest_name: form.guest_name.trim(),
-        guest_cnic: form.guest_cnic.trim(),
-        guest_phone: form.guest_phone.trim(),
+        // Send canonical (dashed) forms so the value is clean and well under the
+        // server's 20-char limit — the "characters not more than 20" error.
+        guest_cnic: formatCnic(form.guest_cnic),
+        guest_phone: formatPkMobile(form.guest_phone),
         guest_email: form.guest_email.trim() || undefined,
         guest_address: form.guest_address.trim() || undefined,
         partner_name: form.partner_name.trim() || undefined,
-        partner_cnic: form.partner_cnic.trim() || undefined,
+        partner_cnic: form.partner_cnic.trim() ? formatCnic(form.partner_cnic) : undefined,
         check_in: new Date(form.check_in).toISOString(),
         expected_check_out: new Date(form.expected_check_out).toISOString(),
       });
@@ -135,10 +151,10 @@ export function OpenStayForm({
                   <input className={inp(errors.guest_name)} value={form.guest_name} onChange={(e) => set("guest_name", e.target.value)} placeholder="e.g. Ahmed Khan" />
                 </Field>
                 <Field label="CNIC *" error={errors.guest_cnic}>
-                  <input className={inp(errors.guest_cnic)} value={form.guest_cnic} onChange={(e) => set("guest_cnic", e.target.value)} placeholder="35201-1234567-1" inputMode="numeric" />
+                  <input className={inp(errors.guest_cnic)} value={form.guest_cnic} onChange={(e) => set("guest_cnic", cnicMask(e.target.value))} placeholder="35201-1234567-1" inputMode="numeric" maxLength={15} />
                 </Field>
                 <Field label="Phone *" error={errors.guest_phone}>
-                  <input className={inp(errors.guest_phone)} value={form.guest_phone} onChange={(e) => set("guest_phone", e.target.value)} placeholder="03xx xxxxxxx" inputMode="tel" />
+                  <input className={inp(errors.guest_phone)} value={form.guest_phone} onChange={(e) => set("guest_phone", phoneMask(e.target.value))} placeholder="0300-1234567" inputMode="tel" maxLength={12} />
                 </Field>
                 <Field label="Email (optional)">
                   <input className={inp()} value={form.guest_email} onChange={(e) => set("guest_email", e.target.value)} placeholder="guest@email.com" inputMode="email" />
@@ -159,8 +175,8 @@ export function OpenStayForm({
                 <Field label="Partner full name">
                   <input className={inp()} value={form.partner_name} onChange={(e) => set("partner_name", e.target.value)} placeholder="e.g. Fatima Khan" />
                 </Field>
-                <Field label="Partner CNIC">
-                  <input className={inp()} value={form.partner_cnic} onChange={(e) => set("partner_cnic", e.target.value)} placeholder="35201-1234567-2" inputMode="numeric" />
+                <Field label="Partner CNIC" error={errors.partner_cnic}>
+                  <input className={inp(errors.partner_cnic)} value={form.partner_cnic} onChange={(e) => set("partner_cnic", cnicMask(e.target.value))} placeholder="35201-1234567-2" inputMode="numeric" maxLength={15} />
                 </Field>
               </div>
             </Section>
