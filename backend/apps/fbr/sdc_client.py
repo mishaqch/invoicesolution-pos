@@ -61,28 +61,33 @@ HEALTH_PATH = "/api/IMSFiscal/get"
 #   • FBR and PRA e-IMS are UNIFIED behind PRAL's gateway gw.fbr.gov.pk, which
 #     our server IS whitelisted for. So we post PRA invoices to the gateway, not
 #     the blocked pral.com.pk host.
-#   • The gateway exposes Live/PostData under TWO different API-Manager products:
-#     the OLD `ims/production` and the CURRENT `imsp/v1`. A taxpayer token is
-#     subscribed to at most one; hitting an unsubscribed one returns WSO2 fault
-#     900908 "Resource forbidden" (an API-SUBSCRIPTION error — NOT an IP block,
-#     which fails earlier at TLS/nginx, and NOT a bad token, which is 900901).
-#   • VERIFIED LIVE 2026-07-26 with BIRYANI MASTER's PRA production token
-#     (…5e49d6):
-#       - imsp/v1/api/Live/PostData   → 403 900908  (token NOT subscribed here)
-#       - ims/production/…/PostData   → auth passes, but PRA returns
-#                                       Code 112 "Bulk data upload functionality
-#                                       is no more available" (operation RETIRED
-#                                       on the old product — dead for singles too)
-#     So RIGHT NOW this token can't fiscalize on EITHER product: the working
-#     product (imsp/v1) rejects it at subscription, and the subscribed product
-#     (ims/production) has a retired operation. The remaining action is PRA/PRAL
-#     SIDE: subscribe this taxpayer's application/token to the imsp/v1 API. Once
-#     they do, this default path returns Code 100 with no code change (FBR
-#     federal POS tokens already work on imsp/v1 — see FBR_CLOUD_URLS + PEER
-#     TRADERS' verified 194444FGQK… fiscal number).
+#   • The correct PRA host is ims.pral.com.pk (per PRAL's "POS Component User
+#     Manual" v1.0, §6.4.2) — NOT gw.fbr.gov.pk (that's FBR's federal gateway,
+#     a different system). Earlier the pral.com.pk host was TLS-unreachable for
+#     us; after PRA whitelisted our IP (email to eims@pra.punjab.gov.pk) it is
+#     reachable again.
+#   • VERIFIED LIVE 2026-07-26 with BIRYANI MASTER's production token (…5e49d6)
+#     from the whitelisted VPS, posting a FULLY-FORMED single invoice:
+#       POST https://ims.pral.com.pk/ims/production/api/Live/PostData
+#         → HTTP 200 {"Code":"112","Response":"Bulk data upload functionality is
+#            no more available"}   (token AUTHENTICATES — not 104 unauthorized —
+#            but the Live/PostData OPERATION ITSELF IS RETIRED on the live
+#            server; Code 112 regardless of payload).
+#       sandbox path → Code 104 (prod token can't use sandbox — expected).
+#       Every other candidate op path (Live/PostInvoiceData, Single/PostData,
+#         IMSFiscal/PostData, v2/…) → 404 "Runtime Error" (no such API resource).
+#     So Live/PostData is the ONLY exposed operation and it is dead. There is NO
+#     direct-cloud single-invoice REST endpoint we can call for this token.
+#   • The manual's PRIMARY method (§6.4.1) is NOT direct-cloud: it posts to the
+#     locally-installed PRA "POS Component" (.msi) at
+#       http://localhost:8524/api/IMSFiscal/GetInvoiceNumberByModel
+#     which holds the POSID+Token and forwards to PRAL, returning Code 100. PRA
+#     POS fiscalization for this taxpayer therefore requires running that local
+#     component (the ims_sdc path), NOT our server-side direct cloud post.
 #
-# Default PRA to the CURRENT imsp/v1 product (the non-retired one). Overridable
-# per-deploy via FBR_PRA_CLOUD_URL if PRA directs a token to a different tier.
+# Kept for FBR federal POS (which DOES work on gw.fbr.gov.pk/imsp/v1 — see
+# FBR_CLOUD_URLS + PEER TRADERS' verified 194444FGQK… number). For PRA, override
+# via FBR_PRA_CLOUD_URL only if PRAL later re-exposes a direct single-invoice op.
 _PRA_DEFAULT_URL = "https://gw.fbr.gov.pk/imsp/v1/api/Live/PostData"
 _pra_url = getattr(settings, "FBR_PRA_CLOUD_URL", "") or _PRA_DEFAULT_URL
 PRA_CLOUD_URLS = {
