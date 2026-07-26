@@ -324,22 +324,25 @@ class Command(BaseCommand):
                 n_rooms += 1
 
         # Prune rooms that are NOT in the new list (e.g. the old sequential
-        # VIP-1..5 / DLX-1..5 / STD-1..6). Only delete rooms with no folio
-        # history; otherwise deactivate them so past bills stay intact.
+        # VIP-1..5 / DLX-1..5 / STD-1..6). Hard-delete rooms with no folio
+        # history; SOFT-delete (deleted_at) the rest so they vanish from every
+        # room list (all querysets filter deleted_at__isnull=True) while their
+        # historical folios stay intact. Deactivating alone is NOT enough — the
+        # admin rooms list shows inactive rooms, which looked like wrong data.
+        from django.utils import timezone as _tz
         n_pruned = 0
-        stale = Room.objects.filter(tenant=tenant, branch=branch).exclude(
-            room_number__in=wanted_numbers,
-        )
+        stale = Room.objects.filter(
+            tenant=tenant, branch=branch, deleted_at__isnull=True,
+        ).exclude(room_number__in=wanted_numbers)
         for r in stale:
             if r.folios.exists() or r.folio_rooms.exists():
-                if r.is_active or r.status != "maintenance":
-                    r.is_active = False
-                    r.status = "maintenance"
-                    r.save(update_fields=["is_active", "status", "updated_at"])
-                    n_pruned += 1
+                r.is_active = False
+                r.status = "maintenance"
+                r.deleted_at = _tz.now()
+                r.save(update_fields=["is_active", "status", "deleted_at", "updated_at"])
             else:
                 r.delete()
-                n_pruned += 1
+            n_pruned += 1
 
         # 8) Restaurant menu items.
         n_menu = 0
