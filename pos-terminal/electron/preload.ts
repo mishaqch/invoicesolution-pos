@@ -210,6 +210,10 @@ const api = {
   sales: {
     persistInvoice: (args: unknown): Promise<{ ok: true }> =>
       ipcRenderer.invoke("sales:persist-invoice", args),
+    /** Mirror a server-created invoice (e.g. hotel folio charge) into local
+     *  SQLite for display — no sync enqueue (server already owns it). */
+    persistServerInvoice: (args: unknown): Promise<{ ok: true }> =>
+      ipcRenderer.invoke("sales:persist-server-invoice", args),
     list: (opts: { held?: boolean; limit?: number } = {}): Promise<PosInvoiceRow[]> =>
       ipcRenderer.invoke("sales:list", opts),
     get: (invoice_id: string): Promise<{

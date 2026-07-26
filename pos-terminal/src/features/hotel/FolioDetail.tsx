@@ -11,6 +11,7 @@ import { useSessionStore } from "@/stores/session";
 
 import {
   addCharge,
+  mirrorFolioInvoices,
   addRoom,
   cancelStay,
   checkoutFolio,
@@ -61,6 +62,14 @@ export function FolioDetail({
   const canCancel = role === "owner" || role === "manager";
   const [bill, setBill] = useState<FolioBill | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Set the bill AND mirror its charge invoices into local SQLite so hotel
+  // folio charges appear in "Today's invoices" and reprint offline. Mirroring
+  // is best-effort and never blocks the UI.
+  function applyBill(b: FolioBill) {
+    setBill(b);
+    void mirrorFolioInvoices(b);
+  }
   const [mode, setMode] = useState<"view" | "add" | "checkout" | "edit">("view");
   // Edit-stay form + add-room state.
   const [editForm, setEditForm] = useState<UpdateStayBody>({});
@@ -80,7 +89,7 @@ export function FolioDetail({
   async function load() {
     setLoading(true);
     try {
-      setBill(await getFolio(folioId));
+      applyBill(await getFolio(folioId));
     } catch (e) {
       toast.show({ message: errMsg(e), variant: "destructive" });
     } finally {
@@ -125,7 +134,7 @@ export function FolioDetail({
         modifiers: l.modifiers,
       }));
       const updated = await addCharge(folioId, lines, "restaurant", chargeRoom || null);
-      setBill(updated);
+      applyBill(updated);
       setCart([]);
       setChargeRoom("");
       setMode("view");
@@ -144,6 +153,9 @@ export function FolioDetail({
       const settled = await checkoutFolio(folioId, [
         { payment_method: payMethod, amount: bill.grand_total },
       ]);
+      // Mirror the settled folio's invoices into local SQLite so they appear in
+      // "Today's invoices" and can be reprinted offline.
+      void mirrorFolioInvoices(settled);
       // Cash tender/change to print on the bill (cash only, and only when
       // there's actual change to hand back).
       const printChange =
@@ -239,7 +251,7 @@ export function FolioDetail({
       if (body.expected_check_out)
         body.expected_check_out = new Date(body.expected_check_out).toISOString();
       const updated = await updateStay(bill.id, body);
-      setBill(updated);
+      applyBill(updated);
       setMode("view");
       toast.show({ message: "Stay updated.", variant: "success" });
     } catch (e) {
@@ -262,7 +274,7 @@ export function FolioDetail({
     setBusy(true);
     try {
       const updated = await addRoom(bill.id, addRoomId);
-      setBill(updated);
+      applyBill(updated);
       setAddRoomId("");
       // Refresh the available list (the added room is now occupied).
       void listRooms({ status: "available" }).then((r) => setAvailRooms(r)).catch(() => {});
@@ -280,7 +292,7 @@ export function FolioDetail({
     setBusy(true);
     try {
       const updated = await removeRoom(bill.id, roomId);
-      setBill(updated);
+      applyBill(updated);
       toast.show({ message: `Room ${number} removed.`, variant: "info" });
     } catch (e) {
       toast.show({ message: errMsg(e), variant: "destructive" });
@@ -298,7 +310,7 @@ export function FolioDetail({
     setBusy(true);
     try {
       const updated = await cancelStay(bill.id, reason || "");
-      setBill(updated);
+      applyBill(updated);
       setMode("view");
       toast.show({ message: "Stay cancelled. Rooms freed.", variant: "info" });
       // Bounce back to the stays list — this folio is no longer open.
@@ -313,7 +325,7 @@ export function FolioDetail({
   async function voidItem(chargeId: string, itemId: string, name: string) {
     if (!confirm(`Remove "${name}" from the bill?`)) return;
     try {
-      setBill(await removeItem(folioId, chargeId, itemId));
+      applyBill(await removeItem(folioId, chargeId, itemId));
       toast.show({ message: "Item removed.", variant: "info" });
     } catch (e) {
       toast.show({ message: errMsg(e), variant: "destructive" });
@@ -323,7 +335,7 @@ export function FolioDetail({
   async function voidCharge(chargeId: string) {
     if (!confirm("Remove this entire charge entry from the bill?")) return;
     try {
-      setBill(await removeCharge(folioId, chargeId));
+      applyBill(await removeCharge(folioId, chargeId));
       toast.show({ message: "Charge removed.", variant: "info" });
     } catch (e) {
       toast.show({ message: errMsg(e), variant: "destructive" });

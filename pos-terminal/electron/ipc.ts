@@ -36,6 +36,7 @@ import {
   listPendingSync,
   openCashSession,
   persistInvoice,
+  persistServerInvoice,
   recallInvoice,
   setInvoiceFbrFields,
   totalsForSession,
@@ -183,6 +184,20 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
       },
     ) => {
       persistInvoice(args);
+      return { ok: true };
+    },
+  );
+  ipcMain.handle(
+    "sales:persist-server-invoice",
+    (
+      _e,
+      args: {
+        invoice: PosInvoiceInput;
+        items: PosSaleItemInput[];
+        payments: PosPaymentInput[];
+      },
+    ) => {
+      persistServerInvoice(args);
       return { ok: true };
     },
   );

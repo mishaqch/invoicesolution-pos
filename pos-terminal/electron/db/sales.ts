@@ -231,6 +231,94 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
   tx();
 }
 
+/**
+ * Mirror a SERVER-created invoice into local SQLite for display (e.g. hotel
+ * folio room/restaurant charges, which are created server-side, not through the
+ * offline checkout path). Unlike persistInvoice() this does NOT enqueue a sync
+ * row — the server already owns the record; we only cache it so it shows up in
+ * "Today's invoices" and can be reprinted offline. Idempotent: re-mirroring the
+ * same invoice id replaces the cached copy (INSERT OR REPLACE).
+ */
+export function persistServerInvoice(args: {
+  invoice: PosInvoiceInput & {
+    status?: string;
+    fbr_invoice_number?: string | null;
+    fbr_qr_payload?: string | null;
+    created_at?: string | null;
+  };
+  items: PosSaleItemInput[];
+  payments: PosPaymentInput[];
+}): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const createdAt = args.invoice.created_at || now;
+
+  const upInvoice = db.prepare(`
+    INSERT OR REPLACE INTO invoices (
+      id, client_uuid, local_invoice_number, status, invoice_date,
+      customer_id, buyer_name, buyer_phone, buyer_ntn_cnic, buyer_registration_type,
+      branch_id, terminal_id, cashier_id, cash_session_id,
+      subtotal, discount_total, tax_total, grand_total, paid_total, change_given,
+      is_held, held_label, notes, fbr_invoice_number, fbr_qr_payload,
+      created_at, updated_at
+    ) VALUES (
+      @id, @client_uuid, @local_invoice_number, @status, @invoice_date,
+      @customer_id, @buyer_name, @buyer_phone, @buyer_ntn_cnic, @buyer_registration_type,
+      @branch_id, @terminal_id, @cashier_id, @cash_session_id,
+      @subtotal, @discount_total, @tax_total, @grand_total, @paid_total, @change_given,
+      0, @held_label, @notes, @fbr_invoice_number, @fbr_qr_payload,
+      @created_at, @updated_at
+    )
+  `);
+  const delItems = db.prepare(`DELETE FROM sale_items WHERE invoice_id = ?`);
+  const delPays = db.prepare(`DELETE FROM payments WHERE invoice_id = ?`);
+  const insItem = db.prepare(`
+    INSERT INTO sale_items (
+      id, invoice_id, line_number,
+      product_id, product_name, product_sku, uom_code, hs_code,
+      quantity, unit_price, discount_pct, discount_amount,
+      tax_rate, tax_amount, line_total, notes, batch_id, modifiers, item_note
+    ) VALUES (
+      @id, @invoice_id, @line_number,
+      @product_id, @product_name, @product_sku, @uom_code, @hs_code,
+      @quantity, @unit_price, @discount_pct, @discount_amount,
+      @tax_rate, @tax_amount, @line_total, @notes, @batch_id, @modifiers, @item_note
+    )
+  `);
+  const insPay = db.prepare(`
+    INSERT INTO payments (id, invoice_id, payment_method, amount, status, created_at)
+    VALUES (@id, @invoice_id, @payment_method, @amount, @status, @created_at)
+  `);
+
+  const tx = db.transaction(() => {
+    upInvoice.run({
+      ...args.invoice,
+      status: args.invoice.status ?? "pending_sync",
+      held_label: null,
+      fbr_invoice_number: args.invoice.fbr_invoice_number ?? null,
+      fbr_qr_payload: args.invoice.fbr_qr_payload ?? null,
+      created_at: createdAt,
+      updated_at: now,
+    });
+    delItems.run(args.invoice.id);
+    delPays.run(args.invoice.id);
+    args.items.forEach((item, i) => {
+      insItem.run({
+        ...item,
+        line_number: item.line_number ?? i + 1,
+        notes: item.notes ?? null,
+        batch_id: item.batch_id ?? null,
+        modifiers: item.modifiers && item.modifiers.length ? JSON.stringify(item.modifiers) : null,
+        item_note: item.item_note ?? null,
+      });
+    });
+    for (const p of args.payments) {
+      insPay.run({ status: "completed", created_at: createdAt, ...p });
+    }
+  });
+  tx();
+}
+
 export function listInvoices(opts: { held?: boolean; limit?: number } = {}) {
   const db = getDb();
   if (opts.held === true) {

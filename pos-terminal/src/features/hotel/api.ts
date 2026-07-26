@@ -46,6 +46,25 @@ export interface FolioBillItem {
   line_total: string;
   note: string;
 }
+export interface FolioChargeInvoice {
+  id: string;
+  client_uuid: string;
+  local_invoice_number: string;
+  status: string;
+  invoice_date: string | null;
+  branch_id: string;
+  terminal_id: string | null;
+  cashier_id: string | null;
+  buyer_name: string | null;
+  subtotal: string;
+  tax_total: string;
+  grand_total: string;
+  paid_total: string;
+  fbr_invoice_number: string | null;
+  fbr_qr_payload: string | null;
+  created_at: string | null;
+  notes: string | null;
+}
 export interface FolioBillCharge {
   charge_id: string;
   kind: string;
@@ -56,6 +75,8 @@ export interface FolioBillCharge {
   subtotal: string;
   tax: string;
   total: string;
+  // The underlying server invoice, for mirroring into local SQLite.
+  invoice?: FolioChargeInvoice;
 }
 export interface FolioBillRoom {
   id: string;
@@ -131,6 +152,165 @@ export function openStay(body: OpenStayBody) {
 
 export function getFolio(id: string) {
   return api<FolioBill>(`/hotel/folios/${id}/`);
+}
+
+// A server invoice row (subset of the InvoiceViewSet payload) used to mirror
+// server-created invoices (e.g. folio charges) into local SQLite for display.
+export interface ServerInvoiceRow {
+  id: string;
+  client_uuid: string;
+  local_invoice_number: string;
+  status: string;
+  invoice_date: string | null;
+  branch: string;
+  terminal: string | null;
+  cashier: string | null;
+  buyer_name: string | null;
+  subtotal: string;
+  discount_total: string;
+  tax_total: string;
+  grand_total: string;
+  paid_total: string;
+  fbr_invoice_number: string | null;
+  fbr_qr_payload: string | null;
+  created_at: string | null;
+  notes: string | null;
+  items?: {
+    id: string; product_name: string; quantity: string; unit_price: string;
+    tax_amount: string; line_total: string; hs_code?: string | null;
+  }[];
+}
+
+/** List this terminal's server invoices (for online merge into Today's list). */
+export function listServerInvoices(params: { terminal?: string; limit?: number } = {}) {
+  const q = new URLSearchParams();
+  if (params.terminal) q.set("terminal", params.terminal);
+  q.set("page_size", String(params.limit ?? 200));
+  return api<{ results: ServerInvoiceRow[] } | ServerInvoiceRow[]>(
+    `/sales/invoices/?${q.toString()}`,
+  ).then((d) => (Array.isArray(d) ? d : d.results));
+}
+
+/** Mirror a batch of server invoice rows into local SQLite (display cache). */
+export async function mirrorServerInvoices(rows: ServerInvoiceRow[]): Promise<void> {
+  const persist = (window as unknown as {
+    api?: { sales?: { persistServerInvoice?: (a: unknown) => Promise<unknown> } };
+  }).api?.sales?.persistServerInvoice;
+  if (!persist) return;
+  for (const inv of rows) {
+    try {
+      await persist({
+        invoice: {
+          id: inv.id,
+          client_uuid: inv.client_uuid,
+          local_invoice_number: inv.local_invoice_number,
+          status: inv.status,
+          invoice_date: inv.invoice_date ?? (inv.created_at ?? "").slice(0, 10),
+          customer_id: null,
+          buyer_name: inv.buyer_name,
+          buyer_phone: null,
+          buyer_ntn_cnic: null,
+          buyer_registration_type: null,
+          branch_id: inv.branch,
+          terminal_id: inv.terminal ?? "",
+          cashier_id: inv.cashier ?? "",
+          cash_session_id: null,
+          subtotal: inv.subtotal,
+          discount_total: inv.discount_total,
+          tax_total: inv.tax_total,
+          grand_total: inv.grand_total,
+          paid_total: inv.paid_total,
+          change_given: "0",
+          notes: inv.notes,
+          fbr_invoice_number: inv.fbr_invoice_number,
+          fbr_qr_payload: inv.fbr_qr_payload,
+          created_at: inv.created_at,
+        },
+        items: (inv.items ?? []).map((it, i) => ({
+          id: it.id, invoice_id: inv.id, line_number: i + 1,
+          product_id: "", product_name: it.product_name, product_sku: "",
+          uom_code: "", hs_code: it.hs_code ?? null,
+          quantity: it.quantity, unit_price: it.unit_price,
+          discount_pct: "0", discount_amount: "0", tax_rate: "0",
+          tax_amount: it.tax_amount, line_total: it.line_total, notes: null,
+        })),
+        payments: [],
+      });
+    } catch {
+      // best-effort
+    }
+  }
+}
+
+/**
+ * Mirror every charge invoice on a folio bill into the terminal's local SQLite,
+ * so hotel folio charges show up in "Today's invoices" and reprint offline.
+ * These invoices are created SERVER-side, so we only cache them (no sync
+ * enqueue). Best-effort: failures are swallowed — the server remains the source
+ * of truth and the folio flow itself is unaffected.
+ */
+export async function mirrorFolioInvoices(bill: FolioBill): Promise<void> {
+  const persist = (window as unknown as {
+    api?: { sales?: { persistServerInvoice?: (a: unknown) => Promise<unknown> } };
+  }).api?.sales?.persistServerInvoice;
+  if (!persist) return; // older preload — nothing to do
+  for (const day of bill.days ?? []) {
+    for (const ch of day.charges ?? []) {
+      const inv = ch.invoice;
+      if (!inv) continue;
+      try {
+        await persist({
+          invoice: {
+            id: inv.id,
+            client_uuid: inv.client_uuid,
+            local_invoice_number: inv.local_invoice_number,
+            status: inv.status,
+            invoice_date: inv.invoice_date ?? (inv.created_at ?? "").slice(0, 10),
+            customer_id: null,
+            buyer_name: inv.buyer_name,
+            buyer_phone: null,
+            buyer_ntn_cnic: null,
+            buyer_registration_type: null,
+            branch_id: inv.branch_id,
+            terminal_id: inv.terminal_id ?? "",
+            cashier_id: inv.cashier_id ?? "",
+            cash_session_id: null,
+            subtotal: inv.subtotal,
+            discount_total: "0",
+            tax_total: inv.tax_total,
+            grand_total: inv.grand_total,
+            paid_total: inv.paid_total,
+            change_given: "0",
+            notes: inv.notes,
+            fbr_invoice_number: inv.fbr_invoice_number,
+            fbr_qr_payload: inv.fbr_qr_payload,
+            created_at: inv.created_at,
+          },
+          items: ch.items.map((it, i) => ({
+            id: it.id,
+            invoice_id: inv.id,
+            line_number: i + 1,
+            product_id: "",
+            product_name: it.name,
+            product_sku: "",
+            uom_code: "",
+            hs_code: null,
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            discount_pct: "0",
+            discount_amount: "0",
+            tax_rate: "0",
+            tax_amount: it.tax_amount,
+            line_total: it.line_total,
+            notes: it.note || null,
+          })),
+          payments: [],
+        });
+      } catch {
+        // best-effort cache; ignore
+      }
+    }
+  }
 }
 
 export function addCharge(id: string, cart_lines: ChargeLine[], kind = "restaurant", room?: string | null) {

@@ -719,6 +719,29 @@ def consolidated_bill(folio: GuestFolio) -> dict:
             "subtotal": str(ch_sub),
             "tax": str(ch_tax),
             "total": str(ch_total),
+            # Enough of the underlying Invoice for the POS terminal to MIRROR it
+            # into its local SQLite (so folio charges show in "Today's invoices"
+            # and reprint offline). The invoice lives server-side; this is a
+            # display cache only.
+            "invoice": {
+                "id": str(inv.id),
+                "client_uuid": str(inv.client_uuid),
+                "local_invoice_number": inv.local_invoice_number,
+                "status": inv.status,
+                "invoice_date": inv.invoice_date.isoformat() if inv.invoice_date else None,
+                "branch_id": str(inv.branch_id),
+                "terminal_id": str(inv.terminal_id) if inv.terminal_id else None,
+                "cashier_id": str(inv.cashier_id) if inv.cashier_id else None,
+                "buyer_name": inv.buyer_name or None,
+                "subtotal": str(ch_sub),
+                "tax_total": str(ch_tax),
+                "grand_total": str(ch_total),
+                "paid_total": str(inv.paid_total or Decimal("0")),
+                "fbr_invoice_number": inv.fbr_invoice_number or None,
+                "fbr_qr_payload": inv.fbr_qr_payload or None,
+                "created_at": inv.created_at.isoformat() if inv.created_at else None,
+                "notes": inv.notes or None,
+            },
         })
         subtotal += ch_sub
         tax_total += ch_tax

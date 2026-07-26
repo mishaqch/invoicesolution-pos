@@ -35,13 +35,40 @@ export default function TodayInvoicesRoute() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    void window.api.sales
-      .list({ limit: 200 })
-      .then((all) => {
-        const todayPrefix = new Date().toISOString().slice(0, 10);
-        setRows(all.filter((r) => r.created_at?.startsWith(todayPrefix)));
-      })
-      .finally(() => setLoading(false));
+    const todayPrefix = new Date().toISOString().slice(0, 10);
+    const loadLocal = () =>
+      window.api.sales.list({ limit: 200 }).then((all) =>
+        all.filter((r) => r.created_at?.startsWith(todayPrefix)),
+      );
+
+    async function run() {
+      // 1) Show local rows immediately (offline-safe).
+      const local = await loadLocal();
+      setRows(local);
+      setLoading(false);
+
+      // 2) When online, pull this terminal's server invoices (e.g. hotel folio
+      //    charges, which are created server-side) and mirror any that aren't
+      //    cached locally yet — then refresh the list. Best-effort: offline or
+      //    a failed fetch just leaves the local view as-is.
+      if (!navigator.onLine) return;
+      try {
+        const { listServerInvoices, mirrorServerInvoices } = await import("@/features/hotel/api");
+        const terminalId = await window.api.pairing.status().then((s) => s.identity?.terminalId).catch(() => undefined);
+        const server = await listServerInvoices({ terminal: terminalId ?? undefined, limit: 200 });
+        const localIds = new Set(local.map((r) => r.id));
+        const missing = server.filter(
+          (s) => (s.created_at ?? "").startsWith(todayPrefix) && !localIds.has(s.id),
+        );
+        if (missing.length) {
+          await mirrorServerInvoices(missing);
+          setRows(await loadLocal());
+        }
+      } catch {
+        // ignore — local view already shown
+      }
+    }
+    void run();
   }, []);
 
   const filtered = useMemo(() => {

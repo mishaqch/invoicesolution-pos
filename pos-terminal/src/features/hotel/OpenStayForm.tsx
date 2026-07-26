@@ -6,7 +6,7 @@ import { useToast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/button";
 import { rs } from "@/lib/money";
 
-import { listRooms, openStay, type Room } from "@/features/hotel/api";
+import { listRooms, mirrorFolioInvoices, openStay, type Room } from "@/features/hotel/api";
 import {
   cnicMask, phoneMask, formatCnic, formatPkMobile, isValidCnic, isValidPkMobile,
 } from "@/features/hotel/validation";
@@ -122,6 +122,9 @@ export function OpenStayForm({
         check_in: new Date(form.check_in).toISOString(),
         expected_check_out: new Date(form.expected_check_out).toISOString(),
       });
+      // Mirror the new folio's room-charge invoice into local SQLite so it
+      // shows in "Today's invoices" immediately (offline-safe cache).
+      void mirrorFolioInvoices(bill);
       // The consolidated-bill payload includes the new folio id → go to detail.
       onOpened(bill.id);
     } catch (e) {
