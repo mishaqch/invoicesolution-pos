@@ -1,7 +1,7 @@
 import { Minus, Plus, StickyNote, Trash2 } from "lucide-react";
 
 import { useTextPrompt } from "@/components/ui/TextPromptModal";
-import { Money, rs } from "@/lib/money";
+import { Money, qty, rs } from "@/lib/money";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 
@@ -90,7 +90,7 @@ export function CartPane() {
                     <Minus className="h-3 w-3" />
                   </button>
                   <div className="w-10 text-center font-mono text-sm">
-                    {line.quantity.replace(/\.0+$/, "")}
+                    {qty(line.quantity)}
                   </div>
                   <button
                     type="button"

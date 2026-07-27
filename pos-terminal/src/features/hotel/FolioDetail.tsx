@@ -6,7 +6,7 @@ import { useToast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/button";
 import { ProductGrid } from "@/features/sale/ProductGrid";
 import { ApiError } from "@/lib/api";
-import { Money, rs } from "@/lib/money";
+import { Money, qty, rs } from "@/lib/money";
 import { useSessionStore } from "@/stores/session";
 
 import {
@@ -405,7 +405,7 @@ export function FolioDetail({
                     <div key={l.id} className="flex items-center justify-between gap-2 py-2 text-sm">
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium">{l.product_name}</div>
-                        <div className="text-xs text-muted-foreground">{l.quantity} × Rs {rs(l.unit_price)}</div>
+                        <div className="text-xs text-muted-foreground">{qty(l.quantity)} × Rs {rs(l.unit_price)}</div>
                       </div>
                       <button type="button" onClick={() => setCart((c) => c.filter((x) => x.id !== l.id))} className="text-muted-foreground hover:text-destructive">
                         <Trash2 className="h-4 w-4" />
@@ -596,7 +596,7 @@ export function FolioDetail({
                     </div>
                     {ch.items.map((it) => (
                       <div key={it.id} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="min-w-0 flex-1">{it.quantity} × {it.name}{it.note ? ` (${it.note})` : ""}</span>
+                        <span className="min-w-0 flex-1">{qty(it.quantity)} × {it.name}{it.note ? ` (${it.note})` : ""}</span>
                         <span className="font-mono">Rs {rs(it.line_total)}</span>
                         {isOpen && ch.can_remove && (
                           <button

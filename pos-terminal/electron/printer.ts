@@ -372,8 +372,7 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   for (const it of input.items) {
     printer.bold(true);
     printer.setTextSize(1, 1);
-    const qty = Number(it.quantity);
-    printer.println(`${Number.isFinite(qty) ? qty : it.quantity} x ${it.product_name}`);
+    printer.println(`${qtyFmt(it.quantity)} x ${it.product_name}`);
     printer.setTextNormal();
     printer.bold(false);
     for (const m of it.modifiers ?? []) {
@@ -563,7 +562,7 @@ function renderFolioText(input: FolioBillInput): string {
     for (const ch of day.charges) {
       if (ch.room_number) L.push(`  [Room ${ch.room_number}]`);
       for (const it of ch.items) {
-        const left = `  ${it.quantity} x ${it.name}`.slice(0, W - 10);
+        const left = `  ${qtyFmt(it.quantity)} x ${it.name}`.slice(0, W - 10);
         L.push(row(left, money2(it.line_total)));
         if (it.note) L.push(`     ** ${it.note} **`);
       }
@@ -604,7 +603,7 @@ function renderKotText(input: KotInput): string {
   if (input.covers) lines.push(`Covers: ${input.covers}`);
   lines.push(rule);
   for (const it of input.items) {
-    lines.push(`${it.quantity} x ${it.product_name}`);
+    lines.push(`${qtyFmt(it.quantity)} x ${it.product_name}`);
     for (const m of it.modifiers ?? []) lines.push(`   - ${m.name}`);
     if (it.item_note) lines.push(`   ** ${it.item_note} **`);
   }

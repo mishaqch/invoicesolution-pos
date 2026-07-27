@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/feedback/Toast";
 import { printInvoiceById } from "@/features/printing/printInvoice";
-import { rs } from "@/lib/money";
+import { qty, rs } from "@/lib/money";
 
 import type { PosInvoiceRow, PosSaleItemRow, PosPaymentRow } from "../../electron/preload";
 
@@ -232,7 +232,7 @@ export default function TodayInvoicesRoute() {
                       <tr key={line.id} className="border-b last:border-0">
                         <td className="py-1.5">{line.product_name}</td>
                         <td className="py-1.5 text-right text-muted-foreground">
-                          {line.quantity} × Rs {rs(line.unit_price)}
+                          {qty(line.quantity)} × Rs {rs(line.unit_price)}
                         </td>
                         <td className="py-1.5 text-right font-mono">Rs {rs(line.line_total)}</td>
                       </tr>

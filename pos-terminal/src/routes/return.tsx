@@ -10,7 +10,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/feedback/Toast";
 import { ApiError, api } from "@/lib/api";
-import { Money, rs } from "@/lib/money";
+import { Money, qty, rs } from "@/lib/money";
 import { newClientUuid } from "@/lib/uuid";
 import { useSessionStore } from "@/stores/session";
 import { usePosContext } from "@/features/sale/usePosContext";
@@ -241,7 +241,7 @@ export default function ReturnRoute() {
                       <div className="flex-1">
                         <div className="text-sm">{line.product_name}</div>
                         <div className="text-xs text-muted-foreground">
-                          Sold qty: {line.quantity} · Rs {rs(line.unit_price)} ea
+                          Sold qty: {qty(line.quantity)} · Rs {rs(line.unit_price)} ea
                         </div>
                       </div>
                       <NumberInput

@@ -170,3 +170,15 @@ export function rs(value: string | number | null | undefined): string {
 export function sumMoney(items: Money[]): Money {
   return items.reduce((acc, m) => acc.add(m), Money.zero());
 }
+
+/**
+ * Format a quantity for display: whole numbers show WITHOUT decimals (1, 20),
+ * fractional quantities keep up to 3 decimals (1.5, 0.25). Stored quantities are
+ * 4dp strings ("1.0000"), which read wrong on a receipt — this fixes that.
+ */
+export function qty(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === "") return "0";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(3)));
+}

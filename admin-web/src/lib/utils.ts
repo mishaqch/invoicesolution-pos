@@ -53,5 +53,9 @@ export function qty(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
-  return n.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Whole quantities show WITHOUT decimals (1, 20); fractional ones keep up to
+  // 3 decimals (1.5, 0.25). Stored as 4dp ("1.0000") which reads wrong as-is.
+  return Number.isInteger(n)
+    ? n.toLocaleString("en-PK")
+    : n.toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 3 });
 }
