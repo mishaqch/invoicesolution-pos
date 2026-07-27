@@ -570,48 +570,67 @@ export function FolioDetail({
             </div>
           )}
 
-          {/* Charges grouped by day */}
+          {/* Charges grouped by day. Each charge shows a clean title (no
+              duplicated "Room · Room"), its line items once, and a single
+              amount — a room charge is one line, restaurant charges list their
+              items with a per-charge subtotal only when there's more than one. */}
           {bill.days.map((day) => (
             <div key={day.date} className="mb-3">
               <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{day.date}</div>
-              <div className="rounded-lg border">
-                {day.charges.map((ch) => (
-                  <div key={ch.charge_id} className="border-b p-3 last:border-0">
-                    <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                      <span className="capitalize">
-                        {ch.kind}{ch.room_number ? ` · Room ${ch.room_number}` : ""} · {ch.invoice_number}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono">Rs {rs(ch.total)}</span>
-                        {isOpen && ch.can_remove && (
-                          <button
-                            type="button"
-                            onClick={() => voidCharge(ch.charge_id)}
-                            className="rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] font-medium text-destructive hover:bg-destructive/10"
-                          >
-                            Remove
-                          </button>
-                        )}
+              <div className="overflow-hidden rounded-lg border">
+                {day.charges.map((ch) => {
+                  const isRoom = ch.kind === "room";
+                  const multi = ch.items.length > 1;
+                  const title = isRoom
+                    ? `Room ${ch.room_number ?? ""}`.trim()
+                    : (ch.room_number ? `Restaurant · Room ${ch.room_number}` : "Restaurant");
+                  return (
+                    <div key={ch.charge_id} className="border-b p-3 last:border-0">
+                      {/* Charge title row */}
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold">{title}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-semibold">Rs {rs(ch.total)}</span>
+                          {isOpen && ch.can_remove && (
+                            <button
+                              type="button"
+                              onClick={() => voidCharge(ch.charge_id)}
+                              className="rounded border border-destructive/40 px-1.5 py-0.5 text-[10px] font-medium text-destructive hover:bg-destructive/10"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                       </div>
+                      {/* Line items */}
+                      {ch.items.map((it) => (
+                        <div key={it.id} className="flex items-center justify-between gap-2 py-0.5 text-sm text-muted-foreground">
+                          <span className="min-w-0 flex-1">
+                            {isRoom
+                              // Room: "1 night × Rs 10,500" — no duplicate room number.
+                              ? `${qty(it.quantity)} ${Number(it.quantity) === 1 ? "night" : "nights"} × Rs ${rs(it.unit_price)}`
+                              // Restaurant: "2 × Chicken Karahi"
+                              : `${qty(it.quantity)} × ${it.name}${it.note ? ` (${it.note})` : ""}`}
+                          </span>
+                          {/* Show the per-item amount only when it differs from the
+                              charge total (i.e. multi-item restaurant charges). For a
+                              single-line room charge the amount is already shown above. */}
+                          {multi && <span className="font-mono">Rs {rs(it.line_total)}</span>}
+                          {isOpen && ch.can_remove && (
+                            <button
+                              type="button"
+                              onClick={() => voidItem(ch.charge_id, it.id, it.name)}
+                              aria-label={`Remove ${it.name}`}
+                              className="text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    {ch.items.map((it) => (
-                      <div key={it.id} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="min-w-0 flex-1">{qty(it.quantity)} × {it.name}{it.note ? ` (${it.note})` : ""}</span>
-                        <span className="font-mono">Rs {rs(it.line_total)}</span>
-                        {isOpen && ch.can_remove && (
-                          <button
-                            type="button"
-                            onClick={() => voidItem(ch.charge_id, it.id, it.name)}
-                            aria-label={`Remove ${it.name}`}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

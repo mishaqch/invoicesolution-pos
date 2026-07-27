@@ -417,7 +417,7 @@ interface FolioBillInput {
     check_out: string | null;
     nights: number;
     rooms?: { number: string; type: string; nights: number }[];
-    days: { date: string; charges: { kind: string; room_number?: string | null; items: { name: string; quantity: string; line_total: string; note?: string }[]; total: string }[] }[];
+    days: { date: string; charges: { kind: string; room_number?: string | null; items: { name: string; quantity: string; unit_price?: string; line_total: string; note?: string }[]; total: string }[] }[];
     subtotal: string;
     tax_total: string;
     grand_total: string;
@@ -566,14 +566,31 @@ function renderFolioText(input: FolioBillInput): string {
   L.push(row("Nights", String(f.nights)));
   L.push(rule);
 
+  // Charges. A ROOM charge prints as ONE clean line (room title + amount) with a
+  // subtle "N nights x rate" detail — no duplicated room number / product name.
+  // A RESTAURANT charge prints a title then its items with per-item amounts.
   for (const day of f.days) {
     L.push(day.date);
     for (const ch of day.charges) {
-      if (ch.room_number) L.push(`  [Room ${ch.room_number}]`);
-      for (const it of ch.items) {
-        const left = `  ${qtyFmt(it.quantity)} x ${it.name}`.slice(0, W - 10);
-        L.push(row(left, money2(it.line_total)));
-        if (it.note) L.push(`     ** ${it.note} **`);
+      const isRoom = ch.kind === "room";
+      if (isRoom) {
+        const it = ch.items[0];
+        const title = `Room ${ch.room_number ?? ""}`.trim();
+        L.push(row(title.slice(0, W - 12), money2(ch.total)));
+        if (it) {
+          const n = qtyFmt(it.quantity);
+          const unit = it.unit_price ? money2(it.unit_price) : null;
+          const nights = `${n} ${Number(it.quantity) === 1 ? "night" : "nights"}`;
+          L.push(`   ${unit ? `${nights} x Rs ${unit}` : nights}`);
+        }
+      } else {
+        const title = ch.room_number ? `Restaurant [Room ${ch.room_number}]` : "Restaurant";
+        L.push(title);
+        for (const it of ch.items) {
+          const left = `  ${qtyFmt(it.quantity)} x ${it.name}`.slice(0, W - 10);
+          L.push(row(left, money2(it.line_total)));
+          if (it.note) L.push(`     ** ${it.note} **`);
+        }
       }
     }
   }
