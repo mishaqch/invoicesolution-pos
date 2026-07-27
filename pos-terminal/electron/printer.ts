@@ -95,6 +95,9 @@ const FBR_PENDING_NOTICE = "FBR: pending - added when online";
 // text and is stripped before printing.
 const HEADER_TAG = "\x00HDR\x00";
 
+// Caption printed centered + bold directly under the receipt logo image.
+const RECEIPT_LOGO_CAPTION = "TDCP Resort Kallar Kahar";
+
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -485,6 +488,12 @@ async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: s
     try {
       printer.alignCenter();
       await printer.printImage(logoPath);
+      // Resort name centered + bold directly UNDER the logo.
+      try {
+        printer.bold(true);
+        printer.println(RECEIPT_LOGO_CAPTION);
+        printer.bold(false);
+      } catch { /* styling unsupported — plain text still prints */ }
       printer.alignLeft();
       logoPrinted = true;
     } catch {
