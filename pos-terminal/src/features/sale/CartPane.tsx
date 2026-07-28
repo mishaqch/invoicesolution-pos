@@ -106,8 +106,11 @@ export function CartPane() {
                   </button>
                 </div>
 
+                {/* Line amount at the MENU price (net, tax-exclusive = unit_price
+                    × qty). Tax is added once in the totals below, so the cart
+                    lines read as real menu prices, not tax-inclusive values. */}
                 <div className="w-24 text-right font-mono text-sm">
-                  Rs {line.line_total.display()}
+                  Rs {line.net.display()}
                 </div>
 
                 <button
