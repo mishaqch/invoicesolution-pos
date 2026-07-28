@@ -104,7 +104,12 @@ class RoomViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
 class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
     """Guest folios — open a stay, add charges, checkout, consolidated bill."""
 
-    queryset = GuestFolio.objects.select_related("room", "branch").all()
+    queryset = (
+        GuestFolio.objects.select_related("room", "branch")
+        # rooms_booked → room feeds the per-room badges on the stay card list.
+        .prefetch_related("rooms_booked__room")
+        .all()
+    )
     serializer_class = FolioListSerializer
     permission_classes = [_HOTEL_GATE, IsTenantMember]
 

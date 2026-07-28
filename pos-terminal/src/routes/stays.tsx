@@ -111,11 +111,27 @@ export default function StaysRoute() {
                 onClick={() => setView({ name: "detail", folioId: f.id })}
                 className="rounded-lg border bg-background p-4 text-left transition-colors hover:bg-muted"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-2">
                   <span className="font-semibold">{f.guest_name}</span>
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                    {f.room_number ?? "—"}
-                  </span>
+                  {/* A badge PER room booked on this stay (VIP/Deluxe · number),
+                      so a multi-room stay shows all its rooms, not just one. */}
+                  <div className="flex flex-wrap justify-end gap-1">
+                    {(f.rooms && f.rooms.length > 0
+                      ? f.rooms
+                      : (f.room_number ? [{ number: f.room_number, type: f.room_type ?? "" }] : [])
+                    ).map((r, i) => (
+                      <span
+                        key={`${r.number}-${i}`}
+                        className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                        title={r.type ? `${r.type} · Room ${r.number}` : `Room ${r.number}`}
+                      >
+                        {r.type ? `${r.type} ${r.number}` : r.number}
+                      </span>
+                    ))}
+                    {(!f.rooms || f.rooms.length === 0) && !f.room_number && (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">—</span>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{f.guest_phone}</div>
                 <div className="mt-2 text-xs">

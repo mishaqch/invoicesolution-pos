@@ -29,6 +29,8 @@ export interface FolioRow {
   room: string | null;
   room_number: string | null;
   room_type: string | null;
+  // All rooms booked on this stay (multi-room). Falls back to the primary room.
+  rooms?: { number: string; type: string }[];
   check_in: string;
   expected_check_out: string | null;
   check_out: string | null;

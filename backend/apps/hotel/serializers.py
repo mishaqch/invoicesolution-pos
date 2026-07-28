@@ -25,15 +25,30 @@ class FolioListSerializer(serializers.ModelSerializer):
 
     room_number = serializers.CharField(source="room.room_number", read_only=True, default=None)
     room_type = serializers.CharField(source="room.room_type", read_only=True, default=None)
+    # ALL rooms booked on this stay (multi-room stays show a badge per room on
+    # the stay card, not just the primary room).
+    rooms = serializers.SerializerMethodField()
 
     class Meta:
         model = GuestFolio
         fields = (
             "id", "folio_number", "guest_name", "guest_phone",
-            "room", "room_number", "room_type",
+            "room", "room_number", "room_type", "rooms",
             "check_in", "expected_check_out", "check_out", "nights", "status",
             "created_at",
         )
+
+    def get_rooms(self, obj):
+        booked = list(obj.rooms_booked.select_related("room").all())
+        if booked:
+            return [
+                {"number": fr.room.room_number, "type": fr.room.room_type}
+                for fr in booked
+            ]
+        # Legacy single-room folio (predates FolioRoom): fall back to the FK room.
+        if obj.room_id:
+            return [{"number": obj.room.room_number, "type": obj.room.room_type}]
+        return []
 
 
 class OpenStaySerializer(serializers.Serializer):
