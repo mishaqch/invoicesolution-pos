@@ -36,15 +36,25 @@ def compute_nights(check_in: dt.datetime, check_out: dt.datetime | None) -> int:
     return max(1, nights)
 
 
-def _room_tax_rate(room: Room) -> Decimal:
-    """Convert the room's FIXED nightly tax amount into the equivalent % rate so
-    the percentage-based pricing engine yields exactly that amount on the base.
-    e.g. base 8820, tax 1680 → 19.0476...% → on 8820 = 1680 exactly."""
-    base = room.nightly_base or Decimal("0")
-    tax = room.nightly_tax or Decimal("0")
-    if base <= 0 or tax <= 0:
-        return Decimal("0")
-    return (tax / base) * Decimal("100")
+# Punjab Sales Tax the resort charges on rooms — the SAME 16% used on food, so
+# the bill's tax breakdown is consistent and reconciles exactly. The room's
+# advertised nightly_total (e.g. VIP 10,500) is treated as TAX-INCLUSIVE: we
+# back out the net base = total / 1.16 and tax = total - base, so the guest pays
+# the advertised price and the split is clean.
+ROOM_TAX_RATE = Decimal("16.00")
+
+
+def _room_inclusive_split(nightly_total: Decimal) -> tuple[Decimal, Decimal]:
+    """Split a TAX-INCLUSIVE nightly total into (net_base, tax) at ROOM_TAX_RATE.
+    e.g. 10500 @ 16% incl → base 9051.7241, tax 1448.2759 (sums back to 10500).
+    Rounds to 4dp (the money precision) so net + tax == total exactly."""
+    total = Decimal(nightly_total or 0)
+    if total <= 0:
+        return Decimal("0"), Decimal("0")
+    q = Decimal("0.0001")
+    base = (total / (Decimal("1") + ROOM_TAX_RATE / Decimal("100"))).quantize(q)
+    tax = (total - base).quantize(q)
+    return base, tax
 
 
 @transaction.atomic
@@ -143,13 +153,18 @@ def open_stay(
 def _post_room_charge(*, folio, room, nights, terminal, cashier, cash_session):
     """Create the room-night charge-invoice (held, no payment yet), tagged to
     the room so multi-room bills group correctly."""
-    rate = _room_tax_rate(room)
+    # Room tariff is TAX-INCLUSIVE: split the advertised nightly total into a
+    # net base + 16% PST so the pricing engine (tax-exclusive) reproduces the
+    # exact advertised total and a clean, reconciling breakdown. The unit price
+    # billed is the NET base per night; tax is added back at ROOM_TAX_RATE.
+    net_base, _tax = _room_inclusive_split(room.nightly_total)
+    taxable = room.nightly_total > 0 and net_base < room.nightly_total
     line = {
         "product": str(room.product_id),
         "quantity": str(nights),
-        "unit_price": str(room.nightly_base),
-        "tax_rate": str(rate),
-        "is_taxable": rate > 0,
+        "unit_price": str(net_base),
+        "tax_rate": str(ROOM_TAX_RATE) if taxable else "0",
+        "is_taxable": taxable,
         "discount_amount": "0",
         "item_note": f"Room {room.room_number} · {nights} night(s)",
     }

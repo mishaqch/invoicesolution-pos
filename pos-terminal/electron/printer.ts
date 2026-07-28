@@ -579,7 +579,11 @@ function renderFolioText(input: FolioBillInput): string {
         L.push(row(title.slice(0, W - 12), money2(ch.total)));
         if (it) {
           const n = qtyFmt(it.quantity);
-          const unit = it.unit_price ? money2(it.unit_price) : null;
+          // Tax-inclusive per-night rate = line_total / nights (advertised
+          // price), not the tax-stripped unit_price.
+          const qtyNum = Math.max(1, Number(it.quantity));
+          const perNight = Number(it.line_total) / qtyNum;
+          const unit = Number.isFinite(perNight) ? money2(perNight) : null;
           const nights = `${n} ${Number(it.quantity) === 1 ? "night" : "nights"}`;
           L.push(`   ${unit ? `${nights} x Rs ${unit}` : nights}`);
         }

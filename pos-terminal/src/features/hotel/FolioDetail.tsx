@@ -607,8 +607,12 @@ export function FolioDetail({
                         <div key={it.id} className="flex items-center justify-between gap-2 py-0.5 text-sm text-muted-foreground">
                           <span className="min-w-0 flex-1">
                             {isRoom
-                              // Room: "1 night × Rs 10,500" — no duplicate room number.
-                              ? `${qty(it.quantity)} ${Number(it.quantity) === 1 ? "night" : "nights"} × Rs ${rs(it.unit_price)}`
+                              // Room: "1 night × Rs 10,500" (tax-inclusive per-night
+                              // rate = line_total / nights, so the guest sees the
+                              // advertised price, not the tax-stripped base).
+                              ? `${qty(it.quantity)} ${Number(it.quantity) === 1 ? "night" : "nights"} × Rs ${rs(
+                                  (Number(it.line_total) / Math.max(1, Number(it.quantity))).toFixed(4),
+                                )}`
                               // Restaurant: "2 × Chicken Karahi"
                               : `${qty(it.quantity)} × ${it.name}${it.note ? ` (${it.note})` : ""}`}
                           </span>
