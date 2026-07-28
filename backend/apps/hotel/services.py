@@ -729,6 +729,7 @@ def consolidated_bill(folio: GuestFolio) -> dict:
             "kind": ch.kind,
             "invoice_number": inv.local_invoice_number,
             "room_number": ch.room.room_number if ch.room_id else None,
+            "room_type": ch.room.room_type if ch.room_id else None,
             "can_remove": ch.kind != "room",   # room charge isn't removable here
             "items": items,
             "subtotal": str(ch_sub),

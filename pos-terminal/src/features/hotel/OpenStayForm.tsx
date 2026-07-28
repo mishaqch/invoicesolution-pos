@@ -207,12 +207,14 @@ export function OpenStayForm({
                         onClick={() => toggleRoom(r.id)}
                         className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm transition-colors ${on ? "bg-primary text-primary-foreground" : "border border-transparent hover:border-input hover:bg-muted"}`}
                       >
-                        <span className="flex items-center gap-2">
-                          <span className={`flex h-4 w-4 items-center justify-center rounded-full border text-[10px] ${on ? "border-primary-foreground bg-primary-foreground text-primary" : "border-muted-foreground/40"}`}>{on ? "✓" : ""}</span>
-                          <span className="font-medium">{r.room_number}</span>
-                          <span className={on ? "text-primary-foreground/80" : "text-muted-foreground"}>· {r.room_type}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${on ? "border-primary-foreground bg-primary-foreground text-primary" : "border-muted-foreground/40"}`}>{on ? "✓" : ""}</span>
+                          {/* Room TYPE badge — clear indicator of VIP / Deluxe /
+                              Standard, not just the number. */}
+                          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${on ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"}`}>{r.room_type}</span>
+                          <span className="font-medium">Room {r.room_number}</span>
                         </span>
-                        <span className={`font-mono text-xs ${on ? "text-primary-foreground/90" : "text-muted-foreground"}`}>Rs {rs(r.nightly_total)}/night</span>
+                        <span className={`shrink-0 font-mono text-xs ${on ? "text-primary-foreground/90" : "text-muted-foreground"}`}>Rs {rs(r.nightly_total)}/night</span>
                       </button>
                     );
                   })
@@ -240,8 +242,11 @@ export function OpenStayForm({
                   <span className="rounded bg-background px-2 py-0.5 text-xs">{nights} night{nights === 1 ? "" : "s"}</span>
                 </div>
                 {selectedRooms.map((r) => (
-                  <div key={r.id} className="flex justify-between py-0.5">
-                    <span className="text-muted-foreground">{r.room_number} ({r.room_type}) × {nights}</span>
+                  <div key={r.id} className="flex items-center justify-between gap-2 py-0.5">
+                    <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
+                      <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">{r.room_type}</span>
+                      <span>Room {r.room_number} × {nights}</span>
+                    </span>
                     <span className="font-mono">Rs {rs(Number(r.nightly_total) * nights)}</span>
                   </div>
                 ))}

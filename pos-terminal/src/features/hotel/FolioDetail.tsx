@@ -581,14 +581,23 @@ export function FolioDetail({
                 {day.charges.map((ch) => {
                   const isRoom = ch.kind === "room";
                   const multi = ch.items.length > 1;
-                  const title = isRoom
-                    ? `Room ${ch.room_number ?? ""}`.trim()
-                    : (ch.room_number ? `Restaurant · Room ${ch.room_number}` : "Restaurant");
                   return (
                     <div key={ch.charge_id} className="border-b p-3 last:border-0">
-                      {/* Charge title row */}
+                      {/* Charge title row — room TYPE badge (VIP/Deluxe/Standard)
+                          + room number, so it's clear which room this is. */}
                       <div className="mb-1.5 flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold">{title}</span>
+                        <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+                          {isRoom ? (
+                            <>
+                              {ch.room_type && (
+                                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">{ch.room_type}</span>
+                              )}
+                              <span>Room {ch.room_number}</span>
+                            </>
+                          ) : (
+                            <span>{ch.room_number ? `Restaurant · Room ${ch.room_number}` : "Restaurant"}</span>
+                          )}
+                        </span>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm font-semibold">Rs {rs(ch.total)}</span>
                           {isOpen && ch.can_remove && (

@@ -70,6 +70,7 @@ export interface FolioBillCharge {
   kind: string;
   invoice_number: string;
   room_number: string | null;
+  room_type: string | null;
   can_remove: boolean;
   items: FolioBillItem[];
   subtotal: string;

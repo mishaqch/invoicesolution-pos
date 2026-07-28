@@ -417,7 +417,7 @@ interface FolioBillInput {
     check_out: string | null;
     nights: number;
     rooms?: { number: string; type: string; nights: number }[];
-    days: { date: string; charges: { kind: string; room_number?: string | null; items: { name: string; quantity: string; unit_price?: string; line_total: string; note?: string }[]; total: string }[] }[];
+    days: { date: string; charges: { kind: string; room_number?: string | null; room_type?: string | null; items: { name: string; quantity: string; unit_price?: string; line_total: string; note?: string }[]; total: string }[] }[];
     subtotal: string;
     tax_total: string;
     grand_total: string;
@@ -575,7 +575,9 @@ function renderFolioText(input: FolioBillInput): string {
       const isRoom = ch.kind === "room";
       if (isRoom) {
         const it = ch.items[0];
-        const title = `Room ${ch.room_number ?? ""}`.trim();
+        // Room TYPE + number so the bill clearly says which room (e.g.
+        // "VIP - Room 102"), not just a bare number.
+        const title = (ch.room_type ? `${ch.room_type} - Room ${ch.room_number ?? ""}` : `Room ${ch.room_number ?? ""}`).trim();
         L.push(row(title.slice(0, W - 12), money2(ch.total)));
         if (it) {
           const n = qtyFmt(it.quantity);
