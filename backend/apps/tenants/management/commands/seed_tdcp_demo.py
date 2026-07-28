@@ -273,22 +273,27 @@ class Command(BaseCommand):
         # Every room number we intend to keep — used to prune stale rooms below.
         wanted_numbers: set[str] = set()
         for room_type, sku, base, tax_amt, room_numbers in ROOM_TYPES:
+            # The room product's sale_price is the ADVERTISED tax-inclusive
+            # nightly total (base + fixed tax) — that's what the guest pays and
+            # what the "Rooms" tile on the sale page must show. The 16%-inclusive
+            # tax split happens at charge time (see _room_inclusive_split).
+            nightly_total = Decimal(base) + Decimal(tax_amt)
             product, _ = Product.objects.get_or_create(
                 tenant=tenant, sku=sku,
                 defaults={
                     "name": f"{room_type} Room / night",
                     "category": categories["Rooms"],
                     "uom": uom_night,
-                    "tax_rate": None,            # tax applied per-night as fixed amount
+                    "tax_rate": None,            # tax handled per-night at charge time
                     "hs_code": room_hs,
-                    "sale_price": Decimal(base),
+                    "sale_price": nightly_total,
                     "cost_price": Decimal("0.0000"),
                     "is_taxable": True,
                 },
             )
             # Keep the product's price/name in sync on re-run.
             product.name = f"{room_type} Room / night"
-            product.sale_price = Decimal(base)
+            product.sale_price = nightly_total
             product.category = categories["Rooms"]
             product.uom = uom_night
             product.save(update_fields=["name", "sale_price", "category", "uom", "updated_at"])
