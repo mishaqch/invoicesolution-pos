@@ -551,7 +551,10 @@ export function FolioDetail({
                   {bill.rooms.map((r) => (
                     <div key={r.id} className="flex items-center justify-between rounded border px-2 py-1 text-sm">
                       <span>Room {r.number} <span className="text-muted-foreground">({r.type}) · {r.nights}n</span></span>
-                      {canCancel && bill.rooms.length > 1 && (
+                      {/* Any cashier can remove a room from an OPEN stay (voids
+                          only that room's charges). Can't remove the last room —
+                          cancel the whole stay for that. */}
+                      {isOpen && bill.rooms.length > 1 && (
                         <button
                           type="button"
                           onClick={() => doRemoveRoom(r.id, r.number)}

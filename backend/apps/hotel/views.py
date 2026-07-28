@@ -109,8 +109,12 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
     permission_classes = [_HOTEL_GATE, IsTenantMember]
 
     def get_permissions(self):
-        # Cancelling a whole stay or removing a room is manager/owner-only.
-        if self.action in ("cancel", "remove_room"):
+        # Cancelling a WHOLE stay is manager/owner-only (highest impact). Adding
+        # AND removing individual rooms is open to any cashier while the stay is
+        # OPEN — front-desk staff routinely adjust rooms during a stay (removing
+        # a room voids only that room's charges, and the folio isn't checked out
+        # yet). The remove_room service still refuses once the stay is closed.
+        if self.action == "cancel":
             return [_HOTEL_GATE(), HasRolePerm.with_perm(_CANCEL_PERM)()]
         return super().get_permissions()
 
