@@ -113,11 +113,17 @@ export function FolioDetail({
     });
   }
 
-  const cartTotal = cart.reduce((acc, l) => {
-    const net = (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
-    const tax = l.is_taxable ? net * (Number(l.tax_rate) || 0) / 100 : 0;
-    return acc + net + tax;
-  }, 0);
+  // Add-Charges cart breakdown: menu prices are tax-EXCLUSIVE, so 16% is added
+  // on top. Surface subtotal + tax + total so the cashier sees the tax clearly.
+  const cartBreakdown = cart.reduce(
+    (acc, l) => {
+      const net = (Number(l.quantity) || 0) * (Number(l.unit_price) || 0);
+      const tax = l.is_taxable ? (net * (Number(l.tax_rate) || 0)) / 100 : 0;
+      return { sub: acc.sub + net, tax: acc.tax + tax };
+    },
+    { sub: 0, tax: 0 },
+  );
+  const cartTotal = cartBreakdown.sub + cartBreakdown.tax;
 
   async function saveCharges() {
     if (cart.length === 0) return;
@@ -415,8 +421,16 @@ export function FolioDetail({
                 </div>
               )}
             </div>
-            <div className="border-t p-3 text-sm">
-              <div className="flex justify-between font-semibold"><span>This charge</span><span className="font-mono">Rs {rs(cartTotal)}</span></div>
+            <div className="space-y-1 border-t p-3 text-sm">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Subtotal</span><span className="font-mono">Rs {rs(cartBreakdown.sub)}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Tax (16%)</span><span className="font-mono">Rs {rs(cartBreakdown.tax)}</span>
+              </div>
+              <div className="flex justify-between border-t pt-1 font-semibold">
+                <span>This charge</span><span className="font-mono">Rs {rs(cartTotal)}</span>
+              </div>
             </div>
           </div>
         </div>
