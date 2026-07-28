@@ -37,7 +37,12 @@ export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal
   // a focused box is the expected default for keying in a search.
   useEffect(() => {
     inputRef.current?.focus();
-    void window.api.catalog.categories().then(setCategories).catch(() => setCategories([]));
+    void window.api.catalog
+      .categories()
+      // Rooms are booked via the Stays / Rooms (Open Stay) flow, not sold as
+      // cart items — hide the "Rooms" category chip from the sale page.
+      .then((cats) => setCategories(cats.filter((c) => c.name.trim().toLowerCase() !== "rooms")))
+      .catch(() => setCategories([]));
   }, []);
 
   // Clear + re-focus after a scan (parent bumps clearSignal). Skip the initial

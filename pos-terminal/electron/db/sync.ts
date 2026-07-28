@@ -276,13 +276,19 @@ export function batchesForProduct(productId: string, branchId?: string | null): 
     .all(...params) as LocalBatch[];
 }
 
+// Room products (SKU 'ROOM-…') are booked via the Stays / Rooms (Open Stay)
+// flow, NOT sold as cart items on the sale page — exclude them from the product
+// grid's search + default list so a cashier can't ring one up directly.
+const _NOT_ROOM = "p.sku NOT LIKE 'ROOM%'";
+
 export function searchProducts(query: string, limit = 50): PosProductRow[] {
   const db = getDb();
   if (!query.trim()) {
     return db
       .prepare(
-        `SELECT * FROM products WHERE deleted_at IS NULL AND is_active = 1
-         ORDER BY name LIMIT ?`,
+        `SELECT * FROM products p WHERE p.deleted_at IS NULL AND p.is_active = 1
+           AND ${_NOT_ROOM}
+         ORDER BY p.name LIMIT ?`,
       )
       .all(limit) as PosProductRow[];
   }
@@ -298,6 +304,7 @@ export function searchProducts(query: string, limit = 50): PosProductRow[] {
        JOIN products_fts f ON f.id = p.id
        WHERE f.products_fts MATCH ?
          AND p.deleted_at IS NULL AND p.is_active = 1
+         AND ${_NOT_ROOM}
        LIMIT ?`,
     )
     .all(ftsTerm, limit) as PosProductRow[];
