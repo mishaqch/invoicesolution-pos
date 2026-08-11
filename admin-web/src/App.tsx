@@ -11,6 +11,7 @@ import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import { RequireModule } from "@/features/modules/RequireModule";
 import { RequireDiApi } from "@/features/modules/RequireDiApi";
 import { RequireVertical } from "@/features/modules/RequireVertical";
+import { RequireRole } from "@/features/auth/RequireRole";
 
 // Every page is lazily imported so the first load only downloads the shell +
 // the page actually being viewed — not all 50+ screens at once. This is the
@@ -19,6 +20,7 @@ import { RequireVertical } from "@/features/modules/RequireVertical";
 // content-hashed chunk, cached immutably + brotli-compressed by nginx.
 const LoginRoute = lazyWithReload(() => import("@/routes/login"), "@/routes/login");
 const BranchesList = lazyWithReload(() => import("@/routes/branches/branches"), "@/routes/branches/branches");
+const UsersList = lazyWithReload(() => import("@/routes/users/users"), "@/routes/users/users");
 const TerminalsList = lazyWithReload(() => import("@/routes/terminals/terminals"), "@/routes/terminals/terminals");
 const CategoriesList = lazyWithReload(() => import("@/routes/catalog/categories"), "@/routes/catalog/categories");
 const CsvImport = lazyWithReload(() => import("@/routes/catalog/csv-import"), "@/routes/catalog/csv-import");
@@ -111,6 +113,10 @@ export default function App() {
             <Route
               path="terminals"
               element={<RequireModule module="terminals"><TerminalsList /></RequireModule>}
+            />
+            <Route
+              path="users"
+              element={<RequireRole anyOf={["owner", "manager"]}><UsersList /></RequireRole>}
             />
 
             <Route path="catalog">

@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
-  Branch, Category, HsCode, PosProduct, Product, ProductBatch,
-  SaleTypeOption, StockAudit, StockLevel, StockMovement, StockTransfer,
-  TaxRate, UnitOfMeasure, Warehouse,
+  Branch, BranchOption, Category, HsCode, PosProduct, Product, ProductBatch,
+  Role, SaleTypeOption, StaffMember, StockAudit, StockLevel, StockMovement,
+  StockTransfer, TaxRate, UnitOfMeasure, Warehouse,
 } from "@pos/shared/types";
 
 import { useModules, type ModuleKey } from "@/features/modules/hooks";
@@ -196,6 +196,75 @@ export function useDeleteBranch() {
       // Warehouse forms list branches via this endpoint too.
       qc.invalidateQueries({ queryKey: ["warehouse-branches"] });
     },
+  });
+}
+
+// ----- Staff / cashier management (Users) -----
+export function useStaff(params: { search?: string; role?: string; is_active?: string } = {}) {
+  const q = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v) as [string, string][],
+  ).toString();
+  return useQuery({
+    queryKey: ["users", params],
+    queryFn: () => api<Page<StaffMember>>(`/users/${q ? `?${q}` : ""}`),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useBranchOptions() {
+  return useQuery({
+    queryKey: ["users", "branch-options"],
+    queryFn: () => api<BranchOption[]>("/users/branch-options/"),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export interface CreateStaffBody {
+  email: string;
+  full_name: string;
+  role: Role;
+  branch_ids?: string[];
+  preferred_language?: string;
+  pin?: string;
+}
+
+export function useCreateStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateStaffBody) =>
+      api<StaffMember>("/users/", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
+export function useUpdateStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: Partial<StaffMember> & { id: string }) =>
+      api<StaffMember>(`/users/${id}/`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
+export function useDeleteStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<void>(`/users/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
+export function useSetStaffPin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, pin }: { id: string; pin: string }) =>
+      api<{ has_pin: boolean }>(`/users/${id}/set-pin/`, {
+        method: "POST",
+        body: JSON.stringify({ pin }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
   });
 }
 

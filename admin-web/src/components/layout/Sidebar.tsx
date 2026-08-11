@@ -23,6 +23,7 @@ import {
   Settings,
   ShoppingCart,
   Truck,
+  UserCog,
   Users,
   Wrench,
   X,
@@ -33,6 +34,7 @@ import { NavLink } from "react-router-dom";
 import { useModules, type BusinessMode, type ModuleKey, type Vertical } from "@/features/modules/hooks";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
+import type { Role } from "@pos/shared/types";
 import { useSidebarStore } from "@/stores/sidebar";
 
 interface Item {
@@ -56,6 +58,9 @@ interface Item {
    *  (e.g. the DI-only multi-warehouse stock surfaces). Items without it show
    *  for every business mode. */
   requireBusinessMode?: BusinessMode[];
+  /** When set, the item only shows for users with one of these roles (e.g.
+   *  Users management is owner/manager only). Items without it show for all. */
+  requireRole?: Role[];
 }
 
 const TOP: Item[] = [
@@ -136,6 +141,7 @@ const HOTEL: Item[] = [
 ];
 
 const ADMIN: Item[] = [
+  { to: "/users", label: "Users", icon: UserCog, requireRole: ["owner", "manager"] },
   { to: "/branches", label: "Branches", icon: Building2, module: "branches" },
   { to: "/terminals", label: "Terminals", icon: Monitor, module: "terminals" },
   // Sync health is a terminal-fleet dashboard. DI tenants don't run
@@ -160,6 +166,7 @@ export function Sidebar() {
   const enabled = modules?.enabled;
   const vertical = modules?.vertical;
   const businessMode = modules?.business_mode;
+  const role = useAuthStore((s) => s.role);
 
   function visible(items: Item[]): Item[] {
     if (!enabled) return items;
@@ -174,7 +181,9 @@ export function Sidebar() {
         // a restaurant). Only hide once we know the vertical.
         (!it.hideForVerticals || !vertical || !it.hideForVerticals.includes(vertical)) &&
         // Hide business-mode-specific links (e.g. DI-only warehouse stock).
-        (!it.requireBusinessMode || !businessMode || it.requireBusinessMode.includes(businessMode)),
+        (!it.requireBusinessMode || !businessMode || it.requireBusinessMode.includes(businessMode)) &&
+        // Hide role-gated links (e.g. Users is owner/manager only).
+        (!it.requireRole || !role || it.requireRole.includes(role)),
     );
   }
 

@@ -16,7 +16,7 @@ DEFAULT_ROLE_PERMS: dict[str, set[str]] = {
     "sales.cancel.threshold_high":        {"owner", "manager"},
     "inventory.adjust":                   {"owner", "manager"},
     "products.manage":                    {"owner", "manager"},
-    "users.manage":                       {"owner"},
+    "users.manage":                       {"owner", "manager"},
     "fbr.tokens.manage":                  {"owner"},
     "reports.view.all_branches":          {"owner", "accountant", "auditor"},
     "reports.view.own_branch":            {"owner", "manager", "accountant", "auditor"},
@@ -41,8 +41,9 @@ ROLE_DESCRIPTIONS: dict[str, str] = {
         "view audit log. The buck stops here.",
     "manager":
         "Operational manager. Create + cancel invoices (any amount), "
-        "adjust inventory, manage products + customers, see own "
-        "branch's reports. Cannot manage users or FBR tokens.",
+        "adjust inventory, manage products + customers, manage staff "
+        "(cashiers) + set their PINs, see own branch's reports. Cannot "
+        "manage owners or FBR tokens.",
     "cashier":
         "Front-of-house. Ring up sales, accept payments, cancel "
         "low-value sales. Cannot adjust inventory, manage products, "
