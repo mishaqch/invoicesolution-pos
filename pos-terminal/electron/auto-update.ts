@@ -18,11 +18,20 @@
  * accidentally trigger update flows while iterating.
  */
 
-import { app } from "electron";
+import { BrowserWindow, app, ipcMain } from "electron";
 
 const isDev = !!process.env["ELECTRON_RENDERER_URL"];
 
 let initialized = false;
+// Set once an update has finished downloading and is staged for install.
+let pendingVersion: string | null = null;
+let updaterRef: typeof import("electron-updater").autoUpdater | null = null;
+
+function broadcast(channel: string, payload: unknown) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(channel, payload);
+  }
+}
 
 export function initAutoUpdate(): void {
   if (isDev) {
@@ -45,32 +54,48 @@ export function initAutoUpdate(): void {
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  updaterRef = autoUpdater;
 
   autoUpdater.on("checking-for-update", () => {
     console.log("[auto-update] checking…");
   });
   autoUpdater.on("update-available", (info) => {
     console.log("[auto-update] update available:", info.version);
+    // Tell the UI a download has started (so it can show "downloading…").
+    broadcast("update:available", { version: info.version });
   });
   autoUpdater.on("update-not-available", () => {
     console.log("[auto-update] up to date");
   });
   autoUpdater.on("download-progress", (p) => {
-    console.log(
-      "[auto-update] download progress: %d%%",
-      Math.floor(p.percent),
-    );
+    broadcast("update:progress", { percent: Math.floor(p.percent) });
   });
   autoUpdater.on("update-downloaded", (info) => {
     console.log(
-      "[auto-update] downloaded %s — will install on next quit",
+      "[auto-update] downloaded %s — ready to install on restart",
       info.version,
     );
+    pendingVersion = info.version;
+    // Tell the UI an update is READY — the cashier gets a banner with a
+    // "Restart & update" button (and it also installs on next quit).
+    broadcast("update:ready", { version: info.version });
   });
   autoUpdater.on("error", (err) => {
     // Network errors are noisy; we degrade silently. Persistent
     // failures show up in operator logs via Glitchtip (Phase 9).
     console.warn("[auto-update] error:", err.message);
+  });
+
+  // Renderer asks "is an update already staged?" (e.g. on a fresh page load).
+  ipcMain.handle("update:pending", () => ({ version: pendingVersion }));
+  // Renderer clicked "Restart & update now" — quit and install immediately.
+  ipcMain.handle("update:install-now", () => {
+    if (pendingVersion && updaterRef) {
+      // isSilent=false shows the installer briefly; isForceRunAfter relaunches
+      // the POS right after so the cashier is back in seconds.
+      updaterRef.quitAndInstall(false, true);
+    }
+    return { ok: !!pendingVersion };
   });
 
   const check = () =>

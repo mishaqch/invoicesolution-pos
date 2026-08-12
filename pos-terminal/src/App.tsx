@@ -3,6 +3,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import { ToastProvider } from "@/components/feedback/Toast";
 import { TextPromptHost } from "@/components/ui/TextPromptModal";
+import { UpdateBanner } from "@/features/updates/UpdateBanner";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import DayCloseRoute from "@/routes/day-close";
 import DayOpenRoute from "@/routes/day-open";
@@ -56,6 +57,8 @@ export default function App() {
       </Routes>
       {/* App-wide in-app text prompt (replaces Electron's missing window.prompt). */}
       <TextPromptHost />
+      {/* App-wide banner: tells the cashier when a new version is ready. */}
+      <UpdateBanner />
       </ToastProvider>
     </HashRouter>
   );

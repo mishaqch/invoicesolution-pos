@@ -328,6 +328,20 @@ const api = {
     next: (args: { branchCode: string; terminalIndex: number }): Promise<string> =>
       ipcRenderer.invoke("numbering:next", args),
   },
+  updates: {
+    /** Is an update already downloaded & staged? (version or null). */
+    pending: (): Promise<{ version: string | null }> =>
+      ipcRenderer.invoke("update:pending"),
+    /** Restart the app now to apply the staged update. */
+    installNow: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("update:install-now"),
+    /** Fires when an update finished downloading and is ready to install. */
+    onReady: (cb: (info: { version: string }) => void) => {
+      const handler = (_e: unknown, info: unknown) => cb(info as { version: string });
+      ipcRenderer.on("update:ready", handler);
+      return () => ipcRenderer.off("update:ready", handler);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("api", api);
