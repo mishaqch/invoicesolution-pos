@@ -5,7 +5,7 @@
  * the held order + checkout payload.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api";
 import { useToast } from "@/components/feedback/Toast";
@@ -34,12 +34,35 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
   const [custAddr, setCustAddr] = useState("");
+  // Wraps the "Pick table" button + its dropdown, so a click anywhere OUTSIDE
+  // this box (a misclick by the waiter) closes the picker.
+  const tablePickerRef = useRef<HTMLDivElement>(null);
 
   // Default to dine-in on first mount so the cashier always has a context.
   useEffect(() => {
     if (!orderType) setOrderContext({ orderType: "dine_in" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Close the table picker on an outside click or Escape — the waiter may have
+  // opened it by mistake and just wants it to go away without selecting a table.
+  useEffect(() => {
+    if (!picking) return;
+    function onDown(e: MouseEvent) {
+      if (tablePickerRef.current && !tablePickerRef.current.contains(e.target as Node)) {
+        setPicking(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setPicking(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [picking]);
 
   // For takeaway/delivery, mirror the typed name/phone/address onto the sale's
   // customer so it flows to the order + receipt. A walk-in (unregistered) buyer.
@@ -102,7 +125,7 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
       </div>
 
       {orderType === "dine_in" && (
-        <div className="ml-2 flex items-center gap-2">
+        <div ref={tablePickerRef} className="relative ml-2 flex items-center gap-2">
           <button
             type="button"
             onClick={() => { setPicking((p) => !p); if (tables.length === 0) void loadTables(); }}
@@ -114,7 +137,7 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
             // bg-background (white) + border — the terminal theme defines no
             // --popover/--accent tokens, so the old bg-popover / hover:bg-accent
             // rendered transparent. Use defined tokens (bg-background/bg-muted).
-            <div className="absolute z-30 mt-24 grid max-h-64 grid-cols-4 gap-1.5 overflow-auto rounded-md border bg-background p-2 shadow-lg">
+            <div className="absolute left-0 top-full z-30 mt-1 grid max-h-64 w-72 grid-cols-4 gap-1.5 overflow-auto rounded-md border bg-background p-2 shadow-lg">
               {tables.length === 0 ? (
                 <span className="col-span-4 p-2 text-xs text-muted-foreground">No tables (or offline).</span>
               ) : tables.map((t) => {
