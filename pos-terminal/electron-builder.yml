@@ -104,9 +104,16 @@ linux:
   category: Office
   maintainer: support@pakistanpos.example.com
 
-# Auto-update / publishing is intentionally NOT configured here. This build
-# produces a plain downloadable installer (hosted on our server, not GitHub
-# Releases), and a `publish` block makes electron-builder try to generate
-# auto-update metadata (latest.yml) — which crashes a no-channel artifact
-# build. When you later set up signed auto-updates, add a `publish:` block
-# (provider: github, releaseType: release) back here + use pos-release.yml.
+# Auto-update — SELF-HOSTED "generic" feed on our own VPS (no GitHub dependency,
+# works with a private repo). electron-builder writes latest.yml + the .exe +
+# .blockmap into the dist/ output; those get uploaded to the `url` below, which
+# nginx serves. Every installed terminal polls this URL on startup (+ hourly)
+# and self-updates — see electron/auto-update.ts.
+#
+# The build MUST run with GENERATE_UPDATES so electron-builder emits latest.yml
+# even though we upload manually (we don't pass --publish; the pos-build-exe CI
+# just builds the artifacts and we rsync them to the server).
+publish:
+  provider: generic
+  url: https://client.invoicesolution.pk/updates/
+  channel: latest

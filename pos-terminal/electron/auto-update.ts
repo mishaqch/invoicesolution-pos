@@ -1,17 +1,18 @@
 /**
- * electron-updater wiring.
+ * electron-updater wiring — SELF-HOSTED feed.
  *
- * On app start (production builds only) we ask GitHub Releases for a
- * newer version. The auto-update channel is configured in
- * electron-builder.yml (`publish.provider: github`); the deployer
- * supplies GH_TOKEN at release-build time so electron-builder can push
- * the .exe / latest.yml artifacts to a private repo.
+ * The update feed is our own VPS (electron-builder.yml → publish.provider:
+ * generic, url: https://client.invoicesolution.pk/updates/). Each release build
+ * emits latest.yml + the .exe + .blockmap; those are uploaded to that URL. Every
+ * installed terminal polls it and self-updates — no GitHub, works with a private
+ * repo, and we control the rollout.
  *
  * Behavior on the cashier machine:
- *   - Check on startup (silent, no UI prompt).
- *   - Update is downloaded in the background.
- *   - When ready, a small notification fires; the cashier finishes
- *     their current sale, then we install on next quit.
+ *   - Check on startup, then re-check hourly (a till left running all day still
+ *     picks up a new release without a restart).
+ *   - Update downloads silently in the background.
+ *   - Installs on next app quit (autoInstallOnAppQuit) — so it never interrupts
+ *     a sale; the new version is live the next time they open the POS.
  *
  * Dev mode (electron-vite dev): autoUpdater is a no-op so you don't
  * accidentally trigger update flows while iterating.
@@ -72,9 +73,14 @@ export function initAutoUpdate(): void {
     console.warn("[auto-update] error:", err.message);
   });
 
-  app.on("ready", () => {
+  const check = () =>
     void autoUpdater.checkForUpdates().catch((e) => {
-      console.warn("[auto-update] initial check failed:", e);
+      console.warn("[auto-update] check failed:", e);
     });
+
+  app.on("ready", () => {
+    check();
+    // Re-check every hour so a machine that stays on all day still updates.
+    setInterval(check, 60 * 60 * 1000);
   });
 }
