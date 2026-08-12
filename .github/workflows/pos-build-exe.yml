@@ -103,21 +103,27 @@ jobs:
       - name: Locate the built .exe
         shell: pwsh
         run: |
+          # electron-builder outputs to release/<version>/ (directories.output:
+          # release/${version}), so gather the 3 auto-update feed files from
+          # anywhere under release/ into a flat feed/ dir for a predictable path.
+          New-Item -ItemType Directory -Force -Path feed | Out-Null
           $exe = Get-ChildItem -Path release -Recurse -Filter invoiceSolution.exe | Select-Object -First 1
           if (-not $exe) { Write-Error "invoiceSolution.exe not found under release/"; exit 1 }
-          Write-Host "Built: $($exe.FullName)  ($([math]::Round($exe.Length/1MB,1)) MB)"
-          "EXE_PATH=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $yml = Get-ChildItem -Path release -Recurse -Filter latest.yml | Select-Object -First 1
+          if (-not $yml) { Write-Error "latest.yml not found under release/ (auto-update metadata missing)"; exit 1 }
+          Copy-Item $exe.FullName feed/
+          Copy-Item $yml.FullName feed/
+          Get-ChildItem -Path release -Recurse -Filter *.blockmap | ForEach-Object { Copy-Item $_.FullName feed/ }
+          Write-Host "Built: $($exe.Name) ($([math]::Round($exe.Length/1MB,1)) MB)"
+          Get-ChildItem feed | ForEach-Object { Write-Host "  feed/$($_.Name)" }
 
       - name: Upload installer + auto-update feed artifacts
         uses: actions/upload-artifact@v7
         with:
           name: invoiceSolution-exe
           # The .exe AND the auto-update feed files (latest.yml + .blockmap).
-          # Drop ALL THREE into /srv/pos/updates/ on the server to publish an
+          # Drop ALL of these into /srv/pos/updates/ on the server to publish an
           # update — every installed terminal then self-updates.
-          path: |
-            release/invoiceSolution.exe
-            release/latest.yml
-            release/*.blockmap
+          path: feed/*
           if-no-files-found: error
           retention-days: 30
