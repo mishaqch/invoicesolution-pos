@@ -332,6 +332,12 @@ const api = {
     /** Is an update already downloaded & staged? (version or null). */
     pending: (): Promise<{ version: string | null }> =>
       ipcRenderer.invoke("update:pending"),
+    /** Current app version + last updater status (for the version footer). */
+    info: (): Promise<{ currentVersion: string; status: string; pendingVersion: string | null }> =>
+      ipcRenderer.invoke("update:info"),
+    /** Trigger an update check immediately (testing — no need to wait an hour). */
+    checkNow: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke("update:check-now"),
     /** Restart the app now to apply the staged update. */
     installNow: (): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke("update:install-now"),

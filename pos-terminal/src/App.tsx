@@ -4,6 +4,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ToastProvider } from "@/components/feedback/Toast";
 import { TextPromptHost } from "@/components/ui/TextPromptModal";
 import { UpdateBanner } from "@/features/updates/UpdateBanner";
+import { VersionFooter } from "@/features/updates/VersionFooter";
 import { ProtectedRoute } from "@/features/auth/ProtectedRoute";
 import DayCloseRoute from "@/routes/day-close";
 import DayOpenRoute from "@/routes/day-open";
@@ -59,6 +60,8 @@ export default function App() {
       <TextPromptHost />
       {/* App-wide banner: tells the cashier when a new version is ready. */}
       <UpdateBanner />
+      {/* Corner version chip + on-demand update check (for verifying updates). */}
+      <VersionFooter />
       </ToastProvider>
     </HashRouter>
   );

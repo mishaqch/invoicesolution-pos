@@ -26,6 +26,8 @@ let initialized = false;
 // Set once an update has finished downloading and is staged for install.
 let pendingVersion: string | null = null;
 let updaterRef: typeof import("electron-updater").autoUpdater | null = null;
+// Human-readable last state, surfaced to the UI for testing/visibility.
+let lastStatus = "idle";
 
 function broadcast(channel: string, payload: unknown) {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -58,16 +60,20 @@ export function initAutoUpdate(): void {
 
   autoUpdater.on("checking-for-update", () => {
     console.log("[auto-update] checking…");
+    lastStatus = "checking";
   });
   autoUpdater.on("update-available", (info) => {
     console.log("[auto-update] update available:", info.version);
+    lastStatus = `downloading ${info.version}`;
     // Tell the UI a download has started (so it can show "downloading…").
     broadcast("update:available", { version: info.version });
   });
   autoUpdater.on("update-not-available", () => {
     console.log("[auto-update] up to date");
+    lastStatus = "up-to-date";
   });
   autoUpdater.on("download-progress", (p) => {
+    lastStatus = `downloading ${Math.floor(p.percent)}%`;
     broadcast("update:progress", { percent: Math.floor(p.percent) });
   });
   autoUpdater.on("update-downloaded", (info) => {
@@ -76,6 +82,7 @@ export function initAutoUpdate(): void {
       info.version,
     );
     pendingVersion = info.version;
+    lastStatus = `ready ${info.version}`;
     // Tell the UI an update is READY — the cashier gets a banner with a
     // "Restart & update" button (and it also installs on next quit).
     broadcast("update:ready", { version: info.version });
@@ -84,10 +91,22 @@ export function initAutoUpdate(): void {
     // Network errors are noisy; we degrade silently. Persistent
     // failures show up in operator logs via Glitchtip (Phase 9).
     console.warn("[auto-update] error:", err.message);
+    lastStatus = `error: ${err.message.slice(0, 80)}`;
   });
 
   // Renderer asks "is an update already staged?" (e.g. on a fresh page load).
   ipcMain.handle("update:pending", () => ({ version: pendingVersion }));
+  // Current app version + last updater status — shown in the UI for testing.
+  ipcMain.handle("update:info", () => ({
+    currentVersion: app.getVersion(),
+    status: lastStatus,
+    pendingVersion,
+  }));
+  // Manual "check now" — lets you test without waiting for the hourly poll.
+  ipcMain.handle("update:check-now", () => {
+    void autoUpdater.checkForUpdates().catch(() => {});
+    return { ok: true };
+  });
   // Renderer clicked "Restart & update now" — quit and install immediately.
   ipcMain.handle("update:install-now", () => {
     if (pendingVersion && updaterRef) {
