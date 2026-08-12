@@ -122,8 +122,11 @@ jobs:
         with:
           name: invoiceSolution-exe
           # The .exe AND the auto-update feed files (latest.yml + .blockmap).
+          # NOTE: upload-artifact resolves paths from the REPO ROOT and does NOT
+          # honor defaults.run.working-directory (pos-terminal), so the run steps
+          # write pos-terminal/feed/ — hence the pos-terminal/ prefix here.
           # Drop ALL of these into /srv/pos/updates/ on the server to publish an
           # update — every installed terminal then self-updates.
-          path: feed/*
+          path: pos-terminal/feed/*
           if-no-files-found: error
           retention-days: 30
