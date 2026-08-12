@@ -9,7 +9,7 @@ from django.db.models import Count, Sum
 
 from apps.sales.models import Invoice
 
-from ..aggregates import COUNTED_STATUSES
+from ..aggregates import COUNTED_SALES_STATUSES
 from ..base import BaseFilters, Column, Report
 from ..registry import register
 
@@ -35,7 +35,7 @@ class CustomerTopNReport(Report):
     def query(self):
         qs = (
             Invoice.objects.for_tenant(self.tenant_id)
-            .filter(status__in=COUNTED_STATUSES, customer__isnull=False)
+            .filter(status__in=COUNTED_SALES_STATUSES, customer__isnull=False)
         )
         if self.filters.branch_id:
             qs = qs.filter(branch_id=self.filters.branch_id)

@@ -64,7 +64,10 @@ class StockAgingReport(Report):
         # Most-recent received per (product, branch).
         last_received = (
             StockMovement.objects.for_tenant(self.tenant_id)
-            .filter(movement_type__in=["received", "opening_balance"])
+            # Real inbound movement types (there is NO "received" type — that
+            # was a StockTransfer STATUS, not a movement_type, so the report was
+            # dead for every purchase/transfer-replenished item).
+            .filter(movement_type__in=["purchase", "transfer_in", "adjustment_in", "opening_balance"])
             .values("product_id", "branch_id")
             .annotate(last=Max("created_at"))
         )

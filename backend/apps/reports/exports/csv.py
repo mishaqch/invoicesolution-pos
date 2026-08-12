@@ -36,16 +36,28 @@ def _format(value, kind: str) -> str:
     return str(value)
 
 
-def _stream_rows(columns: list[Column], rows: Iterable[dict]):
+def _stream_rows(result: ReportResult):
+    columns = result.columns
     writer = csv.writer(_Echo())
     yield writer.writerow([c.label for c in columns])
-    for row in rows:
+    for row in result.rows:
         yield writer.writerow([_format(row.get(c.key), c.kind) for c in columns])
+    # Totals row (matches the on-screen table) — labelled in the first column.
+    if result.totals:
+        totals_cells = []
+        for i, c in enumerate(columns):
+            if i == 0:
+                totals_cells.append("TOTAL")
+            elif c.key in result.totals:
+                totals_cells.append(_format(result.totals[c.key], c.kind))
+            else:
+                totals_cells.append("")
+        yield writer.writerow(totals_cells)
 
 
 def streaming_csv_response(result: ReportResult, *, filename: str) -> StreamingHttpResponse:
     response = StreamingHttpResponse(
-        _stream_rows(result.columns, result.rows),
+        _stream_rows(result),
         content_type="text/csv; charset=utf-8",
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'

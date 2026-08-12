@@ -190,3 +190,29 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- Report print view -----------------------------------------------
+   window.print() on a report page should render ONLY the report (header +
+   table), not the app chrome. Everything is hidden except elements inside
+   [data-report-print]; the sidebar, top bar, filters, and action buttons
+   drop away, and the table prints edge-to-edge in black on white. */
+@media print {
+  body * { visibility: hidden; }
+  [data-report-print], [data-report-print] * { visibility: visible; }
+  [data-report-print] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    background: #fff;
+    color: #000;
+  }
+  /* Elements inside the print region that are noise (filters, buttons). */
+  [data-report-noprint] { display: none !important; }
+  [data-report-print] table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  [data-report-print] th,
+  [data-report-print] td { border: 0.5px solid #999; padding: 4px 6px; }
+  [data-report-print] thead th { background: #e5e7eb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { margin: 12mm; }
+}

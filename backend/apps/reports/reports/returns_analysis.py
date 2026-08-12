@@ -31,7 +31,9 @@ class ReturnsAnalysisReport(Report):
     chart_spec = ChartSpec(type="bar", x_key="reason", y_keys=("count",))
 
     def query(self):
-        qs = Return.objects.for_tenant(self.tenant_id)
+        # Only COMPLETED returns count — a cancelled return still carries a
+        # refund_amount and would inflate the totals + count.
+        qs = Return.objects.for_tenant(self.tenant_id).filter(status="completed")
         if self.filters.branch_id:
             qs = qs.filter(branch_id=self.filters.branch_id)
         if self.filters.date_from:
@@ -45,8 +47,8 @@ class ReturnsAnalysisReport(Report):
         )
         for r in rows:
             yield {
-                "reason": r["reason"],
-                "fbr_route": r["fbr_route"],
+                "reason": r["reason"] or "unspecified",
+                "fbr_route": r["fbr_route"] or "n/a",   # non-fiscal returns have none
                 "count": r["count"],
                 "total_refund": r["total_refund"] or Decimal("0"),
             }

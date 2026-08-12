@@ -52,14 +52,30 @@ def excel_response(result: ReportResult, *, filename: str, sheet_name: str = "Re
     ws.append(header)
 
     # Data rows
+    from openpyxl.cell import WriteOnlyCell
     for row in result.rows:
         out = []
         for col in result.columns:
-            from openpyxl.cell import WriteOnlyCell
             cell = WriteOnlyCell(ws, value=_to_cell_value(row.get(col.key), col.kind))
             fmt = _number_format(col.kind)
             if fmt is not None:
                 cell.number_format = fmt
+            out.append(cell)
+        ws.append(out)
+
+    # Totals row (matches the on-screen table) — bold, labelled "TOTAL".
+    if result.totals:
+        bold = Font(bold=True)
+        out = []
+        for i, col in enumerate(result.columns):
+            if col.key in result.totals:
+                cell = WriteOnlyCell(ws, value=_to_cell_value(result.totals[col.key], col.kind))
+                fmt = _number_format(col.kind)
+                if fmt is not None:
+                    cell.number_format = fmt
+            else:
+                cell = WriteOnlyCell(ws, value=("TOTAL" if i == 0 else ""))
+            cell.font = bold
             out.append(cell)
         ws.append(out)
 

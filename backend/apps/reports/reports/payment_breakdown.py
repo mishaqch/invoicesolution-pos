@@ -30,7 +30,15 @@ class PaymentBreakdownReport(Report):
     chart_spec = ChartSpec(type="donut", x_key="payment_method", y_keys=("total",))
 
     def query(self):
-        qs = Payment.objects.for_tenant(self.tenant_id).filter(status="completed")
+        qs = (
+            Payment.objects.for_tenant(self.tenant_id)
+            .filter(status="completed")
+            # Don't count money against a cancelled/voided invoice.
+            .exclude(invoice__status__in=["cancelled", "partially_cancelled"])
+            .filter(invoice__deleted_at__isnull=True)
+            # Uncleared / bounced cheques aren't collected cash yet.
+            .exclude(cheque_status__in=["pending", "bounced"])
+        )
         if self.filters.branch_id:
             qs = qs.filter(invoice__branch_id=self.filters.branch_id)
         if self.filters.date_from:

@@ -44,7 +44,9 @@ class ProfitLossReport(Report):
             qs = qs.filter(date__lte=self.filters.date_to)
         rows = (
             qs.values("date")
-            .annotate(revenue=Sum("revenue"), cogs=Sum("cogs"))
+            # net_revenue is tax-EXCLUSIVE — margin = revenue − cogs is only
+            # meaningful when both sides exclude output tax.
+            .annotate(revenue=Sum("net_revenue"), cogs=Sum("cogs"))
             .order_by("date")
         )
         for r in rows:

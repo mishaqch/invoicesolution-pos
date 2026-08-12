@@ -29,6 +29,12 @@ COUNTED_STATUSES = (
     "partially_edited_and_cancelled", "finalized", "cancelled",
 )
 
+# A narrower set for REVENUE / MARGIN / SPEND / RANKING reports, where a
+# fully-cancelled invoice must NOT count (it would inflate a customer's spend,
+# a product's revenue/COGS, or the tax base). daily_sales keeps 'cancelled' in
+# COUNTED_STATUSES on purpose (audit + count), netting refunds separately.
+COUNTED_SALES_STATUSES = tuple(s for s in COUNTED_STATUSES if s != "cancelled")
+
 
 @transaction.atomic
 def rebuild_daily_sales(tenant: Tenant, *, date_from: dt.date, date_to: dt.date) -> int:

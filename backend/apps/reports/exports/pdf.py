@@ -44,6 +44,7 @@ def pdf_response(
     result: ReportResult, *,
     filename: str, title: str,
     tenant_business_name: str, tenant_ntn: str,
+    subtitle: str = "",
 ) -> HttpResponse:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -57,8 +58,10 @@ def pdf_response(
 
     story.append(Paragraph(f"<b>{tenant_business_name}</b>  ·  NTN {tenant_ntn}", styles["Title"]))
     story.append(Paragraph(title, styles["Heading2"]))
+    if subtitle:
+        story.append(Paragraph(subtitle, styles["Normal"]))
     story.append(Paragraph(
-        f"Generated {timezone.now().strftime('%Y-%m-%d %H:%M')}",
+        f"Generated {timezone.now().strftime('%Y-%m-%d %H:%M')}  ·  {result.row_count} rows",
         styles["Italic"],
     ))
     story.append(Spacer(1, 6))
@@ -70,8 +73,22 @@ def pdf_response(
     ]
     table_data = [header_row] + body if body else [header_row, ["(no rows)"] + [""] * (len(header_row) - 1)]
 
+    # Totals row (matches the on-screen table), bold + separated.
+    totals_row_idx = None
+    if result.totals:
+        totals_cells = []
+        for i, c in enumerate(result.columns):
+            if c.key in result.totals:
+                totals_cells.append(_format(result.totals[c.key], c.kind))
+            elif i == 0:
+                totals_cells.append("TOTAL")
+            else:
+                totals_cells.append("")
+        table_data.append(totals_cells)
+        totals_row_idx = len(table_data) - 1
+
     table = Table(table_data, repeatRows=1)
-    table.setStyle(TableStyle([
+    style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F2937")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -79,7 +96,14 @@ def pdf_response(
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
-    ]))
+    ]
+    if totals_row_idx is not None:
+        style += [
+            ("BACKGROUND", (0, totals_row_idx), (-1, totals_row_idx), colors.HexColor("#E5E7EB")),
+            ("FONTNAME", (0, totals_row_idx), (-1, totals_row_idx), "Helvetica-Bold"),
+            ("LINEABOVE", (0, totals_row_idx), (-1, totals_row_idx), 0.75, colors.HexColor("#1F2937")),
+        ]
+    table.setStyle(TableStyle(style))
     story.append(table)
 
     doc.build(story)

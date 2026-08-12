@@ -130,7 +130,11 @@ class ProductVelocity(TenantScopedModel):
     branch = models.ForeignKey("tenants.Branch", on_delete=models.CASCADE)
     date = models.DateField()
     quantity = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    # `revenue` is GROSS turnover = SUM(line_total) (tax-INCLUSIVE). `net_revenue`
+    # is tax-EXCLUSIVE (line_total − tax − further_tax) and is what revenue/margin
+    # reports must use — margin = net_revenue − cogs (both tax-exclusive).
     revenue = models.DecimalField(max_digits=14, decimal_places=4, default=0)
+    net_revenue = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     cogs = models.DecimalField(max_digits=14, decimal_places=4, default=0)
     last_built_at = models.DateTimeField(auto_now=True)
 

@@ -24,7 +24,9 @@ from ..registry import register
 @dataclass
 class _MoversFilters(BaseFilters):
     limit: int = 20
-    min_sold_qty: str = "0"  # for slow movers: sold_qty <= this is "slow"
+    # Slow movers = in-stock items that sold at-or-below this qty over the range.
+    # Default 5 (not 0) so it means "low velocity", not only "never sold".
+    min_sold_qty: str = "5"
 
 
 @register
@@ -49,12 +51,13 @@ class TopMoversReport(Report):
             qs = qs.filter(date__lte=self.filters.date_to)
         rows = (
             qs.values("product_id")
-            .annotate(quantity=Sum("quantity"), revenue=Sum("revenue"))
+            .annotate(quantity=Sum("quantity"), revenue=Sum("net_revenue"))
             .order_by("-revenue")[: self.filters.limit]
         )
         product_ids = [r["product_id"] for r in rows]
         product_map = {
-            p.id: p for p in Product.objects.filter(id__in=product_ids).only("id", "name", "sku")
+            p.id: p for p in Product.objects.for_tenant(self.tenant_id)
+            .filter(id__in=product_ids).only("id", "name", "sku")
         }
         for idx, r in enumerate(rows, start=1):
             p = product_map.get(r["product_id"])

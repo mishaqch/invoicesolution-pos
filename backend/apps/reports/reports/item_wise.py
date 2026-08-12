@@ -49,7 +49,7 @@ class ItemWiseReport(Report):
             qs.values("product_id")
             .annotate(
                 quantity=Sum("quantity"),
-                revenue=Sum("revenue"),
+                revenue=Sum("net_revenue"),   # tax-exclusive, so margin is honest
                 cogs=Sum("cogs"),
             )
             .order_by("-revenue")

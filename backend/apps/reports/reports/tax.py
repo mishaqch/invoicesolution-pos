@@ -14,7 +14,7 @@ from django.db.models import Count, Sum
 
 from apps.sales.models import SaleItem
 
-from ..aggregates import COUNTED_STATUSES
+from ..aggregates import COUNTED_SALES_STATUSES
 from ..base import BaseFilters, Column, Report
 from ..registry import register
 
@@ -36,9 +36,12 @@ class TaxReport(Report):
     )
 
     def query(self):
+        # Exclude fully-cancelled invoices: a portal-reconcile cancel flips the
+        # invoice status but not each item's is_cancelled, so gating on the
+        # non-cancelled status set keeps that invoice's tax out of the base.
         qs = SaleItem.objects.filter(
             invoice__tenant_id=self.tenant_id,
-            invoice__status__in=COUNTED_STATUSES,
+            invoice__status__in=COUNTED_SALES_STATUSES,
             is_cancelled=False,
         )
         if self.filters.branch_id:

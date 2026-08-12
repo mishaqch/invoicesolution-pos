@@ -12,7 +12,7 @@ from django.utils import timezone
 from apps.customers.models import Customer
 from apps.sales.models import Invoice
 
-from ..aggregates import COUNTED_STATUSES
+from ..aggregates import COUNTED_SALES_STATUSES
 from ..base import BaseFilters, Column, Report
 from ..registry import register
 
@@ -40,7 +40,10 @@ class CustomerDormantReport(Report):
         # Lifetime spend per customer.
         spent = (
             Invoice.objects.for_tenant(self.tenant_id)
-            .filter(status__in=COUNTED_STATUSES, customer__isnull=False)
+            # Exclude cancelled: a customer whose only recent invoice was
+            # cancelled must not look "recently active" (would wrongly drop them
+            # from the dormant list).
+            .filter(status__in=COUNTED_SALES_STATUSES, customer__isnull=False)
             .values("customer_id")
             .annotate(
                 last_invoice_at=Max("invoice_date"),
@@ -58,7 +61,8 @@ class CustomerDormantReport(Report):
         candidates.sort(key=lambda r: r["lifetime_spent"] or Decimal("0"), reverse=True)
         cust_ids = [c["customer_id"] for c in candidates]
         cust_map = {
-            c.id: c for c in Customer.objects.filter(id__in=cust_ids).only("id", "name", "phone")
+            c.id: c for c in Customer.objects.for_tenant(self.tenant_id)
+            .filter(id__in=cust_ids, deleted_at__isnull=True).only("id", "name", "phone")
         }
         today = timezone.localdate()
         for c in candidates:

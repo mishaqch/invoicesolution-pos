@@ -71,6 +71,14 @@ def submit_invoice_to_fbr(self, invoice_id: str) -> dict:
             "Invoice %s belongs to non-fiscal tenant %s — skipping FBR submission",
             invoice_id, tenant.id,
         )
+        # A non-fiscal sale is a COMPLETE local record — it will never get an FBR
+        # number, so leaving it in 'pending_sync' forever hid it from every sales
+        # report (reports count only realized statuses, not pending_sync). Promote
+        # it to 'finalized' so it's a counted, reportable sale. Only advance a
+        # still-pending invoice — never touch one already cancelled/edited.
+        if invoice.status == "pending_sync":
+            invoice.status = "finalized"
+            invoice.save(update_fields=["status", "updated_at"])
         return {"skipped": "non_fiscal", "status": invoice.status}
 
     # Connection type is authoritative for HOW we fiscalize:

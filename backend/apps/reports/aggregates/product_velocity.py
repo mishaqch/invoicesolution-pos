@@ -21,7 +21,9 @@ from apps.sales.models import SaleItem
 from apps.tenants.models import Tenant
 
 from ..models import ProductVelocity
-from .daily_sales import COUNTED_STATUSES
+# Revenue/margin reports must EXCLUDE fully-cancelled invoices (they'd inflate
+# a product's revenue + COGS), so this aggregate uses the narrower sales set.
+from .daily_sales import COUNTED_SALES_STATUSES
 
 
 @transaction.atomic
@@ -32,7 +34,7 @@ def rebuild_product_velocity(tenant: Tenant, *, date_from: dt.date, date_to: dt.
             invoice__tenant=tenant,
             invoice__invoice_date__gte=date_from,
             invoice__invoice_date__lte=date_to,
-            invoice__status__in=COUNTED_STATUSES,
+            invoice__status__in=COUNTED_SALES_STATUSES,
             is_cancelled=False,
         )
         .values(
@@ -42,7 +44,9 @@ def rebuild_product_velocity(tenant: Tenant, *, date_from: dt.date, date_to: dt.
         )
         .annotate(
             quantity=Sum("quantity"),
-            revenue=Sum("line_total"),
+            revenue=Sum("line_total"),                       # gross (tax-inclusive)
+            # net = line_total − output tax − further tax (tax-exclusive).
+            net_revenue=Sum(F("line_total") - F("tax_amount") - F("further_tax_amount")),
         )
     )
 
@@ -59,6 +63,7 @@ def rebuild_product_velocity(tenant: Tenant, *, date_from: dt.date, date_to: dt.
             defaults={
                 "quantity": row["quantity"] or Decimal("0"),
                 "revenue": row["revenue"] or Decimal("0"),
+                "net_revenue": row["net_revenue"] or Decimal("0"),
                 "cogs": cogs_map.get(key, Decimal("0")),
             },
         )
@@ -77,7 +82,9 @@ def _cogs_per_group(tenant: Tenant, *, date_from: dt.date, date_to: dt.date) -> 
           si.product_id,
           inv.branch_id,
           inv.invoice_date,
-          SUM(si.quantity * si.cost_price) AS cogs
+          -- COALESCE: services / room folio lines have NULL cost_price; a NULL
+          -- here would zero the whole group's COGS and inflate margin.
+          SUM(si.quantity * COALESCE(si.cost_price, 0)) AS cogs
         FROM sale_items si
         JOIN invoices inv ON inv.id = si.invoice_id
         WHERE inv.tenant_id = %s
@@ -89,7 +96,7 @@ def _cogs_per_group(tenant: Tenant, *, date_from: dt.date, date_to: dt.date) -> 
     """
     out: dict = {}
     with connection.cursor() as cur:
-        cur.execute(sql, [str(tenant.id), date_from, date_to, list(COUNTED_STATUSES)])
+        cur.execute(sql, [str(tenant.id), date_from, date_to, list(COUNTED_SALES_STATUSES)])
         for product_id, branch_id, date, cogs in cur.fetchall():
             out[(product_id, branch_id, date)] = cogs or Decimal("0")
     return out

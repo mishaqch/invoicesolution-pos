@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Download, FileSpreadsheet, FileText, Save } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Printer, Save } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
+import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/stores/auth";
 import {
+  useBranches,
   useReportPreview,
   useReportRegistry,
   useSaveFavorite,
@@ -44,6 +46,8 @@ export default function ReportDetail() {
 
   const preview = useReportPreview();
   const saveFavorite = useSaveFavorite();
+  const { data: branchesPage } = useBranches();
+  const branches = branchesPage?.results ?? [];
 
   function buildFilters(): Record<string, unknown> {
     const filters: Record<string, unknown> = {};
@@ -100,8 +104,21 @@ export default function ReportDetail() {
 
   const result = preview.data;
 
+  const tenantName = useAuthStore((s) => s.tenant?.business_name) ?? "";
+  const filterSummary = [
+    dateFrom || dateTo ? `Period: ${dateFrom || "…"} to ${dateTo || "…"}` : "Period: all time",
+    branchId ? `Branch: ${branches.find((b) => b.id === branchId)?.name ?? branchId}` : "All branches",
+  ].join("   ·   ");
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-report-print>
+      {/* Print-only header (the app chrome is hidden by @media print). */}
+      <div className="hidden print:block">
+        <div className="text-lg font-bold">{tenantName}</div>
+        <div className="text-base">{name.replace(/_/g, " ")}</div>
+        <div className="text-xs">{filterSummary}</div>
+      </div>
+      <div data-report-noprint>
       <PageHeader
         title={
           <div>
@@ -115,6 +132,9 @@ export default function ReportDetail() {
         }
         actions={
           <>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="mr-1 h-4 w-4" /> Print
+            </Button>
             <Button variant="outline" size="sm" onClick={() => exportFile("csv")}>
               <Download className="mr-1 h-4 w-4" /> CSV
             </Button>
@@ -127,8 +147,9 @@ export default function ReportDetail() {
           </>
         }
       />
+      </div>
 
-      <Card>
+      <Card data-report-noprint>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm">Filters</CardTitle>
         </CardHeader>
@@ -142,8 +163,13 @@ export default function ReportDetail() {
             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </div>
           <div>
-            <Label>Branch ID</Label>
-            <Input value={branchId} onChange={(e) => setBranchId(e.target.value)} placeholder="optional" />
+            <Label>Branch</Label>
+            <Select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+              <option value="">All branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </Select>
           </div>
           <div className="flex items-end">
             <Button size="sm" onClick={run} loading={preview.isPending}>

@@ -200,7 +200,23 @@ class ReportExportView(APIView):
             result, filename=filename, title=name.replace("_", " ").title(),
             tenant_business_name=tenant.business_name,
             tenant_ntn=tenant.ntn,
+            subtitle=_filter_subtitle(filters),
         )
+
+
+def _filter_subtitle(filters: BaseFilters) -> str:
+    """Human-readable filter context for the PDF header (date range / branch),
+    so a printed report states the period it covers."""
+    parts = []
+    df = getattr(filters, "date_from", None)
+    dt_ = getattr(filters, "date_to", None)
+    if df or dt_:
+        parts.append(f"Period: {df or '…'} to {dt_ or '…'}")
+    else:
+        parts.append("Period: all time")
+    if getattr(filters, "branch_id", None):
+        parts.append(f"Branch: {filters.branch_id}")
+    return "   ·   ".join(parts)
 
 
 def _serializable_filters(filters: BaseFilters) -> dict:
