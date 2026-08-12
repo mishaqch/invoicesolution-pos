@@ -88,12 +88,15 @@ jobs:
           # Explicitly clear signing so electron-builder doesn't try to sign.
           CSC_LINK: ""
           CSC_KEY_PASSWORD: ""
-        # No publish block in electron-builder.yml, so no auto-update metadata
-        # is generated (that step crashed a no-channel artifact build).
+        # electron-builder.yml now has a `publish: generic` block, so the build
+        # EMITS auto-update metadata (latest.yml + .blockmap) into release/ — we
+        # do NOT let it upload (no creds); we rsync the artifacts to the server.
+        # `--publish never` would SKIP latest.yml, so we omit it and let the
+        # generic provider generate (but not push) the metadata.
         # nodeGypRebuild:false is intentional — install-app-deps above already
         # placed the correct Electron-ABI prebuild; let electron-builder package
         # that exact binary rather than rebuild again.
-        run: npx electron-builder --win --publish never
+        run: npx electron-builder --win -c.publish.provider=generic
 
       - name: Locate the built .exe
         shell: pwsh
@@ -103,10 +106,16 @@ jobs:
           Write-Host "Built: $($exe.FullName)  ($([math]::Round($exe.Length/1MB,1)) MB)"
           "EXE_PATH=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Upload installer artifact
+      - name: Upload installer + auto-update feed artifacts
         uses: actions/upload-artifact@v7
         with:
           name: invoiceSolution-exe
-          path: ${{ env.EXE_PATH }}
+          # The .exe AND the auto-update feed files (latest.yml + .blockmap).
+          # Drop ALL THREE into /srv/pos/updates/ on the server to publish an
+          # update — every installed terminal then self-updates.
+          path: |
+            release/invoiceSolution.exe
+            release/latest.yml
+            release/*.blockmap
           if-no-files-found: error
           retention-days: 30
