@@ -23,6 +23,7 @@ const TYPES: { value: OrderType; label: string }[] = [
 export function OrderTypeBar({ branchId }: { branchId: string | null }) {
   const orderType = useSaleStore((s) => s.orderType);
   const tableName = useSaleStore((s) => s.tableName);
+  const tableId = useSaleStore((s) => s.tableId);
   const setOrderContext = useSaleStore((s) => s.setOrderContext);
   const setCustomer = useSaleStore((s) => s.setCustomer);
   const toast = useToast();
@@ -92,7 +93,7 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
             type="button"
             onClick={() => setOrderContext({ orderType: t.value, tableId: null, tableName: null })}
             className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-              orderType === t.value ? "bg-primary text-primary-foreground" : "bg-background hover:bg-accent"
+              orderType === t.value ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
             }`}
           >
             {t.label}
@@ -105,25 +106,35 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
           <button
             type="button"
             onClick={() => { setPicking((p) => !p); if (tables.length === 0) void loadTables(); }}
-            className="rounded-md border px-3 py-1.5 hover:bg-accent"
+            className="rounded-md border px-3 py-1.5 hover:bg-muted"
           >
             {tableName ? `Table ${tableName}` : "Pick table"}
           </button>
           {picking && (
-            <div className="absolute z-30 mt-24 grid max-h-64 grid-cols-4 gap-1 overflow-auto rounded-md border bg-popover p-2 shadow-lg">
+            // bg-background (white) + border — the terminal theme defines no
+            // --popover/--accent tokens, so the old bg-popover / hover:bg-accent
+            // rendered transparent. Use defined tokens (bg-background/bg-muted).
+            <div className="absolute z-30 mt-24 grid max-h-64 grid-cols-4 gap-1.5 overflow-auto rounded-md border bg-background p-2 shadow-lg">
               {tables.length === 0 ? (
                 <span className="col-span-4 p-2 text-xs text-muted-foreground">No tables (or offline).</span>
-              ) : tables.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => { setOrderContext({ orderType: "dine_in", tableId: t.id, tableName: t.name }); setPicking(false); }}
-                  className="rounded-md border px-3 py-2 text-center hover:bg-accent"
-                >
-                  <div className="font-semibold">{t.name}</div>
-                  <div className="text-[10px] text-muted-foreground">{t.seats} seats</div>
-                </button>
-              ))}
+              ) : tables.map((t) => {
+                const active = tableId === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => { setOrderContext({ orderType: "dine_in", tableId: t.id, tableName: t.name }); setPicking(false); }}
+                    className={`rounded-md border px-3 py-2 text-center transition-colors ${
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input bg-muted hover:bg-primary/10 hover:border-primary"
+                    }`}
+                  >
+                    <div className="font-semibold">{t.name}</div>
+                    <div className={`text-[10px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{t.seats} seats</div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -160,7 +171,7 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
       <button
         type="button"
         onClick={() => setShowOrders(true)}
-        className="ml-auto rounded-md border px-3 py-1.5 font-medium hover:bg-accent"
+        className="ml-auto rounded-md border px-3 py-1.5 font-medium hover:bg-muted"
       >
         Open orders
       </button>
