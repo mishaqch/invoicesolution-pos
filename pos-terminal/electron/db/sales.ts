@@ -188,6 +188,18 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
     ON CONFLICT(client_uuid) DO NOTHING
   `);
 
+  // IDEMPOTENCY: client_uuid is UNIQUE and is the sale's stable idempotency key.
+  // If a row with this client_uuid already exists, this is a re-submit of the
+  // SAME sale (e.g. the cashier double-tapped "Complete sale", or a retry after
+  // a partial failure). Return the existing id instead of throwing the raw
+  // "UNIQUE constraint failed: invoices.client_uuid" SqliteError at the till.
+  const existing = db
+    .prepare("SELECT id FROM invoices WHERE client_uuid = ?")
+    .get(args.invoice.client_uuid) as { id: string } | undefined;
+  if (existing) {
+    return;
+  }
+
   const tx = db.transaction(() => {
     insertInvoice.run({
       ...args.invoice,
