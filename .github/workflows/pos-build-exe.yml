@@ -88,15 +88,17 @@ jobs:
           # Explicitly clear signing so electron-builder doesn't try to sign.
           CSC_LINK: ""
           CSC_KEY_PASSWORD: ""
-        # electron-builder.yml now has a `publish: generic` block, so the build
-        # EMITS auto-update metadata (latest.yml + .blockmap) into release/ — we
-        # do NOT let it upload (no creds); we rsync the artifacts to the server.
-        # `--publish never` would SKIP latest.yml, so we omit it and let the
-        # generic provider generate (but not push) the metadata.
+        # electron-builder.yml has a `publish: generic` block. The GENERIC
+        # provider is PULL-ONLY — electron-builder generates latest.yml +
+        # .blockmap into release/ but uploads NOTHING (PublishManager
+        # scheduleUpload returns early for provider "generic"). So --publish
+        # always is safe here: it emits the auto-update metadata without needing
+        # any credentials. publish-update.sh then rsyncs the 3 artifacts to the
+        # VPS feed. (--publish never would SKIP latest.yml generation entirely.)
         # nodeGypRebuild:false is intentional — install-app-deps above already
         # placed the correct Electron-ABI prebuild; let electron-builder package
         # that exact binary rather than rebuild again.
-        run: npx electron-builder --win -c.publish.provider=generic
+        run: npx electron-builder --win --publish always
 
       - name: Locate the built .exe
         shell: pwsh
