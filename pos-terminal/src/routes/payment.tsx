@@ -277,7 +277,13 @@ export default function PaymentRoute() {
         is_fiscal: tenant?.fbr_connection_type !== "none",
       });
 
+      // Push the paid invoice to the server ASAP. Beyond kicking the worker we
+      // EXPEDITE it (skip its backoff) so, for a restaurant order, checkout
+      // finalization runs within a second — that finalizer flips the held row's
+      // is_held=False, which is what removes the paid order from "Open orders"
+      // and frees its table. (Offline: it closes as soon as the queue drains.)
       void window.api.sync.kick();
+      void window.api?.sync?.expedite?.();
 
       navigate("/success", {
         replace: true,

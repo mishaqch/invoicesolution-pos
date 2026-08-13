@@ -257,6 +257,12 @@ class OpenOrderView(APIView):
          kitchen). Idempotent on client_uuid. Body = the same cart payload the
          terminal sends to checkout (product/quantity/unit_price/modifiers/…)
          plus order_type/table/covers/customer.
+
+    NB: an open order is CLOSED by Charge, not here — create_invoice (the
+    checkout finalizer, keyed on the same client_uuid) flips is_held=False on
+    the very same row, which drops it from open_orders_qs. There is deliberately
+    no separate un-hold endpoint: closing before that finalizer runs would make
+    it mistake the row for an already-paid duplicate and skip payments/stock/FBR.
     """
     permission_classes = [_RESTAURANT_GATE, IsTenantMember]
 

@@ -13,6 +13,8 @@ import { useSaleStore, type OrderType } from "@/stores/sale";
 import { OpenOrdersPanel } from "./OpenOrdersPanel";
 
 interface TableRow { id: string; name: string; seats: number }
+// The floor endpoint returns each table plus its open order (null = free).
+interface FloorTable { id: string; name: string; seats: number; order: unknown | null }
 
 const TYPES: { value: OrderType; label: string }[] = [
   { value: "dine_in", label: "Dine-in" },
@@ -82,21 +84,23 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
 
   async function loadTables() {
     try {
-      // Use the shared api() helper (resolves base URL + bearer token the same
-      // way as login/catalog) instead of a hand-rolled fetch on VITE_API_URL —
-      // the latter silently failed (empty base → relative URL) leaving the
-      // picker blank. Branch filter is optional: if the cashier's branch has no
-      // tables we still fall back to all of the tenant's tables.
-      const path = `/restaurant/tables/${branchId ? `?branch=${branchId}` : ""}`;
-      const data = await api<{ results?: TableRow[] } | TableRow[]>(path);
-      let rows = (Array.isArray(data) ? data : data.results) ?? [];
-      if (rows.length === 0 && branchId) {
-        const all = await api<{ results?: TableRow[] } | TableRow[]>("/restaurant/tables/");
-        rows = (Array.isArray(all) ? all : all.results) ?? [];
-      }
+      // Use the FLOOR endpoint (not the plain tables list) so we know which
+      // tables are AVAILABLE: it returns each table plus its open order (null =
+      // free). We show only the free ones — a table that already has an open
+      // order shouldn't be selectable for a new order. The currently-selected
+      // table is always kept in the list so the cashier can see/keep their pick.
+      // Uses the shared api() helper (resolves base URL + bearer token the same
+      // way as login/catalog). Branch filter is optional.
+      const path = `/restaurant/floor/${branchId ? `?branch=${branchId}` : ""}`;
+      const data = await api<{ tables?: FloorTable[] }>(path);
+      const all = data.tables ?? [];
+      const available = all.filter((t) => t.order == null || t.id === tableId);
+      const rows: TableRow[] = available.map((t) => ({ id: t.id, name: t.name, seats: t.seats }));
       setTables(rows);
-      if (rows.length === 0) {
+      if (all.length === 0) {
         toast.show({ message: "No tables found for this account. Add tables in admin → Restaurant → Tables.", variant: "warning" });
+      } else if (rows.length === 0) {
+        toast.show({ message: "All tables are occupied right now. Free one from Open orders (charge/close it) to reuse it.", variant: "warning" });
       }
     } catch (err) {
       // Surface the failure instead of silently showing an empty picker.
@@ -128,7 +132,14 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
         <div ref={tablePickerRef} className="relative ml-2 flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { setPicking((p) => !p); if (tables.length === 0) void loadTables(); }}
+            onClick={() => {
+              // Always reload on open so occupancy is fresh — a table freed or
+              // taken since last time is reflected right away.
+              setPicking((p) => {
+                if (!p) void loadTables();
+                return !p;
+              });
+            }}
             className="rounded-md border px-3 py-1.5 hover:bg-muted"
           >
             {tableName ? `Table ${tableName}` : "Pick table"}

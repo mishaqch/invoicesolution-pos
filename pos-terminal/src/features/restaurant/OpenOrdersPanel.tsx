@@ -25,10 +25,18 @@ export function OpenOrdersPanel({
   const loadFromHold = useSaleStore((s) => s.loadFromHold);
   const toast = useToast();
 
+  // Load on open, then poll every few seconds while the panel is open, so an
+  // order that was just paid (its held row finalized server-side, is_held=False)
+  // drops off the list on its own — the cashier never sees a stale paid order.
   useEffect(() => {
-    listOpenOrders(branchId)
-      .then((d) => setOrders(d.orders))
-      .catch(() => setOrders([]));
+    let alive = true;
+    const load = () =>
+      listOpenOrders(branchId)
+        .then((d) => { if (alive) setOrders(d.orders); })
+        .catch(() => { if (alive) setOrders((prev) => prev ?? []); });
+    void load();
+    const t = setInterval(load, 4000);
+    return () => { alive = false; clearInterval(t); };
   }, [branchId]);
 
   async function resume(id: string) {
