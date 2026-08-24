@@ -7,7 +7,13 @@ import { NumberInput } from "@/components/ui/number-input";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 
 interface Props {
-  onHold: () => void;
+  // Optional: when omitted (restaurant tenants), the generic "Hold" button is
+  // hidden. A restaurant order is parked via Send-to-Kitchen into the server
+  // "Open orders" book, not the retail held-sales list — mirroring how top POS
+  // (Toast/Square) keep fired tickets as live open orders rather than a
+  // separate parked bucket. Holding a fired order into the retail bucket would
+  // create a duplicate/ghost ticket, so we don't offer it there.
+  onHold?: () => void;
 }
 
 export function TotalsPane({ onHold }: Props) {
@@ -84,9 +90,11 @@ export function TotalsPane({ onHold }: Props) {
       </Button>
 
       <div className="flex gap-2">
-        <Button variant="outline" disabled={!hasItems} onClick={onHold} className="flex-1">
-          <Pause className="mr-1 h-4 w-4" /> Hold
-        </Button>
+        {onHold && (
+          <Button variant="outline" disabled={!hasItems} onClick={onHold} className="flex-1">
+            <Pause className="mr-1 h-4 w-4" /> Hold
+          </Button>
+        )}
         <Button
           variant="outline"
           disabled={!hasItems}

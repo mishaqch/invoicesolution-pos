@@ -297,13 +297,18 @@ export default function SaleRoute() {
           >
             {t("today_invoices.title", "Today's invoices")}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate("/held-sales")}
-            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-          >
-            {t("held_sales.title")}
-          </button>
+          {/* Restaurant parks orders in "Open orders" (via Send to kitchen),
+              not the retail held-sales list — so hide this entry for them to
+              avoid a confusing always-empty screen. Other verticals keep it. */}
+          {!isRestaurant && (
+            <button
+              type="button"
+              onClick={() => navigate("/held-sales")}
+              className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
+            >
+              {t("held_sales.title")}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate("/return")}
@@ -371,7 +376,10 @@ export default function SaleRoute() {
         </div>
         {/* Totals — pinned, never scrolls. */}
         <div className="col-span-3 flex min-h-0 flex-col overflow-hidden">
-          <TotalsPane onHold={onHold} />
+          {/* Restaurant: no generic Hold — a fired order lives in "Open orders"
+              (Send to kitchen), not the retail held-sales bucket. Other
+              verticals keep the classic Hold/Recall. */}
+          <TotalsPane onHold={isRestaurant ? undefined : onHold} />
         </div>
       </main>
 

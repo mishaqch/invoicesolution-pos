@@ -25,13 +25,19 @@ export default function HeldSalesRoute() {
    * Recall flow:
    *   1. Fetch the held invoice + items from local SQLite.
    *   2. Hydrate the in-memory sale store via loadFromHold.
-   *   3. Mark the DB row recalled (is_held=0). We keep the row briefly
-   *      so a crash mid-recall leaves an auditable trail.
-   *   4. Delete the held row — once the cart is in memory we don't
-   *      need the placeholder. The next checkout creates a fresh row
-   *      with a new client_uuid + local_invoice_number that DOES
-   *      enqueue to the backend (see electron/db/sales.ts).
-   *   5. Navigate back to the till.
+   *   3. Delete the held placeholder row WHILE it is still is_held=1.
+   *      Once the cart is in memory we don't need the placeholder, and the
+   *      next checkout creates a fresh row (new client_uuid +
+   *      local_invoice_number) that DOES enqueue to the backend.
+   *
+   *      NB: we must NOT flip is_held=0 first — deleteHeldInvoice() refuses to
+   *      delete a row unless is_held=1 (its guard against nuking a real sale).
+   *      The old code called recall() (is_held->0) THEN deleteHeld(), so the
+   *      delete silently no-op'd and the orphaned is_held=0 row then showed up
+   *      in "Today's invoices" as an unpaid ghost sale. Deleting while held
+   *      avoids that entirely — a recalled ticket lives only in the cart until
+   *      it is actually charged.
+   *   4. Navigate back to the till.
    */
   async function recall(row: PosInvoiceRow) {
     setBusyId(row.id);
@@ -70,7 +76,9 @@ export default function HeldSalesRoute() {
         customer: null,           // customer block isn't carried in V1 hold
         cartDiscountPct: "0",
       });
-      await window.api.sales.recall(row.id);
+      // Delete the placeholder while it is STILL held (is_held=1) — the delete
+      // guard requires that. This removes the row so it can never surface as an
+      // unpaid "sale" in Today's invoices; the cart now lives only in memory.
       await window.api.sales.deleteHeld(row.id);
       toast.show({
         message: t("held_sales.recalled", "Recalled “{{label}}”.", {

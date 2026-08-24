@@ -51,7 +51,15 @@ export default function TodayInvoicesRoute() {
 
     const loadLocal = () =>
       window.api.sales.list({ limit: 200 }).then((all) =>
-        all.filter((r) => pkDate(r.created_at) === todayPk),
+        all.filter(
+          (r) =>
+            // Belt-and-suspenders: never show a held/parked/open ticket here.
+            // Today's invoices lists ONLY completed (charged) sales — a parked
+            // or recalled-but-unpaid ticket must never count as a sale. The DB
+            // query already excludes is_held=1, but guard again in case a row
+            // is ever mirrored/created without the flag cleared.
+            Number(r.is_held) !== 1 && pkDate(r.created_at) === todayPk,
+        ),
       );
 
     async function run() {
