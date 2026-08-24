@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/feedback/Toast";
 import { printInvoiceById } from "@/features/printing/printInvoice";
 import { qty, rs } from "@/lib/money";
+import { useSessionStore } from "@/stores/session";
 
 import type { PosInvoiceRow, PosSaleItemRow, PosPaymentRow } from "../../electron/preload";
 
@@ -33,6 +34,13 @@ export default function TodayInvoicesRoute() {
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<InvoiceWithLines | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Fiscal tenants submit to FBR; non-fiscal ones (e.g. TDCP — tax collected by
+  // PRA, no FBR integration yet) must NOT show any FBR status. Same flag used at
+  // checkout/print (is_fiscal = fbr_connection_type !== "none"). When PRA is
+  // wired for TDCP later, this can switch to an authority-aware label.
+  const tenant = useSessionStore((s) => s.tenant);
+  const isFiscal = tenant?.fbr_connection_type !== "none";
 
   useEffect(() => {
     // "Today" is the PAKISTAN business day, not UTC. created_at is stored UTC,
@@ -75,7 +83,10 @@ export default function TodayInvoicesRoute() {
       if (!navigator.onLine) return;
       try {
         const { listServerInvoices, mirrorServerInvoices } = await import("@/features/hotel/api");
-        const terminalId = await window.api.pairing.status().then((s) => s.identity?.terminalId).catch(() => undefined);
+        const terminalId = await window.api.pairing
+          .status()
+          .then((s) => s.identity?.terminalId)
+          .catch(() => undefined);
         const server = await listServerInvoices({ terminal: terminalId ?? undefined, limit: 200 });
         const localIds = new Set(local.map((r) => r.id));
         const missing = server.filter(
@@ -122,11 +133,10 @@ export default function TodayInvoicesRoute() {
     } else if (!res.success) {
       toast.show({
         message: res.fallbackPath
-          ? t("print.fallback",
-              "No printer configured — receipt saved to disk: {{path}}",
-              { path: res.fallbackPath })
-          : t("print.error", "Printer error: {{reason}}",
-              { reason: res.reason ?? "unknown" }),
+          ? t("print.fallback", "No printer configured — receipt saved to disk: {{path}}", {
+              path: res.fallbackPath,
+            })
+          : t("print.error", "Printer error: {{reason}}", { reason: res.reason ?? "unknown" }),
         variant: "warning",
       });
     } else {
@@ -198,9 +208,22 @@ export default function TodayInvoicesRoute() {
                       </div>
                       <div className="flex items-baseline justify-between text-xs text-muted-foreground">
                         <span>{(r.created_at ?? "").slice(11, 16)}</span>
-                        <span className={r.fbr_invoice_number ? "text-success-soft-foreground" : "text-warning-soft-foreground"}>
-                          {r.fbr_invoice_number ? `FBR ${r.fbr_invoice_number.slice(0, 12)}…` : t("success.fbr_pending")}
-                        </span>
+                        {/* FBR status only for fiscal tenants. Non-fiscal (TDCP)
+                            has no FBR flow, so showing "Submitting to FBR…" is
+                            wrong — hide it entirely for them. */}
+                        {isFiscal && (
+                          <span
+                            className={
+                              r.fbr_invoice_number
+                                ? "text-success-soft-foreground"
+                                : "text-warning-soft-foreground"
+                            }
+                          >
+                            {r.fbr_invoice_number
+                              ? `FBR ${r.fbr_invoice_number.slice(0, 12)}…`
+                              : t("success.fbr_pending")}
+                          </span>
+                        )}
                       </div>
                     </button>
                   </li>
@@ -233,7 +256,9 @@ export default function TodayInvoicesRoute() {
               </div>
 
               <div>
-                <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">{t("sale.title")}</div>
+                <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                  {t("sale.title")}
+                </div>
                 <table className="w-full text-sm">
                   <tbody>
                     {picked.items.map((line) => (
@@ -265,7 +290,9 @@ export default function TodayInvoicesRoute() {
               </div>
 
               <div>
-                <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">{t("payment.title")}</div>
+                <div className="mb-1 text-xs font-medium uppercase text-muted-foreground">
+                  {t("payment.title")}
+                </div>
                 <ul className="space-y-1 text-sm">
                   {picked.payments.map((p) => (
                     <li key={p.id} className="flex justify-between">
@@ -278,7 +305,8 @@ export default function TodayInvoicesRoute() {
 
               {picked.invoice.fbr_invoice_number && (
                 <div className="rounded-md bg-success-soft p-2 text-xs text-success-soft-foreground">
-                  FBR Invoice: <span className="font-mono">{picked.invoice.fbr_invoice_number}</span>
+                  FBR Invoice:{" "}
+                  <span className="font-mono">{picked.invoice.fbr_invoice_number}</span>
                 </div>
               )}
             </div>

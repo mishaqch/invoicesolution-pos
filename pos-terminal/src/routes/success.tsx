@@ -9,6 +9,7 @@ import { useFbrConfirmation } from "@/features/sale/useFbrConfirmation";
 import { useTerminalFiscalize } from "@/features/sale/useTerminalFiscalize";
 import { printInvoiceById } from "@/features/printing/printInvoice";
 import { rs } from "@/lib/money";
+import { useSessionStore } from "@/stores/session";
 
 interface State {
   invoice_id?: string;
@@ -26,6 +27,13 @@ export default function SuccessRoute() {
 
   const [fbrNo, setFbrNo] = useState<string | null>(null);
   const toast = useToast();
+
+  // Non-fiscal tenants (e.g. TDCP — tax collected by PRA, no FBR integration
+  // yet) have no FBR flow: don't poll FBR and don't show any "Submitting to
+  // FBR…" badge. Fiscal tenants are unchanged. (When PRA is wired for TDCP
+  // later, this becomes an authority-aware label.)
+  const tenant = useSessionStore((s) => s.tenant);
+  const isFiscal = tenant?.fbr_connection_type !== "none";
 
   // Persist the FBR number locally, then reprint with the QR. Shared by both
   // the active SDC path and the passive cloud-confirmation fallback.
@@ -50,7 +58,8 @@ export default function SuccessRoute() {
   // (localhost:8524) as soon as the invoice reaches the server — fast, since
   // the SDC is on the LAN. The receipt reprints with the QR once verified.
   useTerminalFiscalize({
-    invoiceId: s.invoice_id,
+    // Non-fiscal tenant → pass undefined so the hook no-ops (no FBR polling).
+    invoiceId: isFiscal ? s.invoice_id : undefined,
     onFiscalized: (num) => persistAndReprint(num, null),
     // onDeferred: no-op — the fallback poll below covers offline/SDC-down.
   });
@@ -59,7 +68,8 @@ export default function SuccessRoute() {
   // DI-API/non-SDC tenant), keep polling the cloud, which fiscalizes its own
   // way. Slower interval; reprints with QR when the number eventually arrives.
   useFbrConfirmation({
-    invoiceId: s.invoice_id,
+    // Non-fiscal tenant → pass undefined so the hook no-ops (no cloud FBR poll).
+    invoiceId: isFiscal ? s.invoice_id : undefined,
     onValid: (inv) => {
       if (inv.fbr_invoice_number) {
         persistAndReprint(inv.fbr_invoice_number, inv.fbr_qr_payload);
@@ -68,11 +78,12 @@ export default function SuccessRoute() {
   });
 
   // Auto-advance — slightly longer if we're still waiting for FBR confirm.
+  // Non-fiscal tenants never wait on FBR, so advance on the short timer.
   useEffect(() => {
-    const ms = fbrNo ? 5000 : 12_000;
+    const ms = fbrNo || !isFiscal ? 5000 : 12_000;
     const t = window.setTimeout(() => navigate("/sale", { replace: true }), ms);
     return () => window.clearTimeout(t);
-  }, [navigate, fbrNo]);
+  }, [navigate, fbrNo, isFiscal]);
 
   return (
     <div className="flex h-full items-center justify-center bg-success-soft p-8">
@@ -92,15 +103,19 @@ export default function SuccessRoute() {
           <dd className="text-right font-mono">Rs {rs(s.change)}</dd>
         </dl>
 
-        <div
-          className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs ${
-            fbrNo
-              ? "bg-success-soft text-success-soft-foreground"
-              : "bg-warning-soft text-warning-soft-foreground"
-          }`}
-        >
-          {fbrNo ? `FBR #${fbrNo.slice(0, 16)}…` : t("success.fbr_pending")}
-        </div>
+        {/* FBR status badge only for fiscal tenants. Non-fiscal (TDCP) has no
+            FBR flow, so no "Submitting to FBR…" here. */}
+        {isFiscal && (
+          <div
+            className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs ${
+              fbrNo
+                ? "bg-success-soft text-success-soft-foreground"
+                : "bg-warning-soft text-warning-soft-foreground"
+            }`}
+          >
+            {fbrNo ? `FBR #${fbrNo.slice(0, 16)}…` : t("success.fbr_pending")}
+          </div>
+        )}
 
         <div className="mt-6 grid grid-cols-2 gap-2">
           <Button
