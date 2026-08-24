@@ -83,7 +83,7 @@ export default function PaymentRoute() {
 
   function onAddTender(t: Omit<Tender, "id">) {
     addTender(t);
-    setSelectedMethod(null);  // collapse the sub-flow back to method picker
+    setSelectedMethod(null); // collapse the sub-flow back to method picker
   }
 
   async function complete_sale() {
@@ -135,7 +135,9 @@ export default function PaymentRoute() {
       }));
 
       const buyerRegistrationType: "Registered" | "Unregistered" = customer
-        ? customer.registration_type === "registered" ? "Registered" : "Unregistered"
+        ? customer.registration_type === "registered"
+          ? "Registered"
+          : "Unregistered"
         : "Unregistered";
 
       const localInvoice = {
@@ -157,9 +159,7 @@ export default function PaymentRoute() {
         tax_total: totals.tax_total.toStorageString(),
         grand_total: totals.grand_total.toStorageString(),
         paid_total: tendered.toStorageString(),
-        change_given: remaining.isNegative()
-          ? remaining.neg().toStorageString()
-          : "0.0000",
+        change_given: remaining.isNegative() ? remaining.neg().toStorageString() : "0.0000",
         notes: null,
       };
 
@@ -238,7 +238,8 @@ export default function PaymentRoute() {
       try {
         if (await window.api.fiscalize.isTestMode()) {
           const r = await window.api.fiscalize.testStamp({
-            invoiceId, localNumber,
+            invoiceId,
+            localNumber,
           });
           if (r.ok && r.fbrInvoiceNumber) {
             printInvoice = { ...localInvoice, fbr_invoice_number: r.fbrInvoiceNumber };
@@ -298,9 +299,7 @@ export default function PaymentRoute() {
           local: localNumber,
           grand: totals.grand_total.toStorageString(),
           tendered: tendered.toStorageString(),
-          change: remaining.isNegative()
-            ? remaining.neg().toStorageString()
-            : "0.0000",
+          change: remaining.isNegative() ? remaining.neg().toStorageString() : "0.0000",
         },
       });
       useSaleStore.getState().resetForNewSale();
@@ -412,11 +411,15 @@ export default function PaymentRoute() {
                   Pick another
                 </button>
               </div>
-              {methodConfig && renderSubFlow({
-                method: selectedMethod, remaining, config: methodConfig,
-                hasCustomer: !!customer, storeCredit,
-                onAdd: onAddTender,
-              })}
+              {methodConfig &&
+                renderSubFlow({
+                  method: selectedMethod,
+                  remaining,
+                  config: methodConfig,
+                  hasCustomer: !!customer,
+                  storeCredit,
+                  onAdd: onAddTender,
+                })}
             </div>
           )}
         </section>
@@ -426,7 +429,12 @@ export default function PaymentRoute() {
 }
 
 function renderSubFlow({
-  method, remaining, config, hasCustomer, storeCredit, onAdd,
+  method,
+  remaining,
+  config,
+  hasCustomer,
+  storeCredit,
+  onAdd,
 }: {
   method: PaymentMethodCode;
   remaining: Money;
@@ -437,14 +445,23 @@ function renderSubFlow({
 }): React.ReactNode {
   const common = { remaining, config, hasCustomer, storeCredit, onAdd };
   switch (method) {
-    case "cash": return <CashSubFlow {...common} />;
-    case "card_credit": return <CardSubFlow {...common} kind="card_credit" />;
-    case "card_debit": return <CardSubFlow {...common} kind="card_debit" />;
-    case "easypaisa": return <WalletSubFlow {...common} kind="easypaisa" />;
-    case "jazzcash": return <WalletSubFlow {...common} kind="jazzcash" />;
-    case "raast": return <RaastSubFlow {...common} />;
-    case "bank_transfer": return <BankTransferSubFlow {...common} />;
-    case "store_credit": return <StoreCreditSubFlow {...common} />;
-    case "cheque": return <ChequeSubFlow {...common} />;
+    case "cash":
+      return <CashSubFlow {...common} />;
+    case "card_credit":
+      return <CardSubFlow {...common} kind="card_credit" />;
+    case "card_debit":
+      return <CardSubFlow {...common} kind="card_debit" />;
+    case "easypaisa":
+      return <WalletSubFlow {...common} kind="easypaisa" />;
+    case "jazzcash":
+      return <WalletSubFlow {...common} kind="jazzcash" />;
+    case "raast":
+      return <RaastSubFlow {...common} />;
+    case "bank_transfer":
+      return <BankTransferSubFlow {...common} />;
+    case "store_credit":
+      return <StoreCreditSubFlow {...common} />;
+    case "cheque":
+      return <ChequeSubFlow {...common} />;
   }
 }

@@ -37,10 +37,7 @@ export default function SuccessRoute() {
 
   // Persist the FBR number locally, then reprint with the QR. Shared by both
   // the active SDC path and the passive cloud-confirmation fallback.
-  const persistAndReprint = (
-    fbrInvoiceNumber: string,
-    qrPayload: string | null,
-  ) => {
+  const persistAndReprint = (fbrInvoiceNumber: string, qrPayload: string | null) => {
     setFbrNo(fbrInvoiceNumber);
     if (!s.invoice_id) return;
     void window.api.sales
@@ -125,10 +122,7 @@ export default function SuccessRoute() {
               const res = await printInvoiceById(s.invoice_id);
               if (res.notFound) {
                 toast.show({
-                  message: t(
-                    "print.not_found",
-                    "Receipt data is no longer available.",
-                  ),
+                  message: t("print.not_found", "Receipt data is no longer available."),
                   variant: "warning",
                 });
               } else if (!res.success) {
@@ -139,11 +133,9 @@ export default function SuccessRoute() {
                         "No printer configured — receipt saved to disk: {{path}}",
                         { path: res.fallbackPath },
                       )
-                    : t(
-                        "print.error",
-                        "Printer error: {{reason}}",
-                        { reason: res.reason ?? "unknown" },
-                      ),
+                    : t("print.error", "Printer error: {{reason}}", {
+                        reason: res.reason ?? "unknown",
+                      }),
                   variant: "warning",
                 });
               } else {
@@ -161,7 +153,9 @@ export default function SuccessRoute() {
           </Button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          {t("success.auto_return", "Returns to a new sale in {{seconds}}s.", { seconds: fbrNo ? 5 : 12 })}
+          {t("success.auto_return", "Returns to a new sale in {{seconds}}s.", {
+            seconds: fbrNo ? 5 : 12,
+          })}
         </p>
       </div>
     </div>

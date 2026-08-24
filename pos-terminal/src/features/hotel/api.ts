@@ -94,7 +94,15 @@ export interface FolioBill {
   id: string;
   folio_number: string;
   status: string;
-  guest: { name: string; cnic: string; phone: string; email: string; address: string; partner_name?: string; partner_cnic?: string };
+  guest: {
+    name: string;
+    cnic: string;
+    phone: string;
+    email: string;
+    address: string;
+    partner_name?: string;
+    partner_cnic?: string;
+  };
   room: { number: string; type: string; nightly_total: string } | null;
   rooms: FolioBillRoom[];
   check_in: string | null;
@@ -138,14 +146,14 @@ export interface ChargeLine {
 
 export function listRooms(params: { status?: string } = {}) {
   const q = new URLSearchParams(params as Record<string, string>).toString();
-  return api<{ results: Room[] } | Room[]>(`/hotel/rooms/${q ? `?${q}` : ""}`).then(
-    (d) => (Array.isArray(d) ? d : d.results),
+  return api<{ results: Room[] } | Room[]>(`/hotel/rooms/${q ? `?${q}` : ""}`).then((d) =>
+    Array.isArray(d) ? d : d.results,
   );
 }
 
 export function listOpenFolios() {
-  return api<{ results: FolioRow[] } | FolioRow[]>(`/hotel/folios/?status=open`).then(
-    (d) => (Array.isArray(d) ? d : d.results),
+  return api<{ results: FolioRow[] } | FolioRow[]>(`/hotel/folios/?status=open`).then((d) =>
+    Array.isArray(d) ? d : d.results,
   );
 }
 
@@ -179,8 +187,13 @@ export interface ServerInvoiceRow {
   created_at: string | null;
   notes: string | null;
   items?: {
-    id: string; product_name: string; quantity: string; unit_price: string;
-    tax_amount: string; line_total: string; hs_code?: string | null;
+    id: string;
+    product_name: string;
+    quantity: string;
+    unit_price: string;
+    tax_amount: string;
+    line_total: string;
+    hs_code?: string | null;
   }[];
 }
 
@@ -201,9 +214,11 @@ export function listServerInvoices(params: { terminal?: string; limit?: number }
 
 /** Mirror a batch of server invoice rows into local SQLite (display cache). */
 export async function mirrorServerInvoices(rows: ServerInvoiceRow[]): Promise<void> {
-  const persist = (window as unknown as {
-    api?: { sales?: { persistServerInvoice?: (a: unknown) => Promise<unknown> } };
-  }).api?.sales?.persistServerInvoice;
+  const persist = (
+    window as unknown as {
+      api?: { sales?: { persistServerInvoice?: (a: unknown) => Promise<unknown> } };
+    }
+  ).api?.sales?.persistServerInvoice;
   if (!persist) return;
   for (const inv of rows) {
     try {
@@ -235,12 +250,22 @@ export async function mirrorServerInvoices(rows: ServerInvoiceRow[]): Promise<vo
           created_at: inv.created_at,
         },
         items: (inv.items ?? []).map((it, i) => ({
-          id: it.id, invoice_id: inv.id, line_number: i + 1,
-          product_id: "", product_name: it.product_name, product_sku: "",
-          uom_code: "", hs_code: it.hs_code ?? null,
-          quantity: it.quantity, unit_price: it.unit_price,
-          discount_pct: "0", discount_amount: "0", tax_rate: "0",
-          tax_amount: it.tax_amount, line_total: it.line_total, notes: null,
+          id: it.id,
+          invoice_id: inv.id,
+          line_number: i + 1,
+          product_id: "",
+          product_name: it.product_name,
+          product_sku: "",
+          uom_code: "",
+          hs_code: it.hs_code ?? null,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          discount_pct: "0",
+          discount_amount: "0",
+          tax_rate: "0",
+          tax_amount: it.tax_amount,
+          line_total: it.line_total,
+          notes: null,
         })),
         payments: [],
       });
@@ -258,9 +283,11 @@ export async function mirrorServerInvoices(rows: ServerInvoiceRow[]): Promise<vo
  * of truth and the folio flow itself is unaffected.
  */
 export async function mirrorFolioInvoices(bill: FolioBill): Promise<void> {
-  const persist = (window as unknown as {
-    api?: { sales?: { persistServerInvoice?: (a: unknown) => Promise<unknown> } };
-  }).api?.sales?.persistServerInvoice;
+  const persist = (
+    window as unknown as {
+      api?: { sales?: { persistServerInvoice?: (a: unknown) => Promise<unknown> } };
+    }
+  ).api?.sales?.persistServerInvoice;
   if (!persist) return; // older preload — nothing to do
   for (const day of bill.days ?? []) {
     for (const ch of day.charges ?? []) {
@@ -321,7 +348,12 @@ export async function mirrorFolioInvoices(bill: FolioBill): Promise<void> {
   }
 }
 
-export function addCharge(id: string, cart_lines: ChargeLine[], kind = "restaurant", room?: string | null) {
+export function addCharge(
+  id: string,
+  cart_lines: ChargeLine[],
+  kind = "restaurant",
+  room?: string | null,
+) {
   return api<FolioBill>(`/hotel/folios/${id}/charges/`, {
     method: "POST",
     body: JSON.stringify({ cart_lines, kind, room: room ?? undefined }),
