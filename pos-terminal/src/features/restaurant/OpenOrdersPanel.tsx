@@ -132,8 +132,15 @@ export function OpenOrdersPanel({
                 {o.held_label && o.table && (
                   <div className="truncate text-xs font-medium text-foreground">{o.held_label}</div>
                 )}
-                <div className="text-xs text-muted-foreground">
-                  {statusLabel(o.order_status)} · {o.items.length} item(s)
+                {/* Status badge: clearly shows whether the order is just SAVED
+                    (not sent) or already IN KITCHEN (fired) / ready / served. */}
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className={statusBadgeClass(o.order_status)}>
+                    {statusLabel(o.order_status)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {o.items.length} item(s)
+                  </span>
                 </div>
                 <div className="mt-1 font-mono text-sm">Rs. {trim(o.grand_total)}</div>
                 {loadingId === o.id && (
@@ -157,7 +164,22 @@ function statusLabel(s: string | null): string {
     case "served":
       return "Served";
     default:
-      return "Open";
+      return "Saved"; // saved/parked, not yet sent to the kitchen
+  }
+}
+
+/** Colour the status badge so the state reads at a glance:
+ *  amber = just saved, blue = in kitchen, green = ready/served. */
+function statusBadgeClass(s: string | null): string {
+  const base = "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide";
+  switch (s) {
+    case "sent_to_kitchen":
+      return `${base} bg-primary/15 text-primary`;
+    case "ready":
+    case "served":
+      return `${base} bg-success-soft text-success-soft-foreground`;
+    default:
+      return `${base} bg-warning-soft text-warning-soft-foreground`;
   }
 }
 function trim(s: string): string {

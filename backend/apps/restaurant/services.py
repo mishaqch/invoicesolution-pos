@@ -194,10 +194,16 @@ def void_open_order(*, tenant_id, client_uuid, user=None, request=None) -> Invoi
     (is_held=True). A finalized/paid invoice is never touched — a missing or
     already-finalized order is a no-op (returns None) so a retry never errors.
     """
+    # Match open_orders_qs: a restaurant open order is held + carries restaurant
+    # context (order_status OR order_type). Do NOT require order_type — a saved
+    # order may have none (saved before a type was picked), and it must still be
+    # voidable. (The old order_type__isnull=False filter made such orders
+    # un-voidable, so they lingered in Open orders forever.)
+    from django.db.models import Q
     invoice = (
         Invoice.objects.for_tenant(tenant_id)
         .filter(client_uuid=client_uuid, is_held=True, deleted_at__isnull=True)
-        .filter(order_type__isnull=False)  # restaurant orders only
+        .filter(Q(order_status__isnull=False) | Q(order_type__isnull=False))
         .first()
     )
     if invoice is None:
