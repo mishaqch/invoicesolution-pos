@@ -191,8 +191,14 @@ export default function PaymentRoute() {
           course: l.course ?? null,
         })),
         cart_discount_pct: cartDiscountPct,
-        // Restaurant order-level context (null for other verticals).
-        order_type: useSaleStore.getState().orderType,
+        // Restaurant order-level context (null for other verticals). For a
+        // restaurant sale, default the type to dine_in when the cashier never
+        // picked one — matches the OrderTypeBar default and keeps the order
+        // consistent. Non-restaurant verticals stay null.
+        order_type:
+          useSessionStore.getState().tenant?.vertical === "restaurant"
+            ? (useSaleStore.getState().orderType ?? "dine_in")
+            : useSaleStore.getState().orderType,
         table: useSaleStore.getState().tableId,
         covers: useSaleStore.getState().covers,
         payments: tenders.map((t) => ({
