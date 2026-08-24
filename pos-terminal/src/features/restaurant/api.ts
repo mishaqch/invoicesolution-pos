@@ -88,3 +88,14 @@ export function listOpenOrders(branchId?: string | null): Promise<{ orders: Open
 export function getOpenOrder(id: string): Promise<OpenOrderDetail> {
   return api(`/restaurant/orders/?id=${id}`);
 }
+
+/**
+ * Void (soft-delete) an open order so it leaves the book. Called when a resumed
+ * open order has all its items removed — an empty order is a voided order.
+ * Keyed on the same client_uuid the order was saved with. Idempotent server-side.
+ */
+export function voidOpenOrder(clientUuid: string): Promise<{ voided: boolean }> {
+  return api(`/restaurant/orders/?client_uuid=${encodeURIComponent(clientUuid)}`, {
+    method: "DELETE",
+  });
+}

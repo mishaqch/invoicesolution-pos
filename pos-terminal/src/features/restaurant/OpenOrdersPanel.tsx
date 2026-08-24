@@ -32,11 +32,18 @@ export function OpenOrdersPanel({
     let alive = true;
     const load = () =>
       listOpenOrders(branchId)
-        .then((d) => { if (alive) setOrders(d.orders); })
-        .catch(() => { if (alive) setOrders((prev) => prev ?? []); });
+        .then((d) => {
+          if (alive) setOrders(d.orders);
+        })
+        .catch(() => {
+          if (alive) setOrders((prev) => prev ?? []);
+        });
     void load();
     const t = setInterval(load, 4000);
-    return () => { alive = false; clearInterval(t); };
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
   }, [branchId]);
 
   async function resume(id: string) {
@@ -71,8 +78,13 @@ export function OpenOrdersPanel({
         tableId: o.table_id,
         tableName: o.table,
         covers: o.covers,
+        // Resuming a server OPEN order → emptying the cart should void it.
+        resumedOpenOrder: true,
       });
-      toast.show({ message: `Resumed ${o.table ? `Table ${o.table}` : o.order_type}.`, variant: "success" });
+      toast.show({
+        message: `Resumed ${o.table ? `Table ${o.table}` : o.order_type}.`,
+        variant: "success",
+      });
       onClose();
     } catch {
       toast.show({ message: "Could not load that order (offline?).", variant: "destructive" });
@@ -82,16 +94,26 @@ export function OpenOrdersPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg bg-background p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg bg-background p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Open orders</h2>
-          <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Close
+          </Button>
         </div>
         {orders === null ? (
           <p className="p-4 text-sm text-muted-foreground">Loading…</p>
         ) : orders.length === 0 ? (
-          <p className="p-6 text-center text-sm text-muted-foreground">No open orders. Start one above.</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            No open orders. Start one above.
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-2 overflow-auto sm:grid-cols-3">
             {orders.map((o) => (
@@ -103,7 +125,7 @@ export function OpenOrdersPanel({
                 className="rounded-md border p-3 text-left transition-colors hover:bg-accent disabled:opacity-50"
               >
                 <div className="font-semibold">
-                  {o.table ? `Table ${o.table}` : (o.held_label || (o.order_type ?? "Order"))}
+                  {o.table ? `Table ${o.table}` : o.held_label || (o.order_type ?? "Order")}
                 </div>
                 {/* Show the cashier's reference as a subtitle when it isn't
                     already the headline (i.e. a dine-in order WITH a table). */}
@@ -114,7 +136,9 @@ export function OpenOrdersPanel({
                   {statusLabel(o.order_status)} · {o.items.length} item(s)
                 </div>
                 <div className="mt-1 font-mono text-sm">Rs. {trim(o.grand_total)}</div>
-                {loadingId === o.id && <div className="text-[10px] text-muted-foreground">Loading…</div>}
+                {loadingId === o.id && (
+                  <div className="text-[10px] text-muted-foreground">Loading…</div>
+                )}
               </button>
             ))}
           </div>
@@ -126,10 +150,14 @@ export function OpenOrdersPanel({
 
 function statusLabel(s: string | null): string {
   switch (s) {
-    case "sent_to_kitchen": return "In kitchen";
-    case "ready": return "Ready";
-    case "served": return "Served";
-    default: return "Open";
+    case "sent_to_kitchen":
+      return "In kitchen";
+    case "ready":
+      return "Ready";
+    case "served":
+      return "Served";
+    default:
+      return "Open";
   }
 }
 function trim(s: string): string {

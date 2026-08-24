@@ -73,7 +73,7 @@ export default function HeldSalesRoute() {
       useSaleStore.getState().loadFromHold({
         clientUuid: row.client_uuid,
         lines,
-        customer: null,           // customer block isn't carried in V1 hold
+        customer: null, // customer block isn't carried in V1 hold
         cartDiscountPct: "0",
       });
       // Delete the placeholder while it is STILL held (is_held=1) — the delete

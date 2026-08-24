@@ -296,3 +296,20 @@ class OpenOrderView(APIView):
             cashier=request.user, payload=payload, request=request,
         )
         return Response(_order_detail_payload(invoice), status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        """Void (soft-delete) an open order so it leaves the book.
+
+        Called when a resumed open order has all its items removed (an empty
+        order is a voided order). Keyed on client_uuid. Idempotent: an unknown,
+        already-voided, or already-paid order returns 200 with voided=false so a
+        retry never errors.
+        """
+        client_uuid = request.query_params.get("client_uuid") or request.data.get("client_uuid")
+        if not client_uuid:
+            raise ValidationError({"client_uuid": "Required."})
+        invoice = services.void_open_order(
+            tenant_id=request.tenant_id, client_uuid=client_uuid,
+            user=request.user, request=request,
+        )
+        return Response({"voided": invoice is not None}, status=status.HTTP_200_OK)

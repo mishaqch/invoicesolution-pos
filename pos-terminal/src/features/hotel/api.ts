@@ -184,10 +184,15 @@ export interface ServerInvoiceRow {
   }[];
 }
 
-/** List this terminal's server invoices (for online merge into Today's list). */
+/** List this terminal's server invoices (for online merge into Today's list).
+ *  held=false is CRITICAL: Today's invoices must show only real (charged) sales,
+ *  never open/held restaurant orders. Without this filter the mirror pulled held
+ *  orders and cached them locally as is_held=0, so parked/open orders wrongly
+ *  appeared as today's sales. */
 export function listServerInvoices(params: { terminal?: string; limit?: number } = {}) {
   const q = new URLSearchParams();
   if (params.terminal) q.set("terminal", params.terminal);
+  q.set("held", "false");
   q.set("page_size", String(params.limit ?? 200));
   return api<{ results: ServerInvoiceRow[] } | ServerInvoiceRow[]>(
     `/sales/invoices/?${q.toString()}`,

@@ -181,6 +181,38 @@ def set_order_status(invoice: Invoice, status: str, *, user=None, request=None) 
     return invoice
 
 
+@transaction.atomic
+def void_open_order(*, tenant_id, client_uuid, user=None, request=None) -> Invoice | None:
+    """Remove an OPEN restaurant order from the book (soft-delete).
+
+    Called when a cashier resumes an open order and removes all its items (an
+    empty order is a voided order) — top-POS behaviour. We soft-delete (set
+    deleted_at) rather than hard-delete so the audit trail is preserved, which
+    also drops it from open_orders_qs (filters deleted_at__isnull=True).
+
+    Idempotent + safe: only voids a row that is STILL held and not yet paid
+    (is_held=True). A finalized/paid invoice is never touched — a missing or
+    already-finalized order is a no-op (returns None) so a retry never errors.
+    """
+    invoice = (
+        Invoice.objects.for_tenant(tenant_id)
+        .filter(client_uuid=client_uuid, is_held=True, deleted_at__isnull=True)
+        .filter(order_type__isnull=False)  # restaurant orders only
+        .first()
+    )
+    if invoice is None:
+        return None
+    invoice.deleted_at = timezone.now()
+    invoice.save(update_fields=["deleted_at", "updated_at"])
+    audit.log(
+        tenant_id=tenant_id, user=user, entity_type="invoice",
+        entity_id=invoice.id, action="open_order_void",
+        before={"is_held": True}, after={"deleted_at": str(invoice.deleted_at)},
+        request=request,
+    )
+    return invoice
+
+
 def open_orders_qs(tenant_id, *, branch_id=None):
     """Held (open) restaurant orders for a tenant, optionally one branch."""
     qs = (

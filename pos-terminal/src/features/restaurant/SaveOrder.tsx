@@ -44,7 +44,8 @@ export function SaveOrder({
     const suggested = st0.tableName ? `Table ${st0.tableName}` : "";
     const label = await prompt({
       title: "Save order",
-      description: "Add a reference so you can find this order later (e.g. customer name or a landmark).",
+      description:
+        "Add a reference so you can find this order later (e.g. customer name or a landmark).",
       placeholder: "e.g. Ahmed / Table 5 / red shirt guy",
       initialValue: suggested,
       confirmLabel: "Save order",

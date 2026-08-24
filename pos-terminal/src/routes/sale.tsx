@@ -1,5 +1,5 @@
 import { RefreshCw, Settings } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -7,6 +7,7 @@ import { buildCartLineFromProduct } from "@/features/sale/addToCart";
 import { OrderTypeBar } from "@/features/restaurant/OrderTypeBar";
 import { SendToKitchen } from "@/features/restaurant/SendToKitchen";
 import { SaveOrder } from "@/features/restaurant/SaveOrder";
+import { voidOpenOrder } from "@/features/restaurant/api";
 import {
   ModifierPicker,
   fetchModifierGroups,
@@ -46,6 +47,24 @@ export default function SaleRoute() {
   // Restaurant tenants get the order-type bar + send-to-kitchen; every other
   // vertical sees the exact current screen (no behaviour change).
   const isRestaurant = tenant?.vertical === "restaurant";
+
+  // Void-on-empty: if the cashier resumes a saved OPEN order and then removes
+  // ALL its items, an empty order is a voided order — drop it from the server
+  // "Open orders" book (soft-delete) and reset to a fresh cart. Fires once:
+  // resetForNewSale() clears resumedOpenOrderUuid so it won't re-trigger.
+  const resumedOpenOrderUuid = useSaleStore((s) => s.resumedOpenOrderUuid);
+  useEffect(() => {
+    if (!isRestaurant) return;
+    if (!resumedOpenOrderUuid) return;
+    if (lines.length > 0) return;
+    // Cart of a resumed open order just went empty → void it server-side.
+    void voidOpenOrder(resumedOpenOrderUuid)
+      .catch(() => {}) // best-effort; the panel also auto-refreshes
+      .finally(() => {
+        useSaleStore.getState().resetForNewSale();
+        toast.show({ message: "Order emptied — removed from Open orders.", variant: "success" });
+      });
+  }, [isRestaurant, resumedOpenOrderUuid, lines.length, toast]);
 
   // Pending modifier-picker state: when a restaurant menu item has modifier
   // groups we hold the would-be cart line until the cashier picks options.

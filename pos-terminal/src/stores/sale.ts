@@ -77,6 +77,11 @@ interface SaleState {
   tableName: string | null;
   covers: number | null;
 
+  // When a saved OPEN order is resumed, its client_uuid is stored here so that
+  // emptying the cart (removing all items) can VOID that server order — an empty
+  // order is a voided order. Null for a fresh cart (nothing to void).
+  resumedOpenOrderUuid: string | null;
+
   addLine: (line: Omit<CartLine, "id" | "quantity"> & { quantity?: string }) => void;
   updateLine: (id: string, patch: Partial<CartLine>) => void;
   removeLine: (id: string) => void;
@@ -97,10 +102,13 @@ interface SaleState {
     tableId?: string | null;
     tableName?: string | null;
     covers?: number | null;
+    // True when resuming a server OPEN order (so emptying it voids it). Retail
+    // held-sales recall omits this → the cart is fresh, nothing to void.
+    resumedOpenOrder?: boolean;
   }) => void;
 }
 
-const blank = (): Pick<SaleState, "clientUuid" | "stage" | "lines" | "customer" | "cartDiscountPct" | "orderType" | "tableId" | "tableName" | "covers"> => ({
+const blank = (): Pick<SaleState, "clientUuid" | "stage" | "lines" | "customer" | "cartDiscountPct" | "orderType" | "tableId" | "tableName" | "covers" | "resumedOpenOrderUuid"> => ({
   clientUuid: newClientUuid(),
   stage: "empty",
   lines: [],
@@ -110,6 +118,7 @@ const blank = (): Pick<SaleState, "clientUuid" | "stage" | "lines" | "customer" 
   tableId: null,
   tableName: null,
   covers: null,
+  resumedOpenOrderUuid: null,
 });
 
 export const useSaleStore = create<SaleState>((set, get) => ({
@@ -182,6 +191,9 @@ export const useSaleStore = create<SaleState>((set, get) => ({
       tableName: payload.tableName ?? null,
       covers: payload.covers ?? null,
       stage: payload.lines.length > 0 ? "has_items" : "empty",
+      // Remember this is a resumed OPEN order so emptying it can void it.
+      // (Retail held-sales recall passes no flag → stays null, nothing to void.)
+      resumedOpenOrderUuid: payload.resumedOpenOrder ? payload.clientUuid : null,
     }),
 }));
 

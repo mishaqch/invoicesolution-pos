@@ -27,7 +27,9 @@ export function TotalsPane({ onHold }: Props) {
   // Discount is typed then committed to the cart on tap — no manager approval
   // (restaurant/hotel: cashiers apply discounts directly).
   const [pendingDiscount, setPendingDiscount] = useState(cartDiscountPct);
-  useEffect(() => { setPendingDiscount(cartDiscountPct); }, [cartDiscountPct]);
+  useEffect(() => {
+    setPendingDiscount(cartDiscountPct);
+  }, [cartDiscountPct]);
   const discountDirty = pendingDiscount !== cartDiscountPct;
 
   const totals = quoteCart({ lines, cartDiscountPct });
