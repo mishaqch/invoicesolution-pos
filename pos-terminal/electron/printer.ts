@@ -39,14 +39,14 @@ interface ReceiptInput {
   branch_name: string;
   ntn: string;
   address?: string;
-  contact?: string;   // business phone / contact number (header)
+  contact?: string; // business phone / contact number (header)
   // Restaurant only — shown under the title so the customer sees dine-in/table.
   order_type?: string | null;
   table_name?: string | null;
   invoice: PosInvoiceInput;
   items: PosSaleItemInput[];
   payments: PosPaymentInput[];
-  width: 48 | 32;   // 80mm or 58mm
+  width: 48 | 32; // 80mm or 58mm
   // Non-fiscal tenants (fbr_connection_type="none", e.g. the TDCP resort) are
   // not connected to any tax authority. Their receipts must omit BOTH the FBR
   // QR/number block AND the "FBR pending" notice, and print a plain resort
@@ -97,7 +97,6 @@ const HEADER_TAG = "\x00HDR\x00";
 
 // Caption printed centered + bold directly under the receipt logo image.
 const RECEIPT_LOGO_CAPTION = "TDCP Resort Kallar Kahar";
-
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -170,7 +169,6 @@ function resolveAssetPath(rel: string): string | null {
 function resolveReceiptLogoPath(): string | null {
   return resolveAssetPath("receipt-logo.png");
 }
-
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -271,7 +269,10 @@ export async function testPrint(overrideInterface?: string): Promise<PrintResult
     await printer.execute();
     return { success: true };
   } catch (e) {
-    return { success: false, reason: `test print failed: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      success: false,
+      reason: `test print failed: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
 }
 
@@ -298,12 +299,12 @@ interface KotItem {
   item_note?: string | null;
 }
 interface KotInput {
-  order_number: string;       // local invoice / order #
-  order_type: string;         // dine_in / takeaway / delivery
+  order_number: string; // local invoice / order #
+  order_type: string; // dine_in / takeaway / delivery
   table_name?: string | null;
   covers?: number | null;
-  time: string;               // "19:32"
-  items: KotItem[];           // ONLY the newly-fired items
+  time: string; // "19:32"
+  items: KotItem[]; // ONLY the newly-fired items
   width: 48 | 32;
   // A human reference for the order (the cashier's label, e.g. "Ahmed"). Shown
   // as the destination when there is no table, so the kitchen sees a meaningful
@@ -325,18 +326,29 @@ export async function printKOT(input: KotInput): Promise<PrintResult> {
   const printerUrl = resolvePrinterInterface();
   const plain = renderKotText(input);
   if (!printerUrl) {
-    const fallback = writeFallback(`kot-${input.order_number}-${input.time.replace(/\D/g, "")}`, plain);
+    const fallback = writeFallback(
+      `kot-${input.order_number}-${input.time.replace(/\D/g, "")}`,
+      plain,
+    );
     return { success: false, reason: "no printer configured", fallbackPath: fallback };
   }
   const timeout = printerUrl.startsWith("cups://") ? 30_000 : TIMEOUT_MS;
   try {
     return await withTimeout(realPrintKOT(input, printerUrl), timeout, () => {
       const fallback = writeFallback(`kot-${input.order_number}`, plain);
-      return { success: false, reason: `KOT printer timeout (${timeout / 1000}s)`, fallbackPath: fallback };
+      return {
+        success: false,
+        reason: `KOT printer timeout (${timeout / 1000}s)`,
+        fallbackPath: fallback,
+      };
     });
   } catch (e) {
     const fallback = writeFallback(`kot-${input.order_number}`, plain);
-    return { success: false, reason: `KOT print error: ${e instanceof Error ? e.message : String(e)}`, fallbackPath: fallback };
+    return {
+      success: false,
+      reason: `KOT print error: ${e instanceof Error ? e.message : String(e)}`,
+      fallbackPath: fallback,
+    };
   }
 }
 
@@ -383,7 +395,7 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   printer.setTextSize(1, 1);
   const dest = input.table_name
     ? `TABLE ${input.table_name}`
-    : (input.reference?.trim() || input.order_type.replace("_", " ").toUpperCase());
+    : input.reference?.trim() || input.order_type.replace("_", " ").toUpperCase();
   printer.println(dest);
   printer.setTextNormal();
   printer.bold(false);
@@ -417,7 +429,10 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
     await printer.execute();
     return { success: true };
   } catch (e) {
-    return { success: false, reason: `KOT execute failed: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      success: false,
+      reason: `KOT execute failed: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
 }
 
@@ -431,7 +446,7 @@ interface FolioBillInput {
   contact?: string;
   ntn?: string;
   width: 48 | 32;
-  is_fiscal?: boolean;          // resort tenants → false (plain, no FBR block)
+  is_fiscal?: boolean; // resort tenants → false (plain, no FBR block)
   folio: {
     folio_number: string;
     guest: { name: string; cnic: string; phone: string };
@@ -440,7 +455,22 @@ interface FolioBillInput {
     check_out: string | null;
     nights: number;
     rooms?: { number: string; type: string; nights: number }[];
-    days: { date: string; charges: { kind: string; room_number?: string | null; room_type?: string | null; items: { name: string; quantity: string; unit_price?: string; line_total: string; note?: string }[]; total: string }[] }[];
+    days: {
+      date: string;
+      charges: {
+        kind: string;
+        room_number?: string | null;
+        room_type?: string | null;
+        items: {
+          name: string;
+          quantity: string;
+          unit_price?: string;
+          line_total: string;
+          note?: string;
+        }[];
+        total: string;
+      }[];
+    }[];
     subtotal: string;
     tax_total: string;
     grand_total: string;
@@ -468,15 +498,27 @@ export async function printFolioBill(input: FolioBillInput): Promise<PrintResult
   try {
     return await withTimeout(realPrintFolio(text, input, printerUrl), timeout, () => {
       const fallback = writeFallback(fileKey, text);
-      return { success: false, reason: `folio printer timeout (${timeout / 1000}s)`, fallbackPath: fallback };
+      return {
+        success: false,
+        reason: `folio printer timeout (${timeout / 1000}s)`,
+        fallbackPath: fallback,
+      };
     });
   } catch (e) {
     const fallback = writeFallback(fileKey, text);
-    return { success: false, reason: `folio print error: ${e instanceof Error ? e.message : String(e)}`, fallbackPath: fallback };
+    return {
+      success: false,
+      reason: `folio print error: ${e instanceof Error ? e.message : String(e)}`,
+      fallbackPath: fallback,
+    };
   }
 }
 
-async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: string): Promise<PrintResult> {
+async function realPrintFolio(
+  text: string,
+  input: FolioBillInput,
+  printerUrl: string,
+): Promise<PrintResult> {
   let mod: any;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -516,7 +558,9 @@ async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: s
         printer.bold(true);
         printer.println(RECEIPT_LOGO_CAPTION);
         printer.bold(false);
-      } catch { /* styling unsupported — plain text still prints */ }
+      } catch {
+        /* styling unsupported — plain text still prints */
+      }
       printer.alignLeft();
       logoPrinted = true;
     } catch {
@@ -538,24 +582,31 @@ async function realPrintFolio(text: string, input: FolioBillInput, printerUrl: s
       printer.setTextNormal();
       printer.bold(false);
       printer.alignLeft();
-    } catch { /* styling unsupported — body still has the name */ }
+    } catch {
+      /* styling unsupported — body still has the name */
+    }
     if (bodyLines.length && bodyLines[0].startsWith(HEADER_TAG)) bodyLines.shift();
   }
   // Strip the header tag from any remaining tagged lines before printing.
-  for (const line of bodyLines) printer.println(line.startsWith(HEADER_TAG) ? line.slice(HEADER_TAG.length) : line);
+  for (const line of bodyLines)
+    printer.println(line.startsWith(HEADER_TAG) ? line.slice(HEADER_TAG.length) : line);
   printer.cut();
   if (transport.kind !== "direct") return flushBuffer(transport, printer.getBuffer());
   try {
     await printer.execute();
     return { success: true };
   } catch (e) {
-    return { success: false, reason: `folio execute failed: ${e instanceof Error ? e.message : String(e)}` };
+    return {
+      success: false,
+      reason: `folio execute failed: ${e instanceof Error ? e.message : String(e)}`,
+    };
   }
 }
 
 function renderFolioText(input: FolioBillInput): string {
   const W = input.width;
-  const center = (s: string) => (s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s);
+  const center = (s: string) =>
+    s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s;
   const rule = "-".repeat(W);
   const row = (k: string, v: string) => {
     const pad = Math.max(1, W - k.length - v.length);
@@ -600,7 +651,11 @@ function renderFolioText(input: FolioBillInput): string {
         const it = ch.items[0];
         // Room TYPE + number so the bill clearly says which room (e.g.
         // "VIP - Room 102"), not just a bare number.
-        const title = (ch.room_type ? `${ch.room_type} - Room ${ch.room_number ?? ""}` : `Room ${ch.room_number ?? ""}`).trim();
+        const title = (
+          ch.room_type
+            ? `${ch.room_type} - Room ${ch.room_number ?? ""}`
+            : `Room ${ch.room_number ?? ""}`
+        ).trim();
         L.push(row(title.slice(0, W - 12), money2(ch.total)));
         if (it) {
           const n = qtyFmt(it.quantity);
@@ -650,13 +705,14 @@ function renderFolioText(input: FolioBillInput): string {
 
 function renderKotText(input: KotInput): string {
   const W = input.width;
-  const center = (s: string) => (s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s);
+  const center = (s: string) =>
+    s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s;
   const rule = "-".repeat(W);
   const lines: string[] = [center("KITCHEN")];
   if (input.is_additional) lines.push(center("** ADDITIONAL ORDER **"));
   const dest = input.table_name
     ? `TABLE ${input.table_name}`
-    : (input.reference?.trim() || input.order_type.toUpperCase());
+    : input.reference?.trim() || input.order_type.toUpperCase();
   lines.push(center(dest));
   lines.push(`Order ${input.order_number}   ${input.time}`);
   if (input.reference && input.table_name) lines.push(`Ref: ${input.reference}`);
@@ -670,7 +726,6 @@ function renderKotText(input: KotInput): string {
   lines.push(rule);
   return lines.join("\n");
 }
-
 
 // ---------------------------------------------------------------------------
 // Real printing via node-thermal-printer
@@ -749,7 +804,7 @@ async function realPrint(
 
   if (input.contact) {
     printer.bold(true);
-    printer.setTextSize(1, 1);          // a notch larger than body text
+    printer.setTextSize(1, 1); // a notch larger than body text
     printer.println(`Contact #: ${input.contact}`);
     printer.setTextNormal();
   }
@@ -798,9 +853,17 @@ async function realPrint(
       // Fallback: stacked logo + native QR if the composite couldn't be built.
       const logoPath = resolveFbrLogoPath();
       if (logoPath) {
-        try { await printer.printImage(logoPath); } catch { /* ignore */ }
+        try {
+          await printer.printImage(logoPath);
+        } catch {
+          /* ignore */
+        }
       }
-      try { await printer.printQR(fbrNo, { cellSize: 6 }); } catch { /* ignore */ }
+      try {
+        await printer.printQR(fbrNo, { cellSize: 6 });
+      } catch {
+        /* ignore */
+      }
     }
     printer.alignCenter();
     printer.bold(true);
@@ -845,10 +908,18 @@ function resolveTransport(printerUrl: string): {
   ctorInterface: string;
 } {
   if (printerUrl.startsWith("cups://")) {
-    return { kind: "cups", target: printerUrl.slice("cups://".length).replace(/\/+$/, ""), ctorInterface: "tcp://127.0.0.1:1" };
+    return {
+      kind: "cups",
+      target: printerUrl.slice("cups://".length).replace(/\/+$/, ""),
+      ctorInterface: "tcp://127.0.0.1:1",
+    };
   }
   if (isWindowsInterface(printerUrl)) {
-    return { kind: "windows", target: windowsPrinterName(printerUrl), ctorInterface: "tcp://127.0.0.1:1" };
+    return {
+      kind: "windows",
+      target: windowsPrinterName(printerUrl),
+      ctorInterface: "tcp://127.0.0.1:1",
+    };
   }
   return { kind: "direct", target: printerUrl, ctorInterface: printerUrl };
 }
@@ -873,13 +944,16 @@ function printViaCups(buffer: Buffer, queue: string): Promise<PrintResult> {
   const { existsSync } = require("node:fs") as typeof import("node:fs");
   // Electron GUI processes inherit a MINIMAL PATH (often missing /usr/bin), so
   // bare "lp" can fail to spawn (ENOENT). Use an absolute path to the CUPS lp.
-  const lpBin = ["/usr/bin/lp", "/usr/local/bin/lp", "/opt/homebrew/bin/lp"]
-    .find((p) => existsSync(p)) ?? "lp";
+  const lpBin =
+    ["/usr/bin/lp", "/usr/local/bin/lp", "/opt/homebrew/bin/lp"].find((p) => existsSync(p)) ?? "lp";
   console.log(`[printer] CUPS print via ${lpBin} -d ${queue} (${buffer.length} bytes)`);
   return new Promise((resolve) => {
     let settled = false;
     const finish = (r: PrintResult) => {
-      if (!settled) { settled = true; resolve(r); }
+      if (!settled) {
+        settled = true;
+        resolve(r);
+      }
     };
     let lp;
     try {
@@ -889,7 +963,9 @@ function printViaCups(buffer: Buffer, queue: string): Promise<PrintResult> {
       return finish({ success: false, reason: `lp spawn failed: ${e}` });
     }
     let stderr = "";
-    lp.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+    lp.stderr?.on("data", (d: Buffer) => {
+      stderr += d.toString();
+    });
     lp.on("error", (e: Error) => {
       console.error("[printer] lp error:", e.message);
       finish({ success: false, reason: `lp error: ${e.message}` });
@@ -907,9 +983,7 @@ function printViaCups(buffer: Buffer, queue: string): Promise<PrintResult> {
   });
 }
 
-async function realOpenDrawer(
-  printerUrl: string,
-): Promise<{ success: boolean; reason?: string }> {
+async function realOpenDrawer(printerUrl: string): Promise<{ success: boolean; reason?: string }> {
   let mod: any;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -932,7 +1006,7 @@ async function realOpenDrawer(
       return { success: false, reason: `printer unreachable at ${printerUrl}` };
     }
   }
-  printer.openCashDrawer();   // ESC p 0 25 250 under the hood
+  printer.openCashDrawer(); // ESC p 0 25 250 under the hood
   if (transport.kind !== "direct") {
     return flushBuffer(transport, printer.getBuffer());
   }
@@ -940,22 +1014,16 @@ async function realOpenDrawer(
   return { success: true };
 }
 
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  onTimeout: () => T,
-): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
   return Promise.race([
     promise,
     new Promise<T>((resolve) => setTimeout(() => resolve(onTimeout()), ms)),
   ]);
 }
-
 
 // ---------------------------------------------------------------------------
 // Renderer (text-mode receipt body — same for real + fallback paths)
