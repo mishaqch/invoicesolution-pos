@@ -305,6 +305,14 @@ interface KotInput {
   time: string;               // "19:32"
   items: KotItem[];           // ONLY the newly-fired items
   width: 48 | 32;
+  // A human reference for the order (the cashier's label, e.g. "Ahmed"). Shown
+  // as the destination when there is no table, so the kitchen sees a meaningful
+  // name instead of a hex order id.
+  reference?: string | null;
+  // True when this ticket adds items to an order ALREADY sent to the kitchen —
+  // prints a loud "ADDITIONAL ORDER" banner so the cook knows it's a follow-up
+  // to the same order (same order_number), not a brand-new order.
+  is_additional?: boolean;
 }
 
 /**
@@ -361,13 +369,28 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   printer.setTextDoubleWidth();
   printer.println("KITCHEN");
   printer.setTextNormal();
+  // Loud banner so the cook knows this ticket ADDS to an order already fired
+  // (same order number) rather than being a new order.
+  if (input.is_additional) {
+    printer.bold(true);
+    printer.setTextDoubleHeight();
+    printer.println("** ADDITIONAL ORDER **");
+    printer.setTextNormal();
+  }
   printer.bold(true);
-  // Destination line: table for dine-in, otherwise the order type.
+  // Destination line: table for dine-in; else the cashier's reference/label;
+  // else the order type. (Never lead with the hex order id.)
   printer.setTextSize(1, 1);
-  printer.println(input.table_name ? `TABLE ${input.table_name}` : input.order_type.replace("_", " ").toUpperCase());
+  const dest = input.table_name
+    ? `TABLE ${input.table_name}`
+    : (input.reference?.trim() || input.order_type.replace("_", " ").toUpperCase());
+  printer.println(dest);
   printer.setTextNormal();
   printer.bold(false);
+  // Keep the order id on the ticket (small) so the SAME reference ties the
+  // follow-up ticket back to the original — but it's no longer the headline.
   printer.println(`Order ${input.order_number}   ${input.time}`);
+  if (input.reference && input.table_name) printer.println(`Ref: ${input.reference}`);
   if (input.covers) printer.println(`Covers: ${input.covers}`);
   printer.drawLine();
   printer.alignLeft();
@@ -630,8 +653,13 @@ function renderKotText(input: KotInput): string {
   const center = (s: string) => (s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s);
   const rule = "-".repeat(W);
   const lines: string[] = [center("KITCHEN")];
-  lines.push(center(input.table_name ? `TABLE ${input.table_name}` : input.order_type.toUpperCase()));
+  if (input.is_additional) lines.push(center("** ADDITIONAL ORDER **"));
+  const dest = input.table_name
+    ? `TABLE ${input.table_name}`
+    : (input.reference?.trim() || input.order_type.toUpperCase());
+  lines.push(center(dest));
   lines.push(`Order ${input.order_number}   ${input.time}`);
+  if (input.reference && input.table_name) lines.push(`Ref: ${input.reference}`);
   if (input.covers) lines.push(`Covers: ${input.covers}`);
   lines.push(rule);
   for (const it of input.items) {

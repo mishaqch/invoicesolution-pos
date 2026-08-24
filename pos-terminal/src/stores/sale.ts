@@ -22,11 +22,11 @@ export interface CartLine {
   product_sku: string;
   uom_code: string;
   hs_code: string | null;
-  quantity: string;          // 4dp string
-  unit_price: string;        // 4dp string
-  discount_pct: string;      // 0–100, 2dp string
-  discount_amount: string;   // 4dp string (extra fixed discount)
-  tax_rate: string;          // 0–100
+  quantity: string; // 4dp string
+  unit_price: string; // 4dp string
+  discount_pct: string; // 0–100, 2dp string
+  discount_amount: string; // 4dp string (extra fixed discount)
+  tax_rate: string; // 0–100
   is_taxable: boolean;
   notes?: string;
   // FEFO (pharmacy / batch-tracked goods): the specific batch this line draws
@@ -39,8 +39,8 @@ export interface CartLine {
   // Restaurant (F&B): chosen modifiers (name + price delta). Their deltas are
   // folded into unit_price so totals/tax stay correct; kept for receipt + KOT.
   modifiers?: { name: string; price: string }[];
-  item_note?: string | null;          // kitchen note: "no onions"
-  course?: number | null;             // firing course
+  item_note?: string | null; // kitchen note: "no onions"
+  course?: number | null; // firing course
   // True once this line has been fired to the kitchen, so re-firing a KOT only
   // prints newly-added lines.
   sent_to_kitchen?: boolean;
@@ -58,18 +58,14 @@ export interface SelectedCustomer {
   province: string | null;
 }
 
-export type SaleStage =
-  | "empty"
-  | "has_items"
-  | "payment"
-  | "success";
+export type SaleStage = "empty" | "has_items" | "payment" | "success";
 
 interface SaleState {
   clientUuid: string;
   stage: SaleStage;
   lines: CartLine[];
   customer: SelectedCustomer | null;
-  cartDiscountPct: string;     // 0–100
+  cartDiscountPct: string; // 0–100
 
   // Restaurant order context (null/undefined for non-restaurant verticals).
   orderType: OrderType | null;
@@ -82,6 +78,10 @@ interface SaleState {
   // order is a voided order. Null for a fresh cart (nothing to void).
   resumedOpenOrderUuid: string | null;
 
+  // The cashier's reference/label for a saved order (e.g. "Ahmed"). Carried so
+  // the KOT and Open-orders views can show a human name instead of a hex id.
+  heldLabel: string | null;
+
   addLine: (line: Omit<CartLine, "id" | "quantity"> & { quantity?: string }) => void;
   updateLine: (id: string, patch: Partial<CartLine>) => void;
   removeLine: (id: string) => void;
@@ -89,7 +89,12 @@ interface SaleState {
 
   setCustomer: (c: SelectedCustomer | null) => void;
   setCartDiscountPct: (pct: string) => void;
-  setOrderContext: (ctx: { orderType: OrderType | null; tableId?: string | null; tableName?: string | null; covers?: number | null }) => void;
+  setOrderContext: (ctx: {
+    orderType: OrderType | null;
+    tableId?: string | null;
+    tableName?: string | null;
+    covers?: number | null;
+  }) => void;
 
   setStage: (s: SaleStage) => void;
   resetForNewSale: () => void;
@@ -105,10 +110,25 @@ interface SaleState {
     // True when resuming a server OPEN order (so emptying it voids it). Retail
     // held-sales recall omits this → the cart is fresh, nothing to void.
     resumedOpenOrder?: boolean;
+    // The order's reference/label (e.g. "Ahmed"), restored on resume.
+    heldLabel?: string | null;
   }) => void;
 }
 
-const blank = (): Pick<SaleState, "clientUuid" | "stage" | "lines" | "customer" | "cartDiscountPct" | "orderType" | "tableId" | "tableName" | "covers" | "resumedOpenOrderUuid"> => ({
+const blank = (): Pick<
+  SaleState,
+  | "clientUuid"
+  | "stage"
+  | "lines"
+  | "customer"
+  | "cartDiscountPct"
+  | "orderType"
+  | "tableId"
+  | "tableName"
+  | "covers"
+  | "resumedOpenOrderUuid"
+  | "heldLabel"
+> => ({
   clientUuid: newClientUuid(),
   stage: "empty",
   lines: [],
@@ -119,6 +139,7 @@ const blank = (): Pick<SaleState, "clientUuid" | "stage" | "lines" | "customer" 
   tableName: null,
   covers: null,
   resumedOpenOrderUuid: null,
+  heldLabel: null,
 });
 
 export const useSaleStore = create<SaleState>((set, get) => ({
@@ -194,6 +215,7 @@ export const useSaleStore = create<SaleState>((set, get) => ({
       // Remember this is a resumed OPEN order so emptying it can void it.
       // (Retail held-sales recall passes no flag → stays null, nothing to void.)
       resumedOpenOrderUuid: payload.resumedOpenOrder ? payload.clientUuid : null,
+      heldLabel: payload.heldLabel ?? null,
     }),
 }));
 
@@ -257,7 +279,14 @@ export function quoteCart(state: Pick<SaleState, "lines" | "cartDiscountPct">): 
     }
     const tax = l.is_taxable ? net.applyPct(l.tax_rate || "0") : Money.zero();
     const lineTotal = net.add(tax);
-    return { ...l, gross, line_discount: lineDiscount, net, tax_amount: tax, line_total: lineTotal };
+    return {
+      ...l,
+      gross,
+      line_discount: lineDiscount,
+      net,
+      tax_amount: tax,
+      line_total: lineTotal,
+    };
   });
 
   const subtotal = quoted.reduce((acc, q) => acc.add(q.gross), Money.zero());

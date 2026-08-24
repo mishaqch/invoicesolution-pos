@@ -80,6 +80,8 @@ export function OpenOrdersPanel({
         covers: o.covers,
         // Resuming a server OPEN order → emptying the cart should void it.
         resumedOpenOrder: true,
+        // Carry the reference so a follow-up KOT shows the name, not a hex id.
+        heldLabel: o.held_label,
       });
       toast.show({
         message: `Resumed ${o.table ? `Table ${o.table}` : o.order_type}.`,

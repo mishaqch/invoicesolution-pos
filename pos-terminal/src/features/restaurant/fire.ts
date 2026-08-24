@@ -88,6 +88,12 @@ export async function fireUnsentToKitchen(opts: {
       table_name: st.tableName,
       covers: st.covers,
       time,
+      // Human reference for the ticket when there's no table (label or walk-in
+      // name), so the kitchen sees a meaningful name, not just a hex order id.
+      reference: st.heldLabel ?? st.customer?.name ?? null,
+      // ADDITIONAL ORDER when some lines were already sent — this is a follow-up
+      // fire on the SAME order (same order_number), not a brand-new order.
+      is_additional: allLines.some((l) => l.sent_to_kitchen),
       items: unsent.map((l) => ({
         product_name: l.product_name,
         quantity: l.quantity,
