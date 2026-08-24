@@ -46,6 +46,9 @@ export interface FireOrderPayload {
   buyer_name?: string | null;
   buyer_phone?: string | null;
   cart_discount_pct?: string;
+  // true = "Send to kitchen" (fire: KDS + KOT). false = "Save order" (park in
+  // Open orders without alerting the kitchen). Omitted = true (server default).
+  fire?: boolean;
   cart_lines: {
     product: string;
     quantity: string;
@@ -57,6 +60,9 @@ export interface FireOrderPayload {
     modifiers: { name: string; price: string }[];
     item_note: string | null;
     course: number | null;
+    // Per-line fired flag — preserved across save/re-fire so a "Save order"
+    // never un-fires a line that already went to the kitchen.
+    sent_to_kitchen?: boolean;
   }[];
 }
 

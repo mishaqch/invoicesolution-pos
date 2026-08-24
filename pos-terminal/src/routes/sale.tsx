@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { buildCartLineFromProduct } from "@/features/sale/addToCart";
 import { OrderTypeBar } from "@/features/restaurant/OrderTypeBar";
 import { SendToKitchen } from "@/features/restaurant/SendToKitchen";
+import { SaveOrder } from "@/features/restaurant/SaveOrder";
 import { ModifierPicker, fetchModifierGroups, type ChosenModifiers } from "@/features/restaurant/ModifierPicker";
 import { Money, rs } from "@/lib/money";
 import { CartPane } from "@/features/sale/CartPane";
@@ -369,7 +370,11 @@ export default function SaleRoute() {
             <CartPane />
           </div>
           {isRestaurant && lines.length > 0 && (
-            <div className="border-t p-2">
+            <div className="grid grid-cols-2 gap-2 border-t p-2">
+              {/* Save order = park in Open orders WITHOUT firing the kitchen
+                  (step away to another table). Send to kitchen = park AND fire
+                  (KOT + KDS). Both clear the screen for the next order. */}
+              <SaveOrder branchId={ctx.branch?.id ?? null} terminalId={ctx.terminal?.id ?? null} />
               <SendToKitchen branchId={ctx.branch?.id ?? null} terminalId={ctx.terminal?.id ?? null} />
             </div>
           )}

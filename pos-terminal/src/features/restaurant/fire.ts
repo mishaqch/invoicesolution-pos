@@ -55,6 +55,7 @@ export async function fireUnsentToKitchen(opts: {
         buyer_name: st.customer?.name ?? null,
         buyer_phone: st.customer?.phone ?? null,
         cart_discount_pct: st.cartDiscountPct,
+        fire: true,
         cart_lines: allLines.map((l) => ({
           product: l.product_id,
           quantity: l.quantity,
@@ -66,6 +67,7 @@ export async function fireUnsentToKitchen(opts: {
           modifiers: l.modifiers ?? [],
           item_note: l.item_note ?? null,
           course: l.course ?? null,
+          sent_to_kitchen: l.sent_to_kitchen ?? false,
         })),
       });
       serverOk = true;
@@ -105,4 +107,69 @@ export async function fireUnsentToKitchen(opts: {
   }
 
   return { fired: unsent.length, serverOk, printOk, serverErr };
+}
+
+export interface SaveResult {
+  serverOk: boolean;
+  serverErr: string | null;
+}
+
+/**
+ * "Save order" — park the current cart in the server "Open orders" book WITHOUT
+ * alerting the kitchen (no KOT print, no KDS entry). This is the top-POS
+ * "Save/Send" action: it lets a cashier step away to another table before the
+ * customer has finalised, then resume this order later from Open orders.
+ *
+ * Difference vs fireUnsentToKitchen:
+ *   - order_status stays "open" (server-side), so it does NOT show on the KDS.
+ *   - no KOT is printed.
+ *   - lines are NOT marked sent_to_kitchen (already-fired lines keep their flag).
+ *
+ * It still upserts the FULL cart snapshot (idempotent on client_uuid), so the
+ * order appears in Open orders and its table reads as occupied on the floor.
+ */
+export async function saveOpenOrder(opts: {
+  branchId: string | null;
+  terminalId: string | null;
+  lines?: CartLine[];
+}): Promise<SaveResult> {
+  const st = useSaleStore.getState();
+  const allLines = opts.lines ?? st.lines;
+  if (allLines.length === 0) {
+    return { serverOk: false, serverErr: "empty cart" };
+  }
+  if (!opts.branchId || !opts.terminalId) {
+    return { serverOk: false, serverErr: "terminal not paired to a branch" };
+  }
+  try {
+    await fireOpenOrder({
+      client_uuid: st.clientUuid,
+      terminal: opts.terminalId,
+      branch: opts.branchId,
+      order_type: st.orderType,
+      table: st.tableId,
+      covers: st.covers,
+      buyer_name: st.customer?.name ?? null,
+      buyer_phone: st.customer?.phone ?? null,
+      cart_discount_pct: st.cartDiscountPct,
+      fire: false,
+      cart_lines: allLines.map((l) => ({
+        product: l.product_id,
+        quantity: l.quantity,
+        unit_price: l.unit_price,
+        discount_pct: l.discount_pct,
+        discount_amount: l.discount_amount,
+        tax_rate: l.tax_rate,
+        is_taxable: l.is_taxable,
+        modifiers: l.modifiers ?? [],
+        item_note: l.item_note ?? null,
+        course: l.course ?? null,
+        // Preserve any already-fired lines so saving doesn't un-fire them.
+        sent_to_kitchen: l.sent_to_kitchen ?? false,
+      })),
+    });
+    return { serverOk: true, serverErr: null };
+  } catch (err) {
+    return { serverOk: false, serverErr: err instanceof Error ? err.message : "network error" };
+  }
 }

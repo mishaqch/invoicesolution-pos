@@ -39,6 +39,13 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
     client_uuid = payload["client_uuid"]
     cart_lines = payload.get("cart_lines", [])
     quote = quote_cart(cart_lines, cart_discount_pct=payload.get("cart_discount_pct", 0))
+    # fire=True  → the cashier hit "Send to kitchen": the order goes on the KDS
+    #              (status sent_to_kitchen, kitchen_sent_at stamped, lines fired).
+    # fire=False → the cashier hit "Save order": the order is PARKED in Open
+    #              orders WITHOUT alerting the kitchen (status open, no KOT).
+    # Default True preserves the original single-button behaviour for callers
+    # (e.g. the auto-fire on Charge) that don't pass the flag.
+    fire = payload.get("fire", True)
 
     customer = None
     if payload.get("customer"):
@@ -61,8 +68,24 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
     invoice.order_type = payload.get("order_type")
     invoice.table_id = table_id
     invoice.covers = payload.get("covers")
-    invoice.order_status = "sent_to_kitchen"
-    invoice.kitchen_sent_at = timezone.now()
+    if fire:
+        # Firing: advance to sent_to_kitchen and stamp the time.
+        invoice.order_status = "sent_to_kitchen"
+        invoice.kitchen_sent_at = timezone.now()
+    else:
+        # Saving without firing: keep it "open". Never DOWNGRADE a previously
+        # fired order (re-saving an order that already has fired items must not
+        # pull it off the KDS) — only set "open" when nothing has been fired yet.
+        already_fired = (
+            not is_new
+            and (
+                invoice.kitchen_sent_at is not None
+                or invoice.items.filter(sent_to_kitchen=True).exists()
+            )
+        )
+        if not already_fired:
+            invoice.order_status = "open"
+            invoice.kitchen_sent_at = None
     invoice.held_label = payload.get("held_label")
     invoice.customer = customer
     if customer:
@@ -94,12 +117,22 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
             modifiers=line_input.get("modifiers") or [],
             course=line_input.get("course"),
             item_note=line_input.get("item_note"),
-            sent_to_kitchen=True,
+            # Per-line fired flag: honour what the client sends (it tracks this
+            # per cart line), else derive from the action. On a "Send to
+            # kitchen" (fire) every line is fired; on a "Save order" a line is
+            # fired only if it already was (preserved across the delete+recreate
+            # by the client echoing sent_to_kitchen back).
+            sent_to_kitchen=bool(line_input.get("sent_to_kitchen", fire)),
         )
 
+    # Audit action reflects fire vs save so the log tells them apart.
+    if fire:
+        action = "open_order_fire" if is_new else "open_order_refire"
+    else:
+        action = "open_order_save"
     audit.log(
         tenant_id=tenant_id, user=cashier, entity_type="invoice",
-        entity_id=invoice.id, action="open_order_fire" if is_new else "open_order_refire",
+        entity_id=invoice.id, action=action,
         after={"order_type": invoice.order_type, "table": str(table_id) if table_id else None},
         request=request,
     )
