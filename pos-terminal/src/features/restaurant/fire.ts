@@ -49,7 +49,8 @@ export async function fireUnsentToKitchen(opts: {
         client_uuid: st.clientUuid,
         terminal: opts.terminalId,
         branch: opts.branchId,
-        order_type: st.orderType,
+        // Default dine_in if unset so the order always shows in Open orders.
+        order_type: st.orderType ?? "dine_in",
         table: st.tableId,
         covers: st.covers,
         buyer_name: st.customer?.name ?? null,
@@ -149,7 +150,9 @@ export async function saveOpenOrder(opts: {
       client_uuid: st.clientUuid,
       terminal: opts.terminalId,
       branch: opts.branchId,
-      order_type: st.orderType,
+      // Default to dine_in when the cashier saved before choosing a type — a
+      // saved order must always carry an order_type so it shows in Open orders.
+      order_type: st.orderType ?? "dine_in",
       table: st.tableId,
       covers: st.covers,
       buyer_name: st.customer?.name ?? null,

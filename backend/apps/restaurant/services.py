@@ -214,11 +214,20 @@ def void_open_order(*, tenant_id, client_uuid, user=None, request=None) -> Invoi
 
 
 def open_orders_qs(tenant_id, *, branch_id=None):
-    """Held (open) restaurant orders for a tenant, optionally one branch."""
+    """Held (open) restaurant orders for a tenant, optionally one branch.
+
+    "Restaurant open order" = held + carries restaurant context. We key that on
+    order_status being set (every order created via the open-order flow gets one:
+    "open" when saved, "sent_to_kitchen" when fired). We do NOT require
+    order_type — a cashier can Save an order before choosing dine-in/takeaway,
+    and it must still show up here. (The old order_type__isnull=False filter
+    silently hid such saved orders.)
+    """
+    from django.db.models import Q
     qs = (
         Invoice.objects.for_tenant(tenant_id)
         .filter(is_held=True, deleted_at__isnull=True)
-        .filter(order_type__isnull=False)  # restaurant orders only
+        .filter(Q(order_status__isnull=False) | Q(order_type__isnull=False))
         .select_related("table", "customer")
         .prefetch_related("items")
         .order_by("kitchen_sent_at", "-id")
