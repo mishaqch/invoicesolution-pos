@@ -138,9 +138,7 @@ export function OpenOrdersPanel({
                   <span className={statusBadgeClass(o.order_status)}>
                     {statusLabel(o.order_status)}
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {o.items.length} item(s)
-                  </span>
+                  <span className="text-xs text-muted-foreground">{o.items.length} item(s)</span>
                 </div>
                 <div className="mt-1 font-mono text-sm">Rs. {trim(o.grand_total)}</div>
                 {loadingId === o.id && (
