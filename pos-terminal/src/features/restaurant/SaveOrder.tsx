@@ -37,14 +37,20 @@ export function SaveOrder({
     setBusy(true);
     const r = await saveOpenOrder({ branchId, terminalId });
     if (r.serverOk) {
-      toast.show({ message: "Order saved to Open orders (kitchen not notified).", variant: "success" });
+      toast.show({
+        message: "Order saved to Open orders (kitchen not notified).",
+        variant: "success",
+      });
       // Parked on the server → clear the front screen for the next order.
       const st = useSaleStore.getState();
       st.resetForNewSale();
       st.setStage("empty");
     } else {
       // Keep the cart so nothing is lost; the cashier can retry.
-      toast.show({ message: `Could not save the order: ${r.serverErr ?? "unknown error"}. Cart kept — try again.`, variant: "destructive" });
+      toast.show({
+        message: `Could not save the order: ${r.serverErr ?? "unknown error"}. Cart kept — try again.`,
+        variant: "destructive",
+      });
     }
     setBusy(false);
   }

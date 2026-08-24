@@ -7,7 +7,11 @@ import { buildCartLineFromProduct } from "@/features/sale/addToCart";
 import { OrderTypeBar } from "@/features/restaurant/OrderTypeBar";
 import { SendToKitchen } from "@/features/restaurant/SendToKitchen";
 import { SaveOrder } from "@/features/restaurant/SaveOrder";
-import { ModifierPicker, fetchModifierGroups, type ChosenModifiers } from "@/features/restaurant/ModifierPicker";
+import {
+  ModifierPicker,
+  fetchModifierGroups,
+  type ChosenModifiers,
+} from "@/features/restaurant/ModifierPicker";
 import { Money, rs } from "@/lib/money";
 import { CartPane } from "@/features/sale/CartPane";
 import { ProductGrid } from "@/features/sale/ProductGrid";
@@ -56,9 +60,15 @@ export default function SaleRoute() {
    * otherwise add straight away. Non-restaurant tenants always add directly.
    */
   const addWithModifiers = async (line: Parameters<typeof addLine>[0], productId: string) => {
-    if (!isRestaurant) { addLine(line); return; }
+    if (!isRestaurant) {
+      addLine(line);
+      return;
+    }
     const groups = await fetchModifierGroups(productId);
-    if (groups.length === 0) { addLine(line); return; }
+    if (groups.length === 0) {
+      addLine(line);
+      return;
+    }
     setPendingMods({ line, name: line.product_name, groups });
   };
 
@@ -219,10 +229,7 @@ export default function SaleRoute() {
     } catch (err) {
       console.error("Hold failed:", err);
       toast.show({
-        message: t(
-          "sale.hold_error",
-          "Could not hold sale — please try again.",
-        ),
+        message: t("sale.hold_error", "Could not hold sale — please try again."),
         variant: "destructive",
       });
     }
@@ -232,7 +239,14 @@ export default function SaleRoute() {
     return <Splash msg={t("sale.loading_catalog", "Loading catalog…")} />;
   }
   if (sync.status === "error") {
-    return <Splash msg={t("sale.network_error", "Could not reach the server: {{error}}", { error: sync.error })} variant="error" />;
+    return (
+      <Splash
+        msg={t("sale.network_error", "Could not reach the server: {{error}}", {
+          error: sync.error,
+        })}
+        variant="error"
+      />
+    );
   }
 
   return (
@@ -262,10 +276,17 @@ export default function SaleRoute() {
               // products and pull a clean full set for THIS tenant. Use this if
               // the terminal is showing another tenant's products.
               e.preventDefault();
-              if (!window.confirm("Reset catalog? This clears local products and re-downloads this account's menu.")) return;
+              if (
+                !window.confirm(
+                  "Reset catalog? This clears local products and re-downloads this account's menu.",
+                )
+              )
+                return;
               await sync.resync(true);
               toast.show({
-                message: t("sale.sync_reset", "Catalog reset — {{n}} products.", { n: sync.productsLocal }),
+                message: t("sale.sync_reset", "Catalog reset — {{n}} products.", {
+                  n: sync.productsLocal,
+                }),
                 variant: "success",
               });
             }}
@@ -277,10 +298,10 @@ export default function SaleRoute() {
             }
             className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${sync.status === "syncing" ? "animate-spin" : ""}`} />
-            {sync.status === "syncing"
-              ? t("sale.syncing", "Syncing…")
-              : t("sale.sync", "Sync")}
+            <RefreshCw
+              className={`h-3.5 w-3.5 ${sync.status === "syncing" ? "animate-spin" : ""}`}
+            />
+            {sync.status === "syncing" ? t("sale.syncing", "Syncing…") : t("sale.sync", "Sync")}
           </button>
           {(tenant?.modules_enabled ?? []).includes("hotel") && (
             <button
@@ -337,10 +358,7 @@ export default function SaleRoute() {
             <div className="font-medium">{user?.full_name}</div>
             <div className="text-muted-foreground capitalize">{role ?? "—"}</div>
           </div>
-          <button
-            onClick={onLogout}
-            className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-          >
+          <button onClick={onLogout} className="rounded-md border px-2 py-1 text-xs hover:bg-muted">
             {t("common.sign_out", "Sign out")}
           </button>
         </div>
@@ -375,7 +393,10 @@ export default function SaleRoute() {
                   (step away to another table). Send to kitchen = park AND fire
                   (KOT + KDS). Both clear the screen for the next order. */}
               <SaveOrder branchId={ctx.branch?.id ?? null} terminalId={ctx.terminal?.id ?? null} />
-              <SendToKitchen branchId={ctx.branch?.id ?? null} terminalId={ctx.terminal?.id ?? null} />
+              <SendToKitchen
+                branchId={ctx.branch?.id ?? null}
+                terminalId={ctx.terminal?.id ?? null}
+              />
             </div>
           )}
         </div>
@@ -400,19 +421,11 @@ export default function SaleRoute() {
   );
 }
 
-function Splash({
-  msg,
-  variant = "info",
-}: {
-  msg: string;
-  variant?: "info" | "error";
-}) {
+function Splash({ msg, variant = "info" }: { msg: string; variant?: "info" | "error" }) {
   return (
     <div className="flex h-full items-center justify-center p-8">
       <div
-        className={`text-sm ${
-          variant === "error" ? "text-destructive" : "text-muted-foreground"
-        }`}
+        className={`text-sm ${variant === "error" ? "text-destructive" : "text-muted-foreground"}`}
       >
         {msg}
       </div>
