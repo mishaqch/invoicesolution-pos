@@ -132,6 +132,9 @@ export async function saveOpenOrder(opts: {
   branchId: string | null;
   terminalId: string | null;
   lines?: CartLine[];
+  /** Cashier's reference so the order is recognisable in Open orders (e.g.
+   *  "Table 3 / Ahmed", "red shirt guy"). Required by the Save-order button. */
+  heldLabel?: string;
 }): Promise<SaveResult> {
   const st = useSaleStore.getState();
   const allLines = opts.lines ?? st.lines;
@@ -152,6 +155,7 @@ export async function saveOpenOrder(opts: {
       buyer_name: st.customer?.name ?? null,
       buyer_phone: st.customer?.phone ?? null,
       cart_discount_pct: st.cartDiscountPct,
+      held_label: opts.heldLabel ?? null,
       fire: false,
       cart_lines: allLines.map((l) => ({
         product: l.product_id,

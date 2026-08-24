@@ -8,6 +8,8 @@ export interface OpenOrderSummary {
   local_invoice_number: string;
   order_type: string | null;
   order_status: string | null;
+  // Cashier's reference set via "Save order" (e.g. "Table 3 / Ahmed").
+  held_label: string | null;
   table: string | null;
   table_id: string | null;
   covers: number | null;
@@ -46,6 +48,9 @@ export interface FireOrderPayload {
   buyer_name?: string | null;
   buyer_phone?: string | null;
   cart_discount_pct?: string;
+  // Cashier's free-text reference for an order parked via "Save order" (e.g.
+  // "Table 3 / Ahmed"). Shown in the Open-orders list so they can find it.
+  held_label?: string | null;
   // true = "Send to kitchen" (fire: KDS + KOT). false = "Save order" (park in
   // Open orders without alerting the kitchen). Omitted = true (server default).
   fire?: boolean;

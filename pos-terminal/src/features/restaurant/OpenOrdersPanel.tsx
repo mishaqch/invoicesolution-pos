@@ -102,7 +102,14 @@ export function OpenOrdersPanel({
                 onClick={() => resume(o.id)}
                 className="rounded-md border p-3 text-left transition-colors hover:bg-accent disabled:opacity-50"
               >
-                <div className="font-semibold">{o.table ? `Table ${o.table}` : (o.order_type ?? "Order")}</div>
+                <div className="font-semibold">
+                  {o.table ? `Table ${o.table}` : (o.held_label || (o.order_type ?? "Order"))}
+                </div>
+                {/* Show the cashier's reference as a subtitle when it isn't
+                    already the headline (i.e. a dine-in order WITH a table). */}
+                {o.held_label && o.table && (
+                  <div className="truncate text-xs font-medium text-foreground">{o.held_label}</div>
+                )}
                 <div className="text-xs text-muted-foreground">
                   {statusLabel(o.order_status)} · {o.items.length} item(s)
                 </div>

@@ -142,6 +142,9 @@ def _order_payload(inv: Invoice) -> dict:
         "local_invoice_number": inv.local_invoice_number,
         "order_type": inv.order_type,
         "order_status": inv.order_status,
+        # Cashier's free-text reference (set via "Save order"), shown in the
+        # Open-orders list so a parked order is recognisable at a glance.
+        "held_label": inv.held_label,
         "table": inv.table.name if inv.table_id else None,
         "table_id": str(inv.table_id) if inv.table_id else None,
         "covers": inv.covers,

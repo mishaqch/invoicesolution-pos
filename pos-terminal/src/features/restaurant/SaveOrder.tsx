@@ -15,6 +15,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/feedback/Toast";
+import { useTextPrompt } from "@/components/ui/TextPromptModal";
 import { useSaleStore } from "@/stores/sale";
 import { saveOpenOrder } from "./fire";
 
@@ -27,6 +28,7 @@ export function SaveOrder({
 }) {
   const lines = useSaleStore((s) => s.lines);
   const toast = useToast();
+  const prompt = useTextPrompt();
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -34,11 +36,31 @@ export function SaveOrder({
       toast.show({ message: "Nothing to save — the cart is empty.", variant: "warning" });
       return;
     }
+
+    // Require a reference so the parked order is recognisable in Open orders.
+    // Pre-fill the table name when a dine-in table is picked; otherwise leave it
+    // blank so the cashier types something memorable (a name, a landmark, etc.).
+    const st0 = useSaleStore.getState();
+    const suggested = st0.tableName ? `Table ${st0.tableName}` : "";
+    const label = await prompt({
+      title: "Save order",
+      description: "Add a reference so you can find this order later (e.g. customer name or a landmark).",
+      placeholder: "e.g. Ahmed / Table 5 / red shirt guy",
+      initialValue: suggested,
+      confirmLabel: "Save order",
+    });
+    // Cancelled or left empty → do NOT save (a reference is mandatory).
+    if (label === null) return;
+    if (!label.trim()) {
+      toast.show({ message: "A reference is required to save the order.", variant: "warning" });
+      return;
+    }
+
     setBusy(true);
-    const r = await saveOpenOrder({ branchId, terminalId });
+    const r = await saveOpenOrder({ branchId, terminalId, heldLabel: label.trim() });
     if (r.serverOk) {
       toast.show({
-        message: "Order saved to Open orders (kitchen not notified).",
+        message: `Order saved as “${label.trim()}” (kitchen not notified).`,
         variant: "success",
       });
       // Parked on the server → clear the front screen for the next order.
