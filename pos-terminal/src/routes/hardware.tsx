@@ -33,6 +33,11 @@ export default function HardwareRoute() {
   const [saving, setSaving] = useState(false);
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  // Kitchen printer (restaurant): a SEPARATE network printer in the kitchen that
+  // auto-prints KOTs. Blank = KOTs fall back to the counter printer above.
+  const [kitchenUrl, setKitchenUrl] = useState("");
+  const [kitchenTesting, setKitchenTesting] = useState(false);
+  const [kitchenTestStatus, setKitchenTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   // Installed Windows printers (USB thermal printers show up here). Empty on
   // macOS/Linux — those use tcp:// or cups:// interfaces instead.
   const [winPrinters, setWinPrinters] = useState<{ name: string; isDefault: boolean }[]>([]);
@@ -45,6 +50,7 @@ export default function HardwareRoute() {
 
   useEffect(() => {
     void window.api.meta.get("printer.interface").then((v) => setPrinterUrl(v ?? ""));
+    void window.api.meta.get("kitchen.interface").then((v) => setKitchenUrl(v ?? ""));
     void window.api.sdc.getUrl().then((v) => setSdcUrl(v ?? ""));
     void window.api.pairing.status().then((s) => setIdentity(s.identity));
     // Load installed Windows printers so the operator can pick instead of
@@ -95,8 +101,33 @@ export default function HardwareRoute() {
     setSaving(true);
     try {
       await window.api.meta.set("printer.interface", printerUrl.trim());
+      // Persist the kitchen printer too (blank clears it → KOTs use the counter
+      // printer). Both saved together from the one Save button.
+      await window.api.meta.set("kitchen.interface", kitchenUrl.trim());
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Test the kitchen printer specifically — prints a test slip to the kitchen
+  // printer address so you can verify ON-SITE that the terminal reaches it over
+  // the network (same router/bridged extender). Saves the typed value first so
+  // the test uses exactly what will be saved.
+  async function testKitchenPrint() {
+    setKitchenTesting(true);
+    setKitchenTestStatus(null);
+    try {
+      await window.api.meta.set("kitchen.interface", kitchenUrl.trim());
+      const r = await window.api.printer.test?.(kitchenUrl.trim() || undefined);
+      setKitchenTestStatus({
+        ok: !!r?.success,
+        msg: r?.success
+          ? "Test slip sent to the KITCHEN printer."
+          : (r?.reason ?? "Kitchen test print failed.") +
+            (r?.fallbackPath ? ` (saved to ${r.fallbackPath})` : ""),
+      });
+    } finally {
+      setKitchenTesting(false);
     }
   }
 
@@ -216,6 +247,49 @@ export default function HardwareRoute() {
                 <span>{testStatus.msg}</span>
               </div>
             )}
+
+            {/* Kitchen printer (restaurant) — a SEPARATE printer in the kitchen
+                that auto-prints KOTs when the cashier sends an order to the
+                kitchen. No PC/screen needed in the kitchen, just the printer.
+                Leave blank to print KOTs on the counter printer above. */}
+            <div className="mt-4 border-t pt-3">
+              <div className="text-sm font-medium">Kitchen printer (optional)</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Separate printer in the kitchen for order tickets (KOTs). Enter its
+                network address, e.g. <span className="font-mono">tcp://192.168.0.60:9100</span>.
+                It must be on the same network as this terminal. Leave blank to print
+                KOTs on the counter printer.
+              </p>
+              <div className="mt-2 space-y-1">
+                <Input
+                  value={kitchenUrl}
+                  onChange={(e) => setKitchenUrl(e.target.value)}
+                  placeholder="tcp://192.168.0.60:9100"
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={testKitchenPrint}
+                  disabled={kitchenTesting}
+                >
+                  {kitchenTesting ? "Printing…" : "Test kitchen printer"}
+                </Button>
+              </div>
+              {kitchenTestStatus && (
+                <div
+                  className={`mt-2 flex items-start gap-2 rounded-md border p-2 text-xs ${
+                    kitchenTestStatus.ok
+                      ? "bg-success-soft text-success-soft-foreground"
+                      : "bg-warning-soft text-warning-soft-foreground"
+                  }`}
+                >
+                  {kitchenTestStatus.ok ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                  <span>{kitchenTestStatus.msg}</span>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 

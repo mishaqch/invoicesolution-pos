@@ -126,6 +126,31 @@ function resolvePrinterInterface(): string | null {
   return null;
 }
 
+/**
+ * The KITCHEN printer — a SEPARATE physical printer (usually a network/WiFi
+ * printer sitting in the kitchen). KOTs print here so the cook gets the order
+ * without any PC/screen in the kitchen — just the printer.
+ *
+ * Resolution order: POS_KITCHEN_PRINTER_INTERFACE env → meta "kitchen.interface"
+ * → FALL BACK to the main (counter) printer. The fallback means a single-printer
+ * shop still works with zero config, and a restaurant just sets the kitchen
+ * printer's address (e.g. "tcp://192.168.0.60:9100") in Hardware settings.
+ * Both printers must be on the SAME network as the terminal (same router/
+ * bridged extender) for the terminal to reach the kitchen printer by IP.
+ */
+function resolveKitchenPrinterInterface(): string | null {
+  const env = envVar("POS_KITCHEN_PRINTER_INTERFACE");
+  if (env && env.trim()) return env.trim();
+  try {
+    const meta = getMeta("kitchen.interface");
+    if (meta && meta.trim()) return meta.trim();
+  } catch {
+    // SQLite not ready — fall through to the counter printer.
+  }
+  // No dedicated kitchen printer configured → use the main printer.
+  return resolvePrinterInterface();
+}
+
 function resolveDialect(): "epson" | "star" {
   const v = (envVar("POS_PRINTER_DIALECT") || "").toLowerCase();
   return v === "star" ? "star" : "epson";
@@ -323,7 +348,10 @@ interface KotInput {
  * disk when no printer is configured (so kitchen orders are never lost).
  */
 export async function printKOT(input: KotInput): Promise<PrintResult> {
-  const printerUrl = resolvePrinterInterface();
+  // KOTs go to the KITCHEN printer (separate network printer when configured;
+  // falls back to the counter printer when it isn't). This is what auto-prints
+  // in the kitchen when the cashier sends an order to the kitchen.
+  const printerUrl = resolveKitchenPrinterInterface();
   const plain = renderKotText(input);
   if (!printerUrl) {
     const fallback = writeFallback(
