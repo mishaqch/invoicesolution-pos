@@ -120,16 +120,29 @@ export default function HardwareRoute() {
   // the network (same router/bridged extender). Saves the typed value first so
   // the test uses exactly what will be saved.
   async function testKitchenPrint() {
+    const target = kitchenUrl.trim();
+    // A kitchen test needs a kitchen printer address. Without one the underlying
+    // test would fall back to the COUNTER printer (or disk) and wrongly look
+    // like the kitchen printer works — so require an address here.
+    if (!target) {
+      setKitchenTestStatus({
+        ok: false,
+        msg: "Enter the kitchen printer address first (e.g. tcp://192.168.0.60:9100), then test.",
+      });
+      return;
+    }
     setKitchenTesting(true);
     setKitchenTestStatus(null);
     try {
-      await window.api.meta.set("kitchen.interface", kitchenUrl.trim());
-      const r = await window.api.printer.test?.(kitchenUrl.trim() || undefined);
+      await window.api.meta.set("kitchen.interface", target);
+      // Pass the explicit kitchen address so the test targets IT, not the
+      // counter printer.
+      const r = await window.api.printer.test?.(target);
       setKitchenTestStatus({
         ok: !!r?.success,
         msg: r?.success
-          ? "Test slip sent to the KITCHEN printer."
-          : (r?.reason ?? "Kitchen test print failed.") +
+          ? `Test slip sent to the kitchen printer (${target}).`
+          : (r?.reason ?? "Kitchen printer unreachable — check the address and network.") +
             (r?.fallbackPath ? ` (saved to ${r.fallbackPath})` : ""),
       });
     } finally {
