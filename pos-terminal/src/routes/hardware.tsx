@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useSessionStore } from "@/stores/session";
 
 /**
  * Per-station Hardware settings — printer interface URL, test print,
@@ -41,6 +42,11 @@ export default function HardwareRoute() {
   // Installed Windows printers (USB thermal printers show up here). Empty on
   // macOS/Linux — those use tcp:// or cups:// interfaces instead.
   const [winPrinters, setWinPrinters] = useState<{ name: string; isDefault: boolean }[]>([]);
+
+  // Non-fiscal tenants (fbr_connection_type="none", e.g. TDCP — no FBR link)
+  // must not see the FBR Fiscalization (SDC) settings at all. Fiscal tenants
+  // still get the full section.
+  const isFiscal = useSessionStore((st) => st.tenant?.fbr_connection_type) !== "none";
 
   // FBR SDC (Fiscalization service) — base URL + paired identity.
   const [sdcUrl, setSdcUrl] = useState("");
@@ -293,66 +299,93 @@ export default function HardwareRoute() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <ShieldCheck className="h-4 w-4" /> FBR Fiscalization (SDC)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {identity && (
-              <div className="rounded-md border bg-muted/40 p-3 text-xs">
-                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-                  <span className="text-muted-foreground">Branch</span>
-                  <span className="font-medium">{identity.branchName} ({identity.branchCode})</span>
-                  <span className="text-muted-foreground">Terminal</span>
-                  <span className="font-medium">{identity.terminalName} · T{identity.terminalIndex}</span>
-                  <span className="text-muted-foreground">FBR POS ID</span>
-                  <span className="font-mono">{identity.branchFbrPosId ?? "—"}</span>
+        {isFiscal ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <ShieldCheck className="h-4 w-4" /> FBR Fiscalization (SDC)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {identity && (
+                <div className="rounded-md border bg-muted/40 p-3 text-xs">
+                  <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                    <span className="text-muted-foreground">Branch</span>
+                    <span className="font-medium">{identity.branchName} ({identity.branchCode})</span>
+                    <span className="text-muted-foreground">Terminal</span>
+                    <span className="font-medium">{identity.terminalName} · T{identity.terminalIndex}</span>
+                    <span className="text-muted-foreground">FBR POS ID</span>
+                    <span className="font-mono">{identity.branchFbrPosId ?? "—"}</span>
+                  </div>
                 </div>
+              )}
+              <div>
+                <Label>SDC service URL</Label>
+                <Input
+                  value={sdcUrl}
+                  onChange={(e) => setSdcUrl(e.target.value)}
+                  placeholder="http://localhost:8524"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  The FBR Fiscalization service runs on this machine — leave as{" "}
+                  <span className="font-mono">http://localhost:8524</span>. If the
+                  branch shares one fiscal machine, point this at that machine,
+                  e.g. <span className="font-mono">http://192.168.1.10:8524</span>.
+                </p>
               </div>
-            )}
-            <div>
-              <Label>SDC service URL</Label>
-              <Input
-                value={sdcUrl}
-                onChange={(e) => setSdcUrl(e.target.value)}
-                placeholder="http://localhost:8524"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                The FBR Fiscalization service runs on this machine — leave as{" "}
-                <span className="font-mono">http://localhost:8524</span>. If the
-                branch shares one fiscal machine, point this at that machine,
-                e.g. <span className="font-mono">http://192.168.1.10:8524</span>.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={saveSdc} disabled={sdcSaving} size="sm">
-                {sdcSaving ? "Saving…" : "Save"}
-              </Button>
-              <Button variant="outline" size="sm" onClick={testSdc}>
-                Test SDC connection
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={saveSdc} disabled={sdcSaving} size="sm">
+                  {sdcSaving ? "Saving…" : "Save"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={testSdc}>
+                  Test SDC connection
+                </Button>
+                {identity && (
+                  <Button variant="outline" size="sm" onClick={unpairTerminal}>
+                    Unpair terminal
+                  </Button>
+                )}
+              </div>
+              {sdcStatus && (
+                <div
+                  className={`flex items-start gap-2 rounded-md border p-2 text-xs ${
+                    sdcStatus.ok
+                      ? "bg-success-soft text-success-soft-foreground"
+                      : "bg-warning-soft text-warning-soft-foreground"
+                  }`}
+                >
+                  {sdcStatus.ok ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
+                  <span className="break-all">{sdcStatus.msg}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          // Non-fiscal tenant (TDCP): NO FBR section. Keep a minimal Terminal card
+          // so branch/terminal identity + Unpair are still reachable.
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Terminal</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {identity && (
+                <div className="rounded-md border bg-muted/40 p-3 text-xs">
+                  <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                    <span className="text-muted-foreground">Branch</span>
+                    <span className="font-medium">{identity.branchName} ({identity.branchCode})</span>
+                    <span className="text-muted-foreground">Terminal</span>
+                    <span className="font-medium">{identity.terminalName} · T{identity.terminalIndex}</span>
+                  </div>
+                </div>
+              )}
               {identity && (
                 <Button variant="outline" size="sm" onClick={unpairTerminal}>
                   Unpair terminal
                 </Button>
               )}
-            </div>
-            {sdcStatus && (
-              <div
-                className={`flex items-start gap-2 rounded-md border p-2 text-xs ${
-                  sdcStatus.ok
-                    ? "bg-success-soft text-success-soft-foreground"
-                    : "bg-warning-soft text-warning-soft-foreground"
-                }`}
-              >
-                {sdcStatus.ok ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
-                <span className="break-all">{sdcStatus.msg}</span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
