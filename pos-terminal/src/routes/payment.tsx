@@ -10,6 +10,7 @@ import {
   CashSubFlow,
   ChequeSubFlow,
   RaastSubFlow,
+  SimpleReferenceSubFlow,
   StoreCreditSubFlow,
   WalletSubFlow,
 } from "@/features/payment/SubFlows";
@@ -59,20 +60,26 @@ export default function PaymentRoute() {
   // the cashier sees the "pay fully by card to save" case, not a false low total.
   const CARD_METHODS = new Set<PaymentMethodCode>(["card_credit", "card_debit"]);
   const allCard = tenders.length > 0 && tenders.every((t) => CARD_METHODS.has(t.payment_method));
+  // Restaurant (e.g. TDCP): the payment method sets the tax on the WHOLE bill —
+  // 8% (fully card) / 16% (any other tender) on every line, regardless of HS
+  // code. Other verticals keep the PRA "services chapter 98" swap.
+  const isRestaurant = tenant?.vertical === "restaurant";
   const adjustedLines = applyPaymentServicesRate(lines, {
     standardRate: tenant?.services_tax_rate_standard ?? null,
     cardRate: tenant?.services_tax_rate_card ?? null,
     allCard,
+    applyToAllLines: isRestaurant,
   });
 
   const totals = quoteCart({ lines: adjustedLines, cartDiscountPct });
   const grand = totals.grand_total;
 
-  // Show the card-rate note only when this tenant has a reduced card rate AND
-  // the cart actually has a services line whose rate the swap can touch.
+  // Show the card-rate note when this tenant has a reduced card rate. For a
+  // restaurant it applies to the whole bill (no HS-98 requirement); other
+  // verticals only when a services (HS-98) line is present.
   const cardRateActive =
     !!tenant?.services_tax_rate_card &&
-    lines.some((l) => (l.hs_code || "").trim().startsWith("98"));
+    (isRestaurant || lines.some((l) => (l.hs_code || "").trim().startsWith("98")));
   const tendered = totalTendered();
   const remaining = grand.sub(tendered);
   const complete = isComplete(grand);
@@ -173,7 +180,13 @@ export default function PaymentRoute() {
         cash_session: ctx.session.id,
         customer: customer?.id ?? null,
         local_invoice_number: localNumber,
-        cart_lines: lines.map((l) => ({
+        // Use adjustedLines (NOT the raw cart) so the server receives the
+        // payment-adjusted tax rate — 8% fully-card / 16% otherwise. Sending the
+        // raw lines here made the server recompute the invoice at the original
+        // rate, so the card discount showed on the terminal but not on the
+        // synced/final invoice. adjustedLines is a 1:1 rate-only remap of lines,
+        // so every other field is identical.
+        cart_lines: adjustedLines.map((l) => ({
           product: l.product_id,
           // FEFO batch (pharmacy) — server records the sale stock movement
           // against this batch. Null/absent for ordinary products.
@@ -419,6 +432,7 @@ export default function PaymentRoute() {
                   hasCustomer: !!customer,
                   storeCredit,
                   onAdd: onAddTender,
+                  isRestaurant,
                 })}
             </div>
           )}
@@ -435,6 +449,7 @@ function renderSubFlow({
   hasCustomer,
   storeCredit,
   onAdd,
+  isRestaurant,
 }: {
   method: PaymentMethodCode;
   remaining: Money;
@@ -442,8 +457,15 @@ function renderSubFlow({
   hasCustomer: boolean;
   storeCredit: Money;
   onAdd: (t: Omit<Tender, "id">) => void;
+  isRestaurant: boolean;
 }): React.ReactNode {
   const common = { remaining, config, hasCustomer, storeCredit, onAdd };
+  // Restaurant (TDCP): every non-cash method uses the simplified flow — amount +
+  // one OPTIONAL reference number. Cash keeps its change calculator; store credit
+  // keeps its balance cap. Other verticals keep the detailed per-method forms.
+  if (isRestaurant && method !== "cash" && method !== "store_credit") {
+    return <SimpleReferenceSubFlow {...common} method={method} />;
+  }
   switch (method) {
     case "cash":
       return <CashSubFlow {...common} />;

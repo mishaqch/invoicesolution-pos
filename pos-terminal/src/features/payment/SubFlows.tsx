@@ -14,7 +14,7 @@ import { Select } from "@/components/ui/select";
 import { Money } from "@/lib/money";
 
 import type { PaymentMethodConfig } from "./usePaymentMethods";
-import type { Tender } from "@/stores/tender";
+import type { PaymentMethodCode, Tender } from "@/stores/tender";
 
 const PK_BANKS = [
   "HBL", "MCB", "UBL", "Allied",
@@ -57,6 +57,64 @@ function AmountField({ amount, setAmount, remaining }: AmountFieldProps) {
           Remaining (Rs {remaining.display()})
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Simplified sub-flow for RESTAURANT tenants (e.g. TDCP): amount + a single
+ * OPTIONAL "Reference Number" field for every non-cash method. No card last-4 /
+ * auth / RRN, no bank pickers, no per-method proof fields — the resort just
+ * wants a quick tender with an optional reference. The reference is stored in
+ * the method's canonical proof field so it still lands somewhere sensible on the
+ * server (card_rrn / wallet_transaction_id / raast_transaction_id /
+ * bank_reference / cheque_number).
+ */
+export function SimpleReferenceSubFlow({
+  remaining,
+  onAdd,
+  method,
+}: Props & { method: PaymentMethodCode }) {
+  const [amount, setAmount] = useState(remaining.toStorageString());
+  const [ref, setRef] = useState("");
+
+  // Map the single reference into the right per-method proof field so existing
+  // server validation + receipt rendering keep working.
+  function tenderWithRef(): Omit<Tender, "id"> {
+    const r = ref.trim() || undefined;
+    const base = { amount } as Omit<Tender, "id">;
+    switch (method) {
+      case "card_credit":
+      case "card_debit":
+        return { ...base, payment_method: method, card_rrn: r };
+      case "easypaisa":
+      case "jazzcash":
+        return { ...base, payment_method: method, wallet_transaction_id: r };
+      case "raast":
+        return { ...base, payment_method: "raast", raast_transaction_id: r };
+      case "bank_transfer":
+        return { ...base, payment_method: "bank_transfer", bank_reference: r };
+      case "cheque":
+        return { ...base, payment_method: "cheque", cheque_number: r };
+      default:
+        return { ...base, payment_method: method };
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <AmountField amount={amount} setAmount={setAmount} remaining={remaining} />
+      <div>
+        <Label>Reference number (optional)</Label>
+        <Input
+          value={ref}
+          onChange={(e) => setRef(e.target.value)}
+          placeholder="e.g. txn / RRN / cheque # (optional)"
+        />
+      </div>
+      <Button className="w-full" disabled={!amount} onClick={() => onAdd(tenderWithRef())}>
+        Add tender
+      </Button>
     </div>
   );
 }

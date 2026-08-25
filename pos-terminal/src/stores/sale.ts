@@ -241,17 +241,30 @@ export interface CartTotals {
   grand_total: Money;
 }
 
-// Payment-driven services tax (PRA card rule). Given the tenant's standard +
-// card-reduced services rates and whether the sale is FULLY card-paid, return
-// the lines with services (HS chapter 98) rates swapped to the right rate.
-// Only swaps between the two configured rates — never touches goods lines or a
-// deliberately-custom rate. Returns the lines unchanged when the tenant hasn't
-// configured a card-reduced rate (feature off).
+// Payment-driven services tax. Given the tenant's standard + card-reduced rates
+// and whether the sale is FULLY card-paid, return the lines with the rate
+// swapped to the right value (card rate when fully card-paid, else standard).
+//
+// Two modes:
+//  - Default (PRA "services chapter 98" rule): only HS-98 service lines whose
+//    current rate is one of the two configured rates are swapped; goods and
+//    custom-rate lines are untouched. Used by fiscal tenants.
+//  - applyToAllLines (restaurant, e.g. TDCP): the payment method sets the tax on
+//    the WHOLE bill — EVERY line's rate becomes the target (8% fully-card / 16%
+//    otherwise), regardless of HS code. This matches "card = 8%, everything else
+//    = 16%" for the whole order.
+//
+// Returns the lines unchanged when the tenant hasn't configured a card rate.
 const _isServicesHs = (hs?: string | null) => (hs || "").trim().startsWith("98");
 const _normRate = (r?: string | null) => String(Number(r || 0));
 export function applyPaymentServicesRate(
   lines: CartLine[],
-  opts: { standardRate?: string | null; cardRate?: string | null; allCard: boolean },
+  opts: {
+    standardRate?: string | null;
+    cardRate?: string | null;
+    allCard: boolean;
+    applyToAllLines?: boolean;
+  },
 ): CartLine[] {
   const std = opts.standardRate ? _normRate(opts.standardRate) : null;
   const card = opts.cardRate ? _normRate(opts.cardRate) : null;
@@ -259,6 +272,11 @@ export function applyPaymentServicesRate(
   const target = opts.allCard ? card : std;
   const swappable = new Set([std, card]);
   return lines.map((l) => {
+    if (opts.applyToAllLines) {
+      // Whole-bill mode: set every line to the payment-driven rate.
+      if (_normRate(l.tax_rate) === target) return l;
+      return { ...l, tax_rate: target };
+    }
     if (!_isServicesHs(l.hs_code)) return l;
     if (!swappable.has(_normRate(l.tax_rate))) return l; // custom rate — leave it
     if (_normRate(l.tax_rate) === target) return l;
