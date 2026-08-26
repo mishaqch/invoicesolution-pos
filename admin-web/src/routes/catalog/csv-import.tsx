@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, FileWarning, Upload } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileDown, FileWarning, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -14,6 +14,7 @@ interface DryRunResult {
 interface CommitResult {
   created: number;
   updated: number;
+  categories_created?: string[];
 }
 
 const API_BASE = "/api";
@@ -66,12 +67,36 @@ export default function CsvImport() {
     setBusy(true);
     try {
       const result = (await postFile("commit")) as CommitResult;
-      alert(`Imported: ${result.created} created, ${result.updated} updated.`);
+      const cats = result.categories_created?.length
+        ? ` New categories created: ${result.categories_created.join(", ")}.`
+        : "";
+      alert(`Imported: ${result.created} created, ${result.updated} updated.${cats}`);
       navigate("/catalog/products");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Commit failed");
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Download the ready-to-fill template (headers + example rows + a short guide).
+  async function onDownloadTemplate() {
+    try {
+      const resp = await fetch(`${API_BASE}/catalog/products/import-template/`, {
+        headers: { Authorization: `Bearer ${access}` },
+      });
+      if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "product-import-template.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not download the template");
     }
   }
 
@@ -83,23 +108,43 @@ export default function CsvImport() {
         <ArrowLeft className="mr-1 h-4 w-4" /> Back to products
       </Link>
 
-      <h1 className="text-2xl font-semibold tracking-tight">Import products from CSV</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Import products (CSV or Excel)</h1>
 
       <Card>
         <CardHeader>
-          <CardTitle>1. Pick a CSV file</CardTitle>
+          <CardTitle>1. Download the template (recommended)</CardTitle>
           <CardDescription>
-            Required columns: <code>sku</code>, <code>name</code>, <code>uom_code</code>, <code>sale_price</code>.
-            Optional: barcode, name_ur, description, category, hs_code, tax_rate, cost_price,
-            retail_price, min_sale_price, max_discount_pct, reorder_level, is_active, is_taxable.
-            UTF-8 with or without BOM.
+            Not sure about the format? Download the template — it has the exact
+            column headers, a couple of example rows, and a short guide. Fill it in
+            and upload below (as CSV or Excel).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" onClick={onDownloadTemplate}>
+            <FileDown className="mr-2 h-4 w-4" /> Download import template
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>2. Pick a CSV or Excel file</CardTitle>
+          <CardDescription>
+            <strong>Required:</strong> <code>sku</code>, <code>name</code>, <code>uom_code</code>, <code>sale_price</code>.{" "}
+            <strong>Optional:</strong> barcode, name_ur, description, category, hs_code, tax_rate,
+            cost_price, retail_price, min_sale_price, max_discount_pct, reorder_level, is_active, is_taxable.
+            <br />
+            Column names are matched flexibly (e.g. “Sale Price” = <code>sale_price</code>, “Unit” = <code>uom_code</code>).
+            tax_rate accepts a rate name or a percentage like 16%. A new category name is created
+            automatically; uom, tax_rate and hs_code must already exist. Prices may include Rs / commas.
+            CSV (UTF-8) or Excel .xlsx.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <input
             ref={inputRef}
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(e) => {
               setFile(e.target.files?.[0] ?? null);
               setDryRun(null);
@@ -112,7 +157,7 @@ export default function CsvImport() {
 
       <Card>
         <CardHeader>
-          <CardTitle>2. Validate (dry-run)</CardTitle>
+          <CardTitle>3. Validate (dry-run)</CardTitle>
           <CardDescription>Verifies every row without writing anything.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -157,7 +202,7 @@ export default function CsvImport() {
 
       <Card>
         <CardHeader>
-          <CardTitle>3. Commit</CardTitle>
+          <CardTitle>4. Commit</CardTitle>
           <CardDescription>Enabled when the dry-run reports no errors.</CardDescription>
         </CardHeader>
         <CardContent>

@@ -7,6 +7,9 @@ the role matrix in DATABASE_SCHEMA.md §1.
 
 from __future__ import annotations
 
+import csv
+import io
+
 from django.db.models import Q
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
@@ -160,12 +163,62 @@ class ProductViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
         instance.is_active = False
         instance.save(update_fields=["deleted_at", "is_active", "updated_at"])
 
+    @action(detail=False, methods=["get"], url_path="import-template")
+    def import_template(self, request):
+        """Download a ready-to-fill CSV template for the product import.
+
+        Headers + a couple of example rows + a short guide, so a client knows the
+        exact columns and format before uploading. Opens cleanly in Excel too.
+        """
+        from django.http import HttpResponse
+
+        from .csv_import import OPTIONAL, REQUIRED
+
+        header = [
+            "sku", "name", "uom_code", "sale_price",           # required
+            "barcode", "name_ur", "description", "category",   # optional…
+            "hs_code", "tax_rate", "cost_price", "retail_price",
+            "min_sale_price", "max_discount_pct", "reorder_level",
+            "is_active", "is_taxable",
+        ]
+        sample_rows = [
+            ["SKU-001", "Chicken Karahi Full", "Numbers, pieces, units", "1200",
+             "", "", "", "Main Course", "", "16%", "800", "1400",
+             "1000", "10", "5", "true", "true"],
+            ["SKU-002", "Mineral Water 500ml", "Numbers, pieces, units", "80",
+             "8964000000018", "", "", "Beverages", "", "0%", "40", "100",
+             "", "", "24", "true", "true"],
+        ]
+        # A leading comment block Excel/CSV both tolerate (lines starting with #).
+        guide = [
+            "# Product import template — fill the rows below and upload (CSV or Excel .xlsx).",
+            f"# Required columns: {', '.join(sorted(REQUIRED))}.",
+            f"# Optional columns: {', '.join(sorted(OPTIONAL))}.",
+            "# uom_code must match a configured Unit (e.g. 'Numbers, pieces, units', 'Kilograms').",
+            "# tax_rate: a configured rate name OR a percentage like 16% / 0% (must exist).",
+            "# category: matched by name; a NEW category name is created automatically.",
+            "# hs_code: must already exist under HS codes. Leave blank if unsure.",
+            "# is_active / is_taxable: true or false. Prices are plain numbers (Rs / commas OK).",
+            "# Delete these # lines before uploading if you prefer — they are ignored anyway.",
+        ]
+        buf = io.StringIO()
+        for line in guide:
+            buf.write(line + "\n")
+        writer = csv.writer(buf)
+        writer.writerow(header)
+        for r in sample_rows:
+            writer.writerow(r)
+
+        resp = HttpResponse(buf.getvalue(), content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = 'attachment; filename="product-import-template.csv"'
+        return resp
+
     @action(detail=False, methods=["post"], url_path="import",
             parser_classes=[MultiPartParser, FormParser])
     def import_csv(self, request):
-        """CSV import: ?dry_run=true returns counts + errors; otherwise commits."""
+        """CSV/Excel import: ?dry_run=true returns counts + errors; else commits."""
         if "file" not in request.FILES:
-            raise ValidationError({"file": "A CSV file is required."})
+            raise ValidationError({"file": "A CSV or Excel (.xlsx) file is required."})
 
         rows, parse_errors = parse_csv(request.FILES["file"])
         dry_run = request.query_params.get("dry_run", "").lower() in ("1", "true", "yes")
