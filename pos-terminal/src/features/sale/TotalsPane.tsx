@@ -14,9 +14,12 @@ interface Props {
   // separate parked bucket. Holding a fired order into the retail bucket would
   // create a duplicate/ghost ticket, so we don't offer it there.
   onHold?: () => void;
+  // Optional custom "Void sale" handler (restaurant): voids the server open order
+  // + notifies the kitchen, then resets. When omitted, Void just clears the cart.
+  onVoid?: () => void;
 }
 
-export function TotalsPane({ onHold }: Props) {
+export function TotalsPane({ onHold, onVoid }: Props) {
   const navigate = useNavigate();
   const lines = useSaleStore((s) => s.lines);
   const cartDiscountPct = useSaleStore((s) => s.cartDiscountPct);
@@ -103,9 +106,12 @@ export function TotalsPane({ onHold }: Props) {
           className="flex-1 text-destructive"
           onClick={() => {
             // Restaurant/hotel: cancelling the order needs no manager approval.
-            if (window.confirm("Void the entire sale? This clears the cart.")) {
-              resetForNewSale();
-            }
+            if (!window.confirm("Void the entire sale? This clears the cart.")) return;
+            // Restaurant: onVoid also removes the order from Open orders and, if
+            // it was already sent to the kitchen, prints a CANCELLED ticket so
+            // the cooks stop. Other verticals just clear the cart.
+            if (onVoid) onVoid();
+            else resetForNewSale();
           }}
         >
           <Trash2 className="mr-1 h-4 w-4" /> Void sale

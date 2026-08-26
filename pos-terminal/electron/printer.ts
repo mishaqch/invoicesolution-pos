@@ -339,6 +339,10 @@ interface KotInput {
   // prints a loud "ADDITIONAL ORDER" banner so the cook knows it's a follow-up
   // to the same order (same order_number), not a brand-new order.
   is_additional?: boolean;
+  // True when the cashier VOIDED an order that was already sent to the kitchen —
+  // prints a loud "VOID / CANCELLED" banner so the cook STOPS preparing it. The
+  // items list is the order's items (what to cancel), not new items.
+  is_void?: boolean;
 }
 
 /**
@@ -407,11 +411,18 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   printer.bold(true);
   printer.setTextDoubleHeight();
   printer.setTextDoubleWidth();
-  printer.println("KITCHEN");
+  // A void ticket leads with a loud CANCELLED header (not "KITCHEN") so the cook
+  // immediately sees this order must NOT be prepared.
+  printer.println(input.is_void ? "*** CANCELLED ***" : "KITCHEN");
   printer.setTextNormal();
-  // Loud banner so the cook knows this ticket ADDS to an order already fired
-  // (same order number) rather than being a new order.
-  if (input.is_additional) {
+  if (input.is_void) {
+    printer.bold(true);
+    printer.setTextDoubleHeight();
+    printer.println("VOID — DO NOT PREPARE");
+    printer.setTextNormal();
+  } else if (input.is_additional) {
+    // Loud banner so the cook knows this ticket ADDS to an order already fired
+    // (same order number) rather than being a new order.
     printer.bold(true);
     printer.setTextDoubleHeight();
     printer.println("** ADDITIONAL ORDER **");
@@ -736,8 +747,9 @@ function renderKotText(input: KotInput): string {
   const center = (s: string) =>
     s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s;
   const rule = "-".repeat(W);
-  const lines: string[] = [center("KITCHEN")];
-  if (input.is_additional) lines.push(center("** ADDITIONAL ORDER **"));
+  const lines: string[] = [center(input.is_void ? "*** CANCELLED ***" : "KITCHEN")];
+  if (input.is_void) lines.push(center("VOID — DO NOT PREPARE"));
+  else if (input.is_additional) lines.push(center("** ADDITIONAL ORDER **"));
   const dest = input.table_name
     ? `TABLE ${input.table_name}`
     : input.reference?.trim() || input.order_type.toUpperCase();

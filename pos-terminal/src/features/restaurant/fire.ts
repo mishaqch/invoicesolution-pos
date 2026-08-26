@@ -15,7 +15,7 @@
  */
 
 import { useSaleStore, type CartLine } from "@/stores/sale";
-import { fireOpenOrder } from "./api";
+import { fireOpenOrder, voidOpenOrder } from "./api";
 
 export interface FireResult {
   fired: number;
@@ -185,4 +185,68 @@ export async function saveOpenOrder(opts: {
   } catch (err) {
     return { serverOk: false, serverErr: err instanceof Error ? err.message : "network error" };
   }
+}
+
+export interface VoidResult {
+  /** Whether this cart was a saved/open order that had to be voided server-side. */
+  wasOpenOrder: boolean;
+  /** Whether any items had already been sent to the kitchen (→ cancellation KOT). */
+  hadFired: boolean;
+}
+
+/**
+ * Void the current restaurant order: remove it from the server "Open orders"
+ * book AND — if any items were already sent to the kitchen — print a loud
+ * CANCELLED ticket to the kitchen so the cooks STOP preparing it.
+ *
+ * Called from the "Void sale" button. Best-effort + safe:
+ *   - Only voids server-side when this cart is a resumed OPEN order (it has a
+ *     resumedOpenOrderUuid). A fresh, never-saved cart has nothing to void.
+ *   - Only prints the cancellation KOT when at least one line was fired.
+ *
+ * Does NOT clear the cart — the caller (Void button) resets the sale after.
+ * (No branch/terminal args needed: the void is keyed on the order's client_uuid
+ * and the cancellation KOT resolves the kitchen printer in the main process.)
+ */
+export async function voidOrderAndNotifyKitchen(): Promise<VoidResult> {
+  const st = useSaleStore.getState();
+  const openUuid = st.resumedOpenOrderUuid;
+  const firedLines = st.lines.filter((l) => l.sent_to_kitchen);
+  const hadFired = firedLines.length > 0;
+
+  // 1) Remove the order from the server Open-orders book (soft-delete). Only a
+  //    resumed/saved open order needs this; a fresh cart has no server order.
+  let wasOpenOrder = false;
+  if (openUuid) {
+    wasOpenOrder = true;
+    await voidOpenOrder(openUuid).catch(() => {}); // best-effort; panel auto-refreshes
+  }
+
+  // 2) Kitchen cancellation ticket — ONLY if something was already fired.
+  if (hadFired) {
+    try {
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      await window.api.printer.printKOT({
+        order_number: st.clientUuid.slice(0, 8),
+        order_type: st.orderType ?? "dine_in",
+        table_name: st.tableName,
+        covers: st.covers,
+        time,
+        reference: st.heldLabel ?? st.customer?.name ?? null,
+        is_void: true, // → "*** CANCELLED *** / VOID — DO NOT PREPARE"
+        items: firedLines.map((l) => ({
+          product_name: l.product_name,
+          quantity: l.quantity,
+          modifiers: (l.modifiers ?? []).map((m) => ({ name: m.name })),
+          item_note: l.item_note ?? null,
+        })),
+        width: 48,
+      });
+    } catch {
+      /* printer error — cancellation KOT goes to disk via the main-process fallback */
+    }
+  }
+
+  return { wasOpenOrder, hadFired };
 }

@@ -8,6 +8,7 @@ import { OrderTypeBar } from "@/features/restaurant/OrderTypeBar";
 import { SendToKitchen } from "@/features/restaurant/SendToKitchen";
 import { SaveOrder } from "@/features/restaurant/SaveOrder";
 import { voidOpenOrder } from "@/features/restaurant/api";
+import { voidOrderAndNotifyKitchen } from "@/features/restaurant/fire";
 import {
   ModifierPicker,
   fetchModifierGroups,
@@ -254,6 +255,26 @@ export default function SaleRoute() {
     }
   }
 
+  /**
+   * Void the current restaurant order: remove it from the server Open-orders
+   * book AND, if it was already sent to the kitchen, print a CANCELLED ticket so
+   * the cooks stop preparing it. Then clear the cart for the next order.
+   */
+  async function handleVoid() {
+    const r = await voidOrderAndNotifyKitchen();
+    useSaleStore.getState().resetForNewSale();
+    setStage("empty");
+    if (r.wasOpenOrder && r.hadFired) {
+      toast.show({ message: "Sale voided — removed from Open orders, kitchen notified to cancel.", variant: "success" });
+    } else if (r.wasOpenOrder) {
+      toast.show({ message: "Sale voided — removed from Open orders.", variant: "success" });
+    } else if (r.hadFired) {
+      toast.show({ message: "Sale voided — kitchen notified to cancel.", variant: "success" });
+    } else {
+      toast.show({ message: "Sale voided.", variant: "success" });
+    }
+  }
+
   if (sync.status === "syncing" && sync.productsLocal === 0) {
     return <Splash msg={t("sale.loading_catalog", "Loading catalog…")} />;
   }
@@ -424,7 +445,10 @@ export default function SaleRoute() {
           {/* Restaurant: no generic Hold — a fired order lives in "Open orders"
               (Send to kitchen), not the retail held-sales bucket. Other
               verticals keep the classic Hold/Recall. */}
-          <TotalsPane onHold={isRestaurant ? undefined : onHold} />
+          <TotalsPane
+            onHold={isRestaurant ? undefined : onHold}
+            onVoid={isRestaurant ? () => void handleVoid() : undefined}
+          />
         </div>
       </main>
 
