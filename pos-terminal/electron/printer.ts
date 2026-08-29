@@ -132,11 +132,13 @@ function resolvePrinterInterface(): string | null {
  * without any PC/screen in the kitchen — just the printer.
  *
  * Resolution order: POS_KITCHEN_PRINTER_INTERFACE env → meta "kitchen.interface"
- * → FALL BACK to the main (counter) printer. The fallback means a single-printer
- * shop still works with zero config, and a restaurant just sets the kitchen
- * printer's address (e.g. "tcp://192.168.0.60:9100") in Hardware settings.
- * Both printers must be on the SAME network as the terminal (same router/
- * bridged extender) for the terminal to reach the kitchen printer by IP.
+ * → null. There is DELIBERATELY no fallback to the counter printer: a KOT must
+ * print ONLY on a dedicated kitchen printer. When none is configured the caller
+ * saves the KOT to disk instead of printing it at the counter (which would put
+ * a kitchen ticket on the customer's receipt roll).
+ * The kitchen printer must be on the SAME network as the terminal (same router/
+ * bridged extender) for the terminal to reach it by IP, e.g.
+ * "tcp://192.168.0.60:9100" set in Hardware settings.
  */
 function resolveKitchenPrinterInterface(): string | null {
   const env = envVar("POS_KITCHEN_PRINTER_INTERFACE");
@@ -145,10 +147,10 @@ function resolveKitchenPrinterInterface(): string | null {
     const meta = getMeta("kitchen.interface");
     if (meta && meta.trim()) return meta.trim();
   } catch {
-    // SQLite not ready — fall through to the counter printer.
+    // SQLite not ready — treat as no kitchen printer.
   }
-  // No dedicated kitchen printer configured → use the main printer.
-  return resolvePrinterInterface();
+  // No dedicated kitchen printer → null (KOT saves to disk, never counter).
+  return null;
 }
 
 function resolveDialect(): "epson" | "star" {
@@ -828,11 +830,26 @@ async function realPrint(
   // receipt and the wireframe used to differ. Order: big bold business name,
   // address, bold "NTN #", larger+bold "Contact #", large bold "SALES INVOICE".
   printer.alignCenter();
-  printer.bold(true);
-  printer.setTextDoubleHeight();
-  printer.setTextDoubleWidth();
-  printer.println(input.business_name.toUpperCase());
-  printer.setTextNormal();
+  // Tenant logo at the top of the BILL (sales invoice). The KOT never prints a
+  // logo. If the logo image prints, skip the big text business-name banner so
+  // the logo stands alone; otherwise fall back to the text banner.
+  let headerLogoPrinted = false;
+  const receiptLogo = resolveReceiptLogoPath();
+  if (receiptLogo) {
+    try {
+      await printer.printImage(receiptLogo);
+      headerLogoPrinted = true;
+    } catch {
+      headerLogoPrinted = false; // image failed → text banner below
+    }
+  }
+  if (!headerLogoPrinted) {
+    printer.bold(true);
+    printer.setTextDoubleHeight();
+    printer.setTextDoubleWidth();
+    printer.println(input.business_name.toUpperCase());
+    printer.setTextNormal();
+  }
 
   if (input.address) {
     printer.println(input.address);
@@ -1116,7 +1133,11 @@ function renderBodyText(input: ReceiptInput): string {
   for (const it of input.items) {
     lines.push(it.product_name.slice(0, W));
     const left = `  ${qtyFmt(it.quantity)} x ${money2(it.unit_price)}`;
-    const right = money2(it.line_total);
+    // Show the PRE-TAX line amount (line_total − tax) so tax appears only once,
+    // as the aggregate at the bottom. This makes the per-line amount match the
+    // Subtotal and reads naturally (e.g. "1 x 1080.00 … 1080.00").
+    const preTax = Number(it.line_total ?? 0) - Number(it.tax_amount ?? 0);
+    const right = money2(preTax);
     const pad = Math.max(1, W - left.length - right.length);
     lines.push(left + " ".repeat(pad) + right);
     // Restaurant: show chosen modifiers under the line.

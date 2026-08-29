@@ -1,7 +1,7 @@
 {
   "name": "@pos/pos-terminal",
   "private": true,
-  "version": "0.0.39",
+  "version": "0.0.40",
   "type": "module",
   "main": "out/main/index.cjs",
   "engines": {
