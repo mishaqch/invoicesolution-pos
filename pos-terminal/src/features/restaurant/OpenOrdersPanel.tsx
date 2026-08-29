@@ -129,13 +129,22 @@ export function OpenOrdersPanel({
                 onClick={() => resume(o.id)}
                 className="rounded-md border p-3 text-left transition-colors hover:bg-accent disabled:opacity-50"
               >
-                <div className="font-semibold">
-                  {o.table ? `Table ${o.table}` : o.held_label || (o.order_type ?? "Order")}
+                {/* Headline = the most identifiable thing we have: table, else
+                    the cashier's reference/name, else the order number — never a
+                    generic "dine_in" (which tells the cashier nothing). */}
+                <div className="truncate font-semibold">
+                  {o.table
+                    ? `Table ${o.table}`
+                    : o.held_label || o.local_invoice_number || "Order"}
                 </div>
-                {/* Show the cashier's reference as a subtitle when it isn't
-                    already the headline (i.e. a dine-in order WITH a table). */}
+                {/* Reference as a subtitle when it isn't already the headline. */}
                 {o.held_label && o.table && (
                   <div className="truncate text-xs font-medium text-foreground">{o.held_label}</div>
+                )}
+                {/* Always show the order number small so it can be matched to the
+                    KOT / invoice, unless it's already the headline. */}
+                {(o.table || o.held_label) && (
+                  <div className="truncate text-[10px] text-muted-foreground">{o.local_invoice_number}</div>
                 )}
                 {/* Status badge: clearly shows whether the order is just SAVED
                     (not sent) or already IN KITCHEN (fired) / ready / served. */}

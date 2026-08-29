@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { MethodPicker } from "@/features/payment/MethodPicker";
+import { voidOpenOrder } from "@/features/restaurant/api";
 import {
   BankTransferSubFlow,
   CardSubFlow,
@@ -293,13 +294,18 @@ export default function PaymentRoute() {
         is_fiscal: tenant?.fbr_connection_type !== "none",
       });
 
-      // Push the paid invoice to the server ASAP. Beyond kicking the worker we
-      // EXPEDITE it (skip its backoff) so, for a restaurant order, checkout
-      // finalization runs within a second — that finalizer flips the held row's
-      // is_held=False, which is what removes the paid order from "Open orders"
-      // and frees its table. (Offline: it closes as soon as the queue drains.)
+      // Push the paid invoice to the server ASAP (checkout finalization).
       void window.api.sync.kick();
       void window.api?.sync?.expedite?.();
+
+      // Restaurant: remove the order from "Open orders" IMMEDIATELY via a direct
+      // call (same reliable path as Send-to-kitchen), instead of waiting for the
+      // checkout invoice to sync + finalize. This guarantees a charged order
+      // leaves Open orders even if the invoice sync is delayed/failing. No-op
+      // (voided=false) for a straight-through sale that was never an open order.
+      if (useSessionStore.getState().tenant?.vertical === "restaurant") {
+        void voidOpenOrder(clientUuid).catch(() => {});
+      }
 
       navigate("/success", {
         replace: true,
