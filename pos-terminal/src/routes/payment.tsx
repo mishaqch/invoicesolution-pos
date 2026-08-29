@@ -15,7 +15,6 @@ import {
   WalletSubFlow,
 } from "@/features/payment/SubFlows";
 import { TenderList } from "@/features/payment/TenderList";
-import { fireUnsentToKitchen } from "@/features/restaurant/fire";
 import { usePaymentMethods } from "@/features/payment/usePaymentMethods";
 import { usePosContext } from "@/features/sale/usePosContext";
 import { Money } from "@/lib/money";
@@ -271,20 +270,10 @@ export default function PaymentRoute() {
 
       const tenant = useSessionStore.getState().tenant;
 
-      // Restaurant: auto-send to the kitchen on charge. Fires ONLY lines not
-      // already sent — so a dine-in order fired during the meal doesn't
-      // double-fire, while takeaway/delivery (or a forgotten send) reaches the
-      // kitchen now. Best-effort; never blocks completing the sale.
-      if (tenant?.vertical === "restaurant") {
-        try {
-          await fireUnsentToKitchen({
-            branchId: ctx.branch.id,
-            terminalId: ctx.terminal.id,
-          });
-        } catch {
-          /* never block payment on a kitchen-fire hiccup */
-        }
-      }
+      // Charge prints ONLY the customer receipt — never a kitchen slip. The KOT
+      // is printed exclusively when the cashier hits "Send to kitchen"; auto-
+      // firing here caused a second (kitchen) slip to print at the counter on
+      // every charge, which is wrong.
 
       void window.api.printer.print({
         business_name: tenant?.business_name ?? "POS",
