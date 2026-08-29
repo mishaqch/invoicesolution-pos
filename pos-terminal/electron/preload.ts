@@ -327,6 +327,9 @@ const api = {
   numbering: {
     next: (args: { branchCode: string; terminalIndex: number }): Promise<string> =>
       ipcRenderer.invoke("numbering:next", args),
+    /** Short daily kitchen order number (e.g. "001"). */
+    nextKitchenOrder: (): Promise<string> =>
+      ipcRenderer.invoke("numbering:next-kitchen-order"),
   },
   updates: {
     /** Is an update already downloaded & staged? (version or null). */

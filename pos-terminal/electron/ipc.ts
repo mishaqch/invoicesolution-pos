@@ -14,7 +14,7 @@
 import { app, ipcMain, type IpcMainInvokeEvent, BrowserWindow } from "electron";
 
 import { getDb, getMeta, setMeta } from "./db/client";
-import { nextInvoiceNumber } from "./db/numbering";
+import { nextInvoiceNumber, nextKitchenOrderNumber } from "./db/numbering";
 import {
   checkSdcHealth, fiscalizeInvoice, fiscalizeTestMode,
   isFbrTestMode, setFbrTestMode,
@@ -308,4 +308,6 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
     (_e: IpcMainInvokeEvent, args: { branchCode: string; terminalIndex: number }) =>
       nextInvoiceNumber(args),
   );
+  // Short daily kitchen order number (001, 002, …) for the KOT + Open orders.
+  ipcMain.handle("numbering:next-kitchen-order", () => nextKitchenOrderNumber());
 }

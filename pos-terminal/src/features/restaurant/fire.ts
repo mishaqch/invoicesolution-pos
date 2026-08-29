@@ -17,6 +17,26 @@
 import { useSaleStore, type CartLine } from "@/stores/sale";
 import { fireOpenOrder, voidOpenOrder } from "./api";
 
+/**
+ * Return this order's short daily number ("001"), assigning one on first use and
+ * caching it on the sale store so re-fires/void reuse the same number. Falls back
+ * to the client_uuid prefix if the counter is unavailable.
+ */
+async function ensureOrderNumber(): Promise<string> {
+  const st = useSaleStore.getState();
+  if (st.orderNumber) return st.orderNumber;
+  try {
+    const n = await window.api.numbering.nextKitchenOrder();
+    if (n) {
+      useSaleStore.getState().setOrderNumber(n);
+      return n;
+    }
+  } catch {
+    /* fall through to the uuid prefix */
+  }
+  return st.clientUuid.slice(0, 8);
+}
+
 export interface FireResult {
   fired: number;
   serverOk: boolean;
@@ -37,6 +57,11 @@ export async function fireUnsentToKitchen(opts: {
   if (unsent.length === 0) {
     return { fired: 0, serverOk: false, printOk: false, serverErr: null };
   }
+
+  // Assign a short daily order number (001, 002…) on the FIRST fire and keep it
+  // stable for re-fires. Used on the KOT so the kitchen sees "Order 001", not a
+  // hex id. Best-effort — if it fails we fall back to the client_uuid prefix.
+  const orderNo = await ensureOrderNumber();
 
   // 1) Server open order (full snapshot so KDS shows everything).
   let serverOk = false;
@@ -83,7 +108,7 @@ export async function fireUnsentToKitchen(opts: {
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const res = await window.api.printer.printKOT({
-      order_number: st.clientUuid.slice(0, 8),
+      order_number: orderNo,
       order_type: st.orderType ?? "dine_in",
       table_name: st.tableName,
       covers: st.covers,
@@ -151,6 +176,9 @@ export async function saveOpenOrder(opts: {
   if (!opts.branchId || !opts.terminalId) {
     return { serverOk: false, serverErr: "terminal not paired to a branch" };
   }
+  // Assign the short daily order number now so a saved (not-yet-fired) order
+  // already has "001" in Open orders.
+  await ensureOrderNumber();
   try {
     await fireOpenOrder({
       client_uuid: st.clientUuid,
@@ -228,7 +256,9 @@ export async function voidOrderAndNotifyKitchen(): Promise<VoidResult> {
       const now = new Date();
       const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       await window.api.printer.printKOT({
-        order_number: st.clientUuid.slice(0, 8),
+        // Same order number the order was fired with, so the cook matches the
+        // cancellation to the original ticket.
+        order_number: st.orderNumber ?? st.clientUuid.slice(0, 8),
         order_type: st.orderType ?? "dine_in",
         table_name: st.tableName,
         covers: st.covers,

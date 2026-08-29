@@ -82,6 +82,11 @@ interface SaleState {
   // the KOT and Open-orders views can show a human name instead of a hex id.
   heldLabel: string | null;
 
+  // Short, human daily order number (e.g. "001") assigned when the order is
+  // first fired/saved. Stable across re-fires. Null for a fresh cart.
+  orderNumber: string | null;
+  setOrderNumber: (n: string) => void;
+
   addLine: (line: Omit<CartLine, "id" | "quantity"> & { quantity?: string }) => void;
   updateLine: (id: string, patch: Partial<CartLine>) => void;
   removeLine: (id: string) => void;
@@ -112,6 +117,8 @@ interface SaleState {
     resumedOpenOrder?: boolean;
     // The order's reference/label (e.g. "Ahmed"), restored on resume.
     heldLabel?: string | null;
+    // The order's short daily number (e.g. "001"), restored on resume.
+    orderNumber?: string | null;
   }) => void;
 }
 
@@ -128,6 +135,7 @@ const blank = (): Pick<
   | "covers"
   | "resumedOpenOrderUuid"
   | "heldLabel"
+  | "orderNumber"
 > => ({
   clientUuid: newClientUuid(),
   stage: "empty",
@@ -140,6 +148,7 @@ const blank = (): Pick<
   covers: null,
   resumedOpenOrderUuid: null,
   heldLabel: null,
+  orderNumber: null,
 });
 
 export const useSaleStore = create<SaleState>((set, get) => ({
@@ -198,6 +207,7 @@ export const useSaleStore = create<SaleState>((set, get) => ({
     }),
 
   setStage: (s) => set({ stage: s }),
+  setOrderNumber: (n) => set({ orderNumber: n }),
 
   resetForNewSale: () => set({ ...blank() }),
 
@@ -216,6 +226,7 @@ export const useSaleStore = create<SaleState>((set, get) => ({
       // (Retail held-sales recall passes no flag → stays null, nothing to void.)
       resumedOpenOrderUuid: payload.resumedOpenOrder ? payload.clientUuid : null,
       heldLabel: payload.heldLabel ?? null,
+      orderNumber: payload.orderNumber ?? null,
     }),
 }));
 
