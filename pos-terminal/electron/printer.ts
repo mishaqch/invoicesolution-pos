@@ -116,10 +116,10 @@ function envVar(name: string): string | undefined {
 
 function resolvePrinterInterface(): string | null {
   const env = envVar("POS_PRINTER_INTERFACE");
-  if (env && env.trim()) return env.trim();
+  if (env && env.trim()) return normalizePrinterInterface(env.trim());
   try {
     const meta = getMeta("printer.interface");
-    if (meta && meta.trim()) return meta.trim();
+    if (meta && meta.trim()) return normalizePrinterInterface(meta.trim());
   } catch {
     // SQLite not initialized yet (early call). Treat as no printer.
   }
@@ -142,10 +142,10 @@ function resolvePrinterInterface(): string | null {
  */
 function resolveKitchenPrinterInterface(): string | null {
   const env = envVar("POS_KITCHEN_PRINTER_INTERFACE");
-  if (env && env.trim()) return env.trim();
+  if (env && env.trim()) return normalizePrinterInterface(env.trim());
   try {
     const meta = getMeta("kitchen.interface");
-    if (meta && meta.trim()) return meta.trim();
+    if (meta && meta.trim()) return normalizePrinterInterface(meta.trim());
   } catch {
     // SQLite not ready — treat as no kitchen printer.
   }
@@ -248,7 +248,8 @@ export async function printReceipt(input: ReceiptInput): Promise<PrintResult> {
  * printer is reachable) so the UI can show a precise reason.
  */
 export async function testPrint(overrideInterface?: string): Promise<PrintResult> {
-  const printerUrl = (overrideInterface && overrideInterface.trim()) || resolvePrinterInterface();
+  const printerUrl =
+    normalizePrinterInterface(overrideInterface?.trim() || null) || resolvePrinterInterface();
   if (!printerUrl) {
     return { success: false, reason: "no printer configured" };
   }
@@ -959,6 +960,25 @@ async function realPrint(
  * valid interface string, so those paths pass a harmless dummy tcp address it
  * never connects to.
  */
+/**
+ * Normalise a printer interface value. A BARE name that carries no scheme and
+ * isn't a network/serial address (no "tcp://" / "cups://" / "win:" prefix, not
+ * an ip:port, not a /dev path) is a Windows printer NAME — prefix it with
+ * "win:" so it prints via the Windows RAW spooler instead of being mistaken for
+ * a network address (which then fails as "unreachable"). This makes the printer
+ * fields forgiving: typing "POS-80-Series (1)" just works.
+ */
+function normalizePrinterInterface(raw: string | null): string | null {
+  if (!raw) return raw;
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^(tcp:\/\/|cups:\/\/|win:|serial:|\/dev\/)/i.test(s)) return s;
+  // ip:port or host:port → a direct network printer, leave as-is.
+  if (/^[a-z0-9.-]+:\d+$/i.test(s)) return s;
+  // Otherwise it's a Windows printer name.
+  return `win:${s}`;
+}
+
 function resolveTransport(printerUrl: string): {
   kind: "cups" | "windows" | "direct";
   target: string;

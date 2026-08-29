@@ -133,7 +133,7 @@ export default function HardwareRoute() {
     if (!target) {
       setKitchenTestStatus({
         ok: false,
-        msg: "Enter the kitchen printer address first (e.g. tcp://192.168.0.60:9100), then test.",
+        msg: "Enter the kitchen printer first — a Windows name like POS-80-Series (1), or a network address like tcp://192.168.0.60:9100.",
       });
       return;
     }
@@ -281,15 +281,17 @@ export default function HardwareRoute() {
             <div className="mt-4 border-t pt-3">
               <div className="text-sm font-medium">Kitchen printer (optional)</div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Separate printer in the kitchen for order tickets (KOTs). Enter its network address,
-                e.g. <span className="font-mono">tcp://192.168.0.60:9100</span>. It must be on the
-                same network as this terminal. Leave blank to print KOTs on the counter printer.
+                Separate printer in the kitchen for order tickets (KOTs). Enter a Windows printer
+                name (e.g. <span className="font-mono">POS-80-Series (1)</span>) OR a network address
+                (e.g. <span className="font-mono">tcp://192.168.0.60:9100</span> — must be on the
+                same network as this terminal). Leave blank and KOTs are saved to disk (they are
+                never printed on the counter printer).
               </p>
               <div className="mt-2 space-y-1">
                 <Input
                   value={kitchenUrl}
                   onChange={(e) => setKitchenUrl(e.target.value)}
-                  placeholder="tcp://192.168.0.60:9100"
+                  placeholder="POS-80-Series (1)  or  tcp://192.168.0.60:9100"
                 />
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
