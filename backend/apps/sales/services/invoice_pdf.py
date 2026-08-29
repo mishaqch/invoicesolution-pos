@@ -276,6 +276,10 @@ def _draw_page_chrome(canvas: Canvas, doc) -> None:
 
 def render_invoice_pdf(invoice: Invoice) -> bytes:
     tenant = invoice.tenant
+    # Non-fiscal tenants (fbr_connection_type="none", e.g. TDCP) don't itemise
+    # tax per line — the bill shows only the aggregate tax at the bottom. Fiscal
+    # tenants keep the per-line Tax %/Tax columns (an FBR invoice requires them).
+    show_line_tax = getattr(tenant, "fbr_connection_type", None) != "none"
     items = list(invoice.items.select_related("product").order_by("line_number"))
 
     buf = io.BytesIO()
@@ -553,11 +557,13 @@ def render_invoice_pdf(invoice: Invoice) -> bytes:
     ]
     if has_any_discount:
         columns.append(("Disc.", 20, "R"))
-    columns += [
-        ("Tax %",  16, "R"),
-        ("Tax",    22, "R"),
-        ("Amount", 26, "R"),
-    ]
+    # Per-line tax columns only for fiscal tenants (see show_line_tax above).
+    if show_line_tax:
+        columns += [
+            ("Tax %",  16, "R"),
+            ("Tax",    22, "R"),
+        ]
+    columns.append(("Amount", 26, "R"))
     if has_any_status:
         columns.append(("", 9, "C"))
 
@@ -595,11 +601,13 @@ def render_invoice_pdf(invoice: Invoice) -> bytes:
         ]
         if has_any_discount:
             row.append(_money(getattr(it, "discount_amount", 0) or 0))
-        row += [
-            _percent(it.tax_rate),
-            _money(it.tax_amount),
-            _money(it.line_total),
-        ]
+        # Per-line tax cells only when the tax columns are shown (fiscal tenants).
+        if show_line_tax:
+            row += [
+                _percent(it.tax_rate),
+                _money(it.tax_amount),
+            ]
+        row.append(_money(it.line_total))
         if has_any_status:
             row.append(_line_status_marker(it))
         body_rows.append(row)
