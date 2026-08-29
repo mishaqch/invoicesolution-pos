@@ -36,7 +36,10 @@ export function SendToKitchen({
 
   async function fire() {
     if (unsentCount === 0) {
-      toast.show({ message: "Nothing new to send — all items already in the kitchen.", variant: "warning" });
+      toast.show({
+        message: "Nothing new to send — all items already in the kitchen.",
+        variant: "warning",
+      });
       return;
     }
 
@@ -47,7 +50,8 @@ export function SendToKitchen({
       const suggested = st0.tableName ? `Table ${st0.tableName}` : "";
       const label = await prompt({
         title: "Send to kitchen",
-        description: "Add a reference so you can find this order in Open orders (e.g. customer name or table).",
+        description:
+          "Add a reference so you can find this order in Open orders (e.g. customer name or table).",
         placeholder: "e.g. Ahmed / Table 5 / red shirt guy",
         initialValue: suggested,
         confirmLabel: "Send to kitchen",
@@ -63,13 +67,25 @@ export function SendToKitchen({
     setBusy(true);
     const r = await fireUnsentToKitchen({ branchId, terminalId });
     if (r.serverOk && r.printOk) {
-      toast.show({ message: `Sent ${r.fired} item(s) to the kitchen — order parked in Open orders.`, variant: "success" });
+      toast.show({
+        message: `Sent ${r.fired} item(s) to the kitchen — order parked in Open orders.`,
+        variant: "success",
+      });
     } else if (r.serverOk) {
-      toast.show({ message: "Order parked in Open orders; KOT saved to disk (printer issue).", variant: "warning" });
+      toast.show({
+        message: "Order parked in Open orders; KOT saved to disk (printer issue).",
+        variant: "warning",
+      });
     } else if (r.printOk) {
-      toast.show({ message: `KOT printed, but kitchen screen NOT updated: ${r.serverErr ?? "server error"}. Cart kept — try again.`, variant: "destructive" });
+      toast.show({
+        message: `KOT printed, but kitchen screen NOT updated: ${r.serverErr ?? "server error"}. Cart kept — try again.`,
+        variant: "destructive",
+      });
     } else {
-      toast.show({ message: `Could not send to kitchen: ${r.serverErr ?? "unknown error"}. Cart kept — try again.`, variant: "destructive" });
+      toast.show({
+        message: `Could not send to kitchen: ${r.serverErr ?? "unknown error"}. Cart kept — try again.`,
+        variant: "destructive",
+      });
     }
     // Order is now in the server Open-orders book → clear the front screen for
     // the next order. Only when the server accepted it (otherwise keep the cart
