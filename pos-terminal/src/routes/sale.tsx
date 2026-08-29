@@ -265,7 +265,10 @@ export default function SaleRoute() {
     useSaleStore.getState().resetForNewSale();
     setStage("empty");
     if (r.wasOpenOrder && r.hadFired) {
-      toast.show({ message: "Sale voided — removed from Open orders, kitchen notified to cancel.", variant: "success" });
+      toast.show({
+        message: "Sale voided — removed from Open orders, kitchen notified to cancel.",
+        variant: "success",
+      });
     } else if (r.wasOpenOrder) {
       toast.show({ message: "Sale voided — removed from Open orders.", variant: "success" });
     } else if (r.hadFired) {

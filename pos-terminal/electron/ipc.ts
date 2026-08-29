@@ -16,15 +16,21 @@ import { app, ipcMain, type IpcMainInvokeEvent, BrowserWindow } from "electron";
 import { getDb, getMeta, setMeta } from "./db/client";
 import { nextInvoiceNumber, nextKitchenOrderNumber } from "./db/numbering";
 import {
-  checkSdcHealth, fiscalizeInvoice, fiscalizeTestMode,
-  isFbrTestMode, setFbrTestMode,
+  checkSdcHealth,
+  fiscalizeInvoice,
+  fiscalizeTestMode,
+  isFbrTestMode,
+  setFbrTestMode,
 } from "./fiscalize";
+import { getPairedIdentity, getSdcUrl, isPaired, pairWithCode, setSdcUrl, unpair } from "./pairing";
 import {
-  getPairedIdentity, getSdcUrl, isPaired, pairWithCode, setSdcUrl, unpair,
-} from "./pairing";
-import {
-  currentStatus, expediteWorker, kickWorker, manualRetryFailed,
-  retryQueueRowById, setAuthTokens, subscribe,
+  currentStatus,
+  expediteWorker,
+  kickWorker,
+  manualRetryFailed,
+  retryQueueRowById,
+  setAuthTokens,
+  subscribe,
 } from "./sync/manager";
 import {
   closeCashSession,
@@ -102,10 +108,8 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
     setFbrTestMode(on);
     return { ok: true };
   });
-  ipcMain.handle(
-    "fiscalize:test-stamp",
-    (_e, args: { invoiceId: string; localNumber: string }) =>
-      fiscalizeTestMode(args.invoiceId, args.localNumber),
+  ipcMain.handle("fiscalize:test-stamp", (_e, args: { invoiceId: string; localNumber: string }) =>
+    fiscalizeTestMode(args.invoiceId, args.localNumber),
   );
 
   // Queue
@@ -129,7 +133,10 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
            ON CONFLICT(client_uuid) DO NOTHING`,
         )
         .run(
-          entry.client_uuid, entry.entity_type, entry.entity_id, entry.action,
+          entry.client_uuid,
+          entry.entity_type,
+          entry.entity_id,
+          entry.action,
           JSON.stringify(entry.payload),
         );
       return result.lastInsertRowid as number;
@@ -145,8 +152,10 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   // Catalog
   ipcMain.handle(
     "catalog:sync",
-    (_e, opts: { apiBase: string; accessToken: string; tenantId?: string | null; force?: boolean }) =>
-      syncCatalog(opts),
+    (
+      _e,
+      opts: { apiBase: string; accessToken: string; tenantId?: string | null; force?: boolean },
+    ) => syncCatalog(opts),
   );
   ipcMain.handle("catalog:search", (_e, query: string, limit?: number) =>
     searchProducts(query, limit),
@@ -159,15 +168,11 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   ipcMain.handle("catalog:by-barcode", (_e, barcode: string) => productByBarcode(barcode));
   ipcMain.handle("catalog:count", () => productsCount());
   // FEFO: nearest-expiry in-stock batch for a batch-tracked product.
-  ipcMain.handle(
-    "catalog:nearest-batch",
-    (_e, productId: string, branchId?: string | null) =>
-      nearestExpiryBatch(productId, branchId),
+  ipcMain.handle("catalog:nearest-batch", (_e, productId: string, branchId?: string | null) =>
+    nearestExpiryBatch(productId, branchId),
   );
-  ipcMain.handle(
-    "catalog:batches",
-    (_e, productId: string, branchId?: string | null) =>
-      batchesForProduct(productId, branchId),
+  ipcMain.handle("catalog:batches", (_e, productId: string, branchId?: string | null) =>
+    batchesForProduct(productId, branchId),
   );
 
   // Sales — Phase 2

@@ -17,16 +17,25 @@ import type { PaymentMethodConfig } from "./usePaymentMethods";
 import type { PaymentMethodCode, Tender } from "@/stores/tender";
 
 const PK_BANKS = [
-  "HBL", "MCB", "UBL", "Allied",
-  "Meezan", "Faysal", "BankAlfalah", "Soneri",
-  "Askari", "Standard Chartered", "BankIslami",
-  "Habib Metropolitan", "Other",
+  "HBL",
+  "MCB",
+  "UBL",
+  "Allied",
+  "Meezan",
+  "Faysal",
+  "BankAlfalah",
+  "Soneri",
+  "Askari",
+  "Standard Chartered",
+  "BankIslami",
+  "Habib Metropolitan",
+  "Other",
 ];
 
 interface Props {
   remaining: Money;
   config: PaymentMethodConfig;
-  storeCredit: Money;     // 0 if no customer or no credit
+  storeCredit: Money; // 0 if no customer or no credit
   hasCustomer: boolean;
   onAdd: (t: Omit<Tender, "id">) => void;
 }
@@ -51,7 +60,9 @@ function AmountField({ amount, setAmount, remaining }: AmountFieldProps) {
       />
       <div className="mt-2 flex flex-wrap gap-1">
         <Button
-          variant="outline" size="sm" type="button"
+          variant="outline"
+          size="sm"
+          type="button"
           onClick={() => setAmount(remaining.toStorageString())}
         >
           Remaining (Rs {remaining.display()})
@@ -133,28 +144,33 @@ export function CashSubFlow({ remaining, onAdd }: Props) {
         </div>
       )}
       <Button
-        className="w-full" disabled={!amount || tend.isNegative() || tend.isZero()}
-        onClick={() => onAdd({
-          payment_method: "cash",
-          // Record the FULL cash the customer handed over (not capped to the
-          // remaining) so paid_total reflects reality and the change due
-          // (paid − total) is computed + printed on the receipt. Capping it
-          // lost the over-tender and made change always show 0.
-          amount: tend.toStorageString(),
-        })}
+        className="w-full"
+        disabled={!amount || tend.isNegative() || tend.isZero()}
+        onClick={() =>
+          onAdd({
+            payment_method: "cash",
+            // Record the FULL cash the customer handed over (not capped to the
+            // remaining) so paid_total reflects reality and the change due
+            // (paid − total) is computed + printed on the receipt. Capping it
+            // lost the over-tender and made change always show 0.
+            amount: tend.toStorageString(),
+          })
+        }
       >
         Add cash tender
       </Button>
       <p className="text-xs text-muted-foreground">
-        Enter the cash the customer handed over. If it's more than the total,
-        the difference is shown as change to hand back.
+        Enter the cash the customer handed over. If it's more than the total, the difference is
+        shown as change to hand back.
       </p>
     </div>
   );
 }
 
 export function CardSubFlow({
-  remaining, onAdd, kind,
+  remaining,
+  onAdd,
+  kind,
 }: Props & { kind: "card_credit" | "card_debit" }) {
   const [amount, setAmount] = useState(remaining.toStorageString());
   const [last4, setLast4] = useState("");
@@ -171,16 +187,20 @@ export function CardSubFlow({
         <div>
           <Label>Last 4</Label>
           <NumberInput
-            mode="integer" maxLength={4}
-            value={last4} onChange={setLast4}
+            mode="integer"
+            maxLength={4}
+            value={last4}
+            onChange={setLast4}
             aria-label="Card last 4 digits"
           />
         </div>
         <div>
           <Label>Auth code</Label>
           <NumberInput
-            mode="integer" maxLength={6}
-            value={authCode} onChange={setAuthCode}
+            mode="integer"
+            maxLength={6}
+            value={authCode}
+            onChange={setAuthCode}
             aria-label="Card auth code"
           />
         </div>
@@ -192,16 +212,15 @@ export function CardSubFlow({
             <button
               type="button"
               className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              onClick={() => { setSkipRrn(true); setRrn(""); }}
+              onClick={() => {
+                setSkipRrn(true);
+                setRrn("");
+              }}
             >
               Skip RRN
             </button>
           </div>
-          <NumberInput
-            mode="integer"
-            value={rrn} onChange={setRrn}
-            aria-label="Card RRN"
-          />
+          <NumberInput mode="integer" value={rrn} onChange={setRrn} aria-label="Card RRN" />
         </div>
       ) : (
         <button
@@ -213,14 +232,17 @@ export function CardSubFlow({
         </button>
       )}
       <Button
-        className="w-full" disabled={!valid || !amount}
-        onClick={() => onAdd({
-          payment_method: kind,
-          amount,
-          card_last4: last4,
-          card_auth_code: authCode,
-          card_rrn: rrn || undefined,
-        })}
+        className="w-full"
+        disabled={!valid || !amount}
+        onClick={() =>
+          onAdd({
+            payment_method: kind,
+            amount,
+            card_last4: last4,
+            card_auth_code: authCode,
+            card_rrn: rrn || undefined,
+          })
+        }
       >
         Add card tender
       </Button>
@@ -229,7 +251,10 @@ export function CardSubFlow({
 }
 
 export function WalletSubFlow({
-  remaining, onAdd, config, kind,
+  remaining,
+  onAdd,
+  config,
+  kind,
 }: Props & { kind: "easypaisa" | "jazzcash" }) {
   const [amount, setAmount] = useState(remaining.toStorageString());
   const [txId, setTxId] = useState("");
@@ -254,26 +279,33 @@ export function WalletSubFlow({
       <div>
         <Label>Reference / transaction ID</Label>
         <Input
-          value={txId} onChange={(e) => setTxId(e.target.value)}
+          value={txId}
+          onChange={(e) => setTxId(e.target.value)}
           placeholder="From the customer's app"
         />
       </div>
       <div>
         <Label>Customer phone (optional)</Label>
         <NumberInput
-          mode="integer" maxLength={11}
-          value={phone} onChange={setPhone}
+          mode="integer"
+          maxLength={11}
+          value={phone}
+          onChange={setPhone}
           placeholder="03001234567"
           aria-label="Customer phone"
         />
       </div>
       <Button
-        className="w-full" disabled={!amount || !txId.trim()}
-        onClick={() => onAdd({
-          payment_method: kind, amount,
-          wallet_transaction_id: txId.trim(),
-          wallet_phone: phone.trim() || undefined,
-        })}
+        className="w-full"
+        disabled={!amount || !txId.trim()}
+        onClick={() =>
+          onAdd({
+            payment_method: kind,
+            amount,
+            wallet_transaction_id: txId.trim(),
+            wallet_phone: phone.trim() || undefined,
+          })
+        }
       >
         Add tender
       </Button>
@@ -291,9 +323,7 @@ export function RaastSubFlow({ remaining, onAdd, config }: Props) {
       {config.raast_qr_url ? (
         <div className="rounded-md border bg-muted/30 p-3 text-center">
           <img src={config.raast_qr_url} alt="Raast QR" className="mx-auto h-44 w-44 rounded" />
-          <p className="mt-2 text-xs text-muted-foreground">
-            Customer scans with any banking app
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">Customer scans with any banking app</p>
         </div>
       ) : (
         <p className="rounded bg-warning-soft p-2 text-xs text-warning-soft-foreground">
@@ -305,12 +335,16 @@ export function RaastSubFlow({ remaining, onAdd, config }: Props) {
         <Input value={txId} onChange={(e) => setTxId(e.target.value)} />
       </div>
       <Button
-        className="w-full" disabled={!amount || !txId.trim()}
-        onClick={() => onAdd({
-          payment_method: "raast", amount,
-          raast_transaction_id: txId.trim(),
-          raast_iban: config.raast_iban || undefined,
-        })}
+        className="w-full"
+        disabled={!amount || !txId.trim()}
+        onClick={() =>
+          onAdd({
+            payment_method: "raast",
+            amount,
+            raast_transaction_id: txId.trim(),
+            raast_iban: config.raast_iban || undefined,
+          })
+        }
       >
         Add tender
       </Button>
@@ -329,7 +363,9 @@ export function BankTransferSubFlow({ remaining, onAdd, config }: Props) {
       <AmountField amount={amount} setAmount={setAmount} remaining={remaining} />
       {config.bank_account_iban && (
         <div className="rounded-md border bg-muted/30 p-3 text-xs">
-          <div>Receiver: <strong>{config.bank_account_name}</strong></div>
+          <div>
+            Receiver: <strong>{config.bank_account_name}</strong>
+          </div>
           <div className="font-mono">{config.bank_account_iban}</div>
           <div>{config.bank_account_bank}</div>
         </div>
@@ -337,14 +373,20 @@ export function BankTransferSubFlow({ remaining, onAdd, config }: Props) {
       <div>
         <Label>Customer's bank</Label>
         <Select value={bank} onChange={(e) => setBank(e.target.value)}>
-          {PK_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+          {PK_BANKS.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
         </Select>
       </div>
       <div>
         <Label>Last 4 (optional)</Label>
         <NumberInput
-          mode="integer" maxLength={4}
-          value={last4} onChange={setLast4}
+          mode="integer"
+          maxLength={4}
+          value={last4}
+          onChange={setLast4}
           aria-label="Bank account last 4 digits"
         />
       </div>
@@ -353,12 +395,17 @@ export function BankTransferSubFlow({ remaining, onAdd, config }: Props) {
         <Input value={ref} onChange={(e) => setRef(e.target.value)} />
       </div>
       <Button
-        className="w-full" disabled={!amount || !bank || !ref.trim()}
-        onClick={() => onAdd({
-          payment_method: "bank_transfer", amount,
-          bank_name: bank, bank_account_last4: last4 || undefined,
-          bank_reference: ref.trim(),
-        })}
+        className="w-full"
+        disabled={!amount || !bank || !ref.trim()}
+        onClick={() =>
+          onAdd({
+            payment_method: "bank_transfer",
+            amount,
+            bank_name: bank,
+            bank_account_last4: last4 || undefined,
+            bank_reference: ref.trim(),
+          })
+        }
       >
         Add tender
       </Button>
@@ -366,9 +413,7 @@ export function BankTransferSubFlow({ remaining, onAdd, config }: Props) {
   );
 }
 
-export function StoreCreditSubFlow({
-  remaining, onAdd, hasCustomer, storeCredit,
-}: Props) {
+export function StoreCreditSubFlow({ remaining, onAdd, hasCustomer, storeCredit }: Props) {
   const cap = storeCredit.lt(remaining) ? storeCredit : remaining;
   const [amount, setAmount] = useState(cap.toStorageString());
   const tend = amount ? Money.fromStr(amount) : Money.zero();
@@ -376,8 +421,8 @@ export function StoreCreditSubFlow({
   if (!hasCustomer) {
     return (
       <p className="rounded bg-warning-soft p-2 text-xs text-warning-soft-foreground">
-        Store credit requires a registered customer on the sale. Pick a
-        customer from the cart pane first.
+        Store credit requires a registered customer on the sale. Pick a customer from the cart pane
+        first.
       </p>
     );
   }
@@ -398,16 +443,17 @@ export function StoreCreditSubFlow({
       <Button
         className="w-full"
         disabled={!amount || tend.gt(storeCredit) || tend.isZero()}
-        onClick={() => onAdd({
-          payment_method: "store_credit", amount,
-        })}
+        onClick={() =>
+          onAdd({
+            payment_method: "store_credit",
+            amount,
+          })
+        }
       >
         Apply store credit
       </Button>
       {tend.gt(storeCredit) && (
-        <p className="text-xs text-destructive">
-          Cannot apply more than available store credit.
-        </p>
+        <p className="text-xs text-destructive">Cannot apply more than available store credit.</p>
       )}
     </div>
   );
@@ -429,7 +475,11 @@ export function ChequeSubFlow({ remaining, onAdd }: Props) {
       <div>
         <Label>Bank</Label>
         <Select value={bank} onChange={(e) => setBank(e.target.value)}>
-          {PK_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+          {PK_BANKS.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
         </Select>
       </div>
       <div>
@@ -437,17 +487,22 @@ export function ChequeSubFlow({ remaining, onAdd }: Props) {
         <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
       <Button
-        className="w-full" disabled={!amount || !number.trim() || !date}
-        onClick={() => onAdd({
-          payment_method: "cheque", amount,
-          cheque_number: number.trim(), bank_name: bank, cheque_date: date,
-        })}
+        className="w-full"
+        disabled={!amount || !number.trim() || !date}
+        onClick={() =>
+          onAdd({
+            payment_method: "cheque",
+            amount,
+            cheque_number: number.trim(),
+            bank_name: bank,
+            cheque_date: date,
+          })
+        }
       >
         Add cheque
       </Button>
       <p className="text-xs text-muted-foreground">
-        Cheque records as 'pending'. Mark cleared/bounced from admin →
-        Cheques later.
+        Cheque records as 'pending'. Mark cleared/bounced from admin → Cheques later.
       </p>
     </div>
   );

@@ -160,7 +160,9 @@ const api = {
     health: (): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke("sdc:health"),
   },
   fiscalize: {
-    invoice: (invoiceId: string): Promise<{
+    invoice: (
+      invoiceId: string,
+    ): Promise<{
       ok: boolean;
       fbrInvoiceNumber?: string;
       alreadyFiscalized?: boolean;
@@ -170,8 +172,12 @@ const api = {
     isTestMode: (): Promise<boolean> => ipcRenderer.invoke("fiscalize:test-mode-on"),
     setTestMode: (on: boolean): Promise<{ ok: true }> =>
       ipcRenderer.invoke("fiscalize:set-test-mode", on),
-    testStamp: (args: { invoiceId: string; localNumber: string }): Promise<{
-      ok: boolean; fbrInvoiceNumber?: string;
+    testStamp: (args: {
+      invoiceId: string;
+      localNumber: string;
+    }): Promise<{
+      ok: boolean;
+      fbrInvoiceNumber?: string;
     }> => ipcRenderer.invoke("fiscalize:test-stamp", args),
   },
   queue: {
@@ -185,7 +191,12 @@ const api = {
     pendingCount: (): Promise<number> => ipcRenderer.invoke("queue:pending-count"),
   },
   catalog: {
-    sync: (opts: { apiBase: string; accessToken: string; tenantId?: string | null; force?: boolean }): Promise<{
+    sync: (opts: {
+      apiBase: string;
+      accessToken: string;
+      tenantId?: string | null;
+      force?: boolean;
+    }): Promise<{
       products: number;
       categories: number;
       batches: number;
@@ -202,7 +213,10 @@ const api = {
       ipcRenderer.invoke("catalog:by-barcode", barcode),
     count: (): Promise<number> => ipcRenderer.invoke("catalog:count"),
     // FEFO: nearest-expiry in-stock batch for a batch-tracked product.
-    nearestBatch: (productId: string, branchId?: string | null): Promise<PosBatchSqliteRow | null> =>
+    nearestBatch: (
+      productId: string,
+      branchId?: string | null,
+    ): Promise<PosBatchSqliteRow | null> =>
       ipcRenderer.invoke("catalog:nearest-batch", productId, branchId),
     batches: (productId: string, branchId?: string | null): Promise<PosBatchSqliteRow[]> =>
       ipcRenderer.invoke("catalog:batches", productId, branchId),
@@ -216,7 +230,9 @@ const api = {
       ipcRenderer.invoke("sales:persist-server-invoice", args),
     list: (opts: { held?: boolean; limit?: number } = {}): Promise<PosInvoiceRow[]> =>
       ipcRenderer.invoke("sales:list", opts),
-    get: (invoice_id: string): Promise<{
+    get: (
+      invoice_id: string,
+    ): Promise<{
       invoice: PosInvoiceRow;
       items: PosSaleItemRow[];
       payments: PosPaymentRow[];
@@ -232,8 +248,7 @@ const api = {
       fbr_invoice_number: string;
       fbr_qr_payload: string | null;
       fbr_validated_at: string | null;
-    }): Promise<{ ok: true }> =>
-      ipcRenderer.invoke("sales:set-fbr-fields", args),
+    }): Promise<{ ok: true }> => ipcRenderer.invoke("sales:set-fbr-fields", args),
   },
   session: {
     open: (payload: PosCashSessionRow): Promise<{ ok: true }> =>
@@ -254,11 +269,17 @@ const api = {
     ): Promise<{ ok: true }> => ipcRenderer.invoke("session:close", id, args),
   },
   printer: {
-    print: (payload: unknown): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
+    print: (
+      payload: unknown,
+    ): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
       ipcRenderer.invoke("printer:print-receipt", payload),
-    printKOT: (payload: unknown): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
+    printKOT: (
+      payload: unknown,
+    ): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
       ipcRenderer.invoke("printer:print-kot", payload),
-    printFolio: (payload: unknown): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
+    printFolio: (
+      payload: unknown,
+    ): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
       ipcRenderer.invoke("printer:print-folio", payload),
     /** Print a diagnostic slip. Pass an interface string to test before saving. */
     test: (iface?: string): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
@@ -268,8 +289,7 @@ const api = {
       ipcRenderer.invoke("printer:list-windows"),
   },
   drawer: {
-    open: (): Promise<{ success: boolean; reason?: string }> =>
-      ipcRenderer.invoke("drawer:open"),
+    open: (): Promise<{ success: boolean; reason?: string }> => ipcRenderer.invoke("drawer:open"),
   },
   customerDisplay: {
     /**
@@ -296,29 +316,34 @@ const api = {
       last_processed_at: string | null;
       last_error: string | null;
     }> => ipcRenderer.invoke("sync:status"),
-    retryFailed: (): Promise<{ retried: number }> =>
-      ipcRenderer.invoke("sync:retry-failed"),
-    listPending: (limit?: number): Promise<Array<{
-      id: number;
-      client_uuid: string;
-      entity_type: string;
-      status: string;
-      attempt_count: number;
-      last_error: string | null;
-      next_attempt_at: string | null;
-      created_at: string;
-      local_invoice_number: string | null;
-      grand_total: string | null;
-      invoice_date: string | null;
-      fbr_invoice_number: string | null;
-    }>> => ipcRenderer.invoke("sync:list-pending", limit),
+    retryFailed: (): Promise<{ retried: number }> => ipcRenderer.invoke("sync:retry-failed"),
+    listPending: (
+      limit?: number,
+    ): Promise<
+      Array<{
+        id: number;
+        client_uuid: string;
+        entity_type: string;
+        status: string;
+        attempt_count: number;
+        last_error: string | null;
+        next_attempt_at: string | null;
+        created_at: string;
+        local_invoice_number: string | null;
+        grand_total: string | null;
+        invoice_date: string | null;
+        fbr_invoice_number: string | null;
+      }>
+    > => ipcRenderer.invoke("sync:list-pending", limit),
     retryRow: (id: number): Promise<{ retried: number }> =>
       ipcRenderer.invoke("sync:retry-row", id),
-    onStatus: (cb: (s: {
-      counts: { pending: number; ok: number; failed: number };
-      last_processed_at: string | null;
-      last_error: string | null;
-    }) => void) => {
+    onStatus: (
+      cb: (s: {
+        counts: { pending: number; ok: number; failed: number };
+        last_processed_at: string | null;
+        last_error: string | null;
+      }) => void,
+    ) => {
       const handler = (_e: unknown, s: unknown) => cb(s as Parameters<typeof cb>[0]);
       ipcRenderer.on("sync:status-changed", handler);
       return () => ipcRenderer.off("sync:status-changed", handler);
@@ -328,22 +353,18 @@ const api = {
     next: (args: { branchCode: string; terminalIndex: number }): Promise<string> =>
       ipcRenderer.invoke("numbering:next", args),
     /** Short daily kitchen order number (e.g. "001"). */
-    nextKitchenOrder: (): Promise<string> =>
-      ipcRenderer.invoke("numbering:next-kitchen-order"),
+    nextKitchenOrder: (): Promise<string> => ipcRenderer.invoke("numbering:next-kitchen-order"),
   },
   updates: {
     /** Is an update already downloaded & staged? (version or null). */
-    pending: (): Promise<{ version: string | null }> =>
-      ipcRenderer.invoke("update:pending"),
+    pending: (): Promise<{ version: string | null }> => ipcRenderer.invoke("update:pending"),
     /** Current app version + last updater status (for the version footer). */
     info: (): Promise<{ currentVersion: string; status: string; pendingVersion: string | null }> =>
       ipcRenderer.invoke("update:info"),
     /** Trigger an update check immediately (testing — no need to wait an hour). */
-    checkNow: (): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke("update:check-now"),
+    checkNow: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("update:check-now"),
     /** Restart the app now to apply the staged update. */
-    installNow: (): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke("update:install-now"),
+    installNow: (): Promise<{ ok: boolean }> => ipcRenderer.invoke("update:install-now"),
     /** Fires when an update finished downloading and is ready to install. */
     onReady: (cb: (info: { version: string }) => void) => {
       const handler = (_e: unknown, info: unknown) => cb(info as { version: string });

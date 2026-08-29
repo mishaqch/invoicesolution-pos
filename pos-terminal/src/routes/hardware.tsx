@@ -38,7 +38,9 @@ export default function HardwareRoute() {
   // auto-prints KOTs. Blank = KOTs fall back to the counter printer above.
   const [kitchenUrl, setKitchenUrl] = useState("");
   const [kitchenTesting, setKitchenTesting] = useState(false);
-  const [kitchenTestStatus, setKitchenTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [kitchenTestStatus, setKitchenTestStatus] = useState<{ ok: boolean; msg: string } | null>(
+    null,
+  );
   // Installed Windows printers (USB thermal printers show up here). Empty on
   // macOS/Linux — those use tcp:// or cups:// interfaces instead.
   const [winPrinters, setWinPrinters] = useState<{ name: string; isDefault: boolean }[]>([]);
@@ -61,7 +63,10 @@ export default function HardwareRoute() {
     void window.api.pairing.status().then((s) => setIdentity(s.identity));
     // Load installed Windows printers so the operator can pick instead of
     // hand-typing the interface. No-op (empty) on macOS/Linux.
-    void window.api.printer.listWindows?.().then((list) => setWinPrinters(list ?? [])).catch(() => {});
+    void window.api.printer
+      .listWindows?.()
+      .then((list) => setWinPrinters(list ?? []))
+      .catch(() => {});
   }, []);
 
   async function testPrint() {
@@ -96,9 +101,10 @@ export default function HardwareRoute() {
   }
 
   async function unpairTerminal() {
-    if (!window.confirm(
-      "Unpair this terminal? It will need a new pairing code to ring sales again.",
-    )) return;
+    if (
+      !window.confirm("Unpair this terminal? It will need a new pairing code to ring sales again.")
+    )
+      return;
     await window.api.pairing.unpair();
     navigate("/", { replace: true });
   }
@@ -217,7 +223,8 @@ export default function HardwareRoute() {
                       className="rounded border px-1.5 py-0.5 font-mono hover:bg-muted"
                       title="Use this printer name"
                     >
-                      {p.name}{p.isDefault ? " ★" : ""}
+                      {p.name}
+                      {p.isDefault ? " ★" : ""}
                     </button>
                   ))}
                 </div>
@@ -234,9 +241,9 @@ export default function HardwareRoute() {
                 />
                 <p>
                   USB on Windows: <span className="font-mono">win:PrinterName</span> (or{" "}
-                  <span className="font-mono">win:auto</span> for the default).{" "}
-                  Network: <span className="font-mono">tcp://192.168.1.50:9100</span>.{" "}
-                  Leave blank to disable printing.
+                  <span className="font-mono">win:auto</span> for the default). Network:{" "}
+                  <span className="font-mono">tcp://192.168.1.50:9100</span>. Leave blank to disable
+                  printing.
                 </p>
               </div>
             </details>
@@ -274,10 +281,9 @@ export default function HardwareRoute() {
             <div className="mt-4 border-t pt-3">
               <div className="text-sm font-medium">Kitchen printer (optional)</div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Separate printer in the kitchen for order tickets (KOTs). Enter its
-                network address, e.g. <span className="font-mono">tcp://192.168.0.60:9100</span>.
-                It must be on the same network as this terminal. Leave blank to print
-                KOTs on the counter printer.
+                Separate printer in the kitchen for order tickets (KOTs). Enter its network address,
+                e.g. <span className="font-mono">tcp://192.168.0.60:9100</span>. It must be on the
+                same network as this terminal. Leave blank to print KOTs on the counter printer.
               </p>
               <div className="mt-2 space-y-1">
                 <Input
@@ -324,9 +330,13 @@ export default function HardwareRoute() {
                 <div className="rounded-md border bg-muted/40 p-3 text-xs">
                   <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                     <span className="text-muted-foreground">Branch</span>
-                    <span className="font-medium">{identity.branchName} ({identity.branchCode})</span>
+                    <span className="font-medium">
+                      {identity.branchName} ({identity.branchCode})
+                    </span>
                     <span className="text-muted-foreground">Terminal</span>
-                    <span className="font-medium">{identity.terminalName} · T{identity.terminalIndex}</span>
+                    <span className="font-medium">
+                      {identity.terminalName} · T{identity.terminalIndex}
+                    </span>
                     <span className="text-muted-foreground">FBR POS ID</span>
                     <span className="font-mono">{identity.branchFbrPosId ?? "—"}</span>
                   </div>
@@ -341,9 +351,9 @@ export default function HardwareRoute() {
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
                   The FBR Fiscalization service runs on this machine — leave as{" "}
-                  <span className="font-mono">http://localhost:8524</span>. If the
-                  branch shares one fiscal machine, point this at that machine,
-                  e.g. <span className="font-mono">http://192.168.1.10:8524</span>.
+                  <span className="font-mono">http://localhost:8524</span>. If the branch shares one
+                  fiscal machine, point this at that machine, e.g.{" "}
+                  <span className="font-mono">http://192.168.1.10:8524</span>.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -385,9 +395,13 @@ export default function HardwareRoute() {
                 <div className="rounded-md border bg-muted/40 p-3 text-xs">
                   <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                     <span className="text-muted-foreground">Branch</span>
-                    <span className="font-medium">{identity.branchName} ({identity.branchCode})</span>
+                    <span className="font-medium">
+                      {identity.branchName} ({identity.branchCode})
+                    </span>
                     <span className="text-muted-foreground">Terminal</span>
-                    <span className="font-medium">{identity.terminalName} · T{identity.terminalIndex}</span>
+                    <span className="font-medium">
+                      {identity.terminalName} · T{identity.terminalIndex}
+                    </span>
                   </div>
                 </div>
               )}
@@ -406,18 +420,17 @@ export default function HardwareRoute() {
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground space-y-2">
             <p>
-              The printer interface URL is stored locally on this terminal only
-              (per-station). If you replace the printer or change network address,
-              update this field.
+              The printer interface URL is stored locally on this terminal only (per-station). If
+              you replace the printer or change network address, update this field.
             </p>
             <p>
-              Cash drawer pulses are sent via the printer's drawer kick port.
-              Drawer test will not work until a printer is configured.
+              Cash drawer pulses are sent via the printer's drawer kick port. Drawer test will not
+              work until a printer is configured.
             </p>
             <p>
-              Customer display runs on the first non-primary monitor connected to
-              this machine. If no second monitor is attached, the customer-display
-              test will report "no customer display attached" — not an error.
+              Customer display runs on the first non-primary monitor connected to this machine. If
+              no second monitor is attached, the customer-display test will report "no customer
+              display attached" — not an error.
             </p>
           </CardContent>
         </Card>

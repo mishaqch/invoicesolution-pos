@@ -12,7 +12,7 @@ const FORMAT_VERSION = 1;
 
 interface ResolveArgs {
   branchCode: string;
-  terminalIndex: number;   // 1, 2, …
+  terminalIndex: number; // 1, 2, …
 }
 
 export function nextInvoiceNumber(args: ResolveArgs): string {
@@ -20,9 +20,9 @@ export function nextInvoiceNumber(args: ResolveArgs): string {
   const key = `invoice_seq:${args.branchCode}:T${args.terminalIndex}:${year}`;
   const db = getDb();
   const tx = db.transaction((k: string) => {
-    const row = db
-      .prepare("SELECT value FROM kv_meta WHERE key = ?")
-      .get(k) as { value: string } | undefined;
+    const row = db.prepare("SELECT value FROM kv_meta WHERE key = ?").get(k) as
+      | { value: string }
+      | undefined;
     const next = (row ? parseInt(row.value, 10) : 0) + 1;
     db.prepare(
       `INSERT INTO kv_meta(key, value, updated_at)
@@ -49,9 +49,9 @@ export function nextKitchenOrderNumber(): string {
   const key = `kitchen_order_seq:${day}`;
   const db = getDb();
   const tx = db.transaction((k: string) => {
-    const row = db
-      .prepare("SELECT value FROM kv_meta WHERE key = ?")
-      .get(k) as { value: string } | undefined;
+    const row = db.prepare("SELECT value FROM kv_meta WHERE key = ?").get(k) as
+      | { value: string }
+      | undefined;
     const next = (row ? parseInt(row.value, 10) : 0) + 1;
     db.prepare(
       `INSERT INTO kv_meta(key, value, updated_at)
