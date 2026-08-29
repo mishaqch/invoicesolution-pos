@@ -80,8 +80,11 @@ export function OpenOrdersPanel({
         covers: o.covers,
         // Resuming a server OPEN order → emptying the cart should void it.
         resumedOpenOrder: true,
-        // Carry the reference so a follow-up KOT shows the name, not a hex id.
+        // Carry the reference so a follow-up KOT shows the name, not a hex id,
+        // and so re-saving doesn't re-prompt for it.
         heldLabel: o.held_label,
+        // Carry the order/invoice number so re-fires + checkout stay synced.
+        orderNumber: o.local_invoice_number,
       });
       toast.show({
         message: `Resumed ${o.table ? `Table ${o.table}` : o.order_type}.`,

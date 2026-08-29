@@ -16,6 +16,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/feedback/Toast";
+import { useTextPrompt } from "@/components/ui/TextPromptModal";
 import { useSaleStore } from "@/stores/sale";
 import { fireUnsentToKitchen } from "./fire";
 
@@ -28,6 +29,7 @@ export function SendToKitchen({
 }) {
   const lines = useSaleStore((s) => s.lines);
   const toast = useToast();
+  const prompt = useTextPrompt();
   const [busy, setBusy] = useState(false);
 
   const unsentCount = lines.filter((l) => !l.sent_to_kitchen).length;
@@ -37,6 +39,27 @@ export function SendToKitchen({
       toast.show({ message: "Nothing new to send — all items already in the kitchen.", variant: "warning" });
       return;
     }
+
+    // Ask for a name/reference (like Save order) so the kitchen order is
+    // recognisable in Open orders — unless it already has one (resumed order).
+    const st0 = useSaleStore.getState();
+    if (!st0.heldLabel) {
+      const suggested = st0.tableName ? `Table ${st0.tableName}` : "";
+      const label = await prompt({
+        title: "Send to kitchen",
+        description: "Add a reference so you can find this order in Open orders (e.g. customer name or table).",
+        placeholder: "e.g. Ahmed / Table 5 / red shirt guy",
+        initialValue: suggested,
+        confirmLabel: "Send to kitchen",
+      });
+      if (label === null) return; // cancelled
+      if (!label.trim()) {
+        toast.show({ message: "A reference is required to send the order.", variant: "warning" });
+        return;
+      }
+      useSaleStore.getState().setHeldLabel(label.trim());
+    }
+
     setBusy(true);
     const r = await fireUnsentToKitchen({ branchId, terminalId });
     if (r.serverOk && r.printOk) {

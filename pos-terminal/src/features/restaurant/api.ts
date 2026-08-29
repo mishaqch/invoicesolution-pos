@@ -48,6 +48,9 @@ export interface FireOrderPayload {
   buyer_name?: string | null;
   buyer_phone?: string | null;
   cart_discount_pct?: string;
+  // The order's local invoice number (KK-T3-…). Sent so the server open order —
+  // and later the finalized invoice — carry the SAME number the KOT shows.
+  local_invoice_number?: string | null;
   // Cashier's free-text reference for an order parked via "Save order" (e.g.
   // "Table 3 / Ahmed"). Shown in the Open-orders list so they can find it.
   held_label?: string | null;

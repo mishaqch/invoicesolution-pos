@@ -102,10 +102,17 @@ export default function PaymentRoute() {
     setBusy(true);
     setError(null);
     try {
-      const localNumber = await window.api.numbering.next({
-        branchCode: ctx.branch.code,
-        terminalIndex: ctx.terminal.index,
-      });
+      // Reuse the number already assigned when the order was saved/sent to the
+      // kitchen (so the KOT, the Open-orders card and this invoice all match).
+      // Only generate a fresh number for a straight-through sale that was never
+      // saved/fired.
+      const existingOrderNo = useSaleStore.getState().orderNumber;
+      const localNumber =
+        existingOrderNo ||
+        (await window.api.numbering.next({
+          branchCode: ctx.branch.code,
+          terminalIndex: ctx.terminal.index,
+        }));
       const invoiceId = newClientUuid();
       const invoiceDate = new Date().toISOString().slice(0, 10);
 

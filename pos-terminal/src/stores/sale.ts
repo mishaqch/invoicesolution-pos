@@ -82,10 +82,14 @@ interface SaleState {
   // the KOT and Open-orders views can show a human name instead of a hex id.
   heldLabel: string | null;
 
-  // Short, human daily order number (e.g. "001") assigned when the order is
-  // first fired/saved. Stable across re-fires. Null for a fresh cart.
+  // The order's number = the LOCAL INVOICE NUMBER (e.g. "KK-T3-2026-0000001"),
+  // assigned when the order is first saved/fired and carried through to the
+  // final invoice at checkout — so the kitchen slip, the Open-orders card and
+  // the printed invoice all show the SAME number. Stable across re-fires. Null
+  // for a fresh cart (assigned lazily on first save/send).
   orderNumber: string | null;
   setOrderNumber: (n: string) => void;
+  setHeldLabel: (label: string) => void;
 
   addLine: (line: Omit<CartLine, "id" | "quantity"> & { quantity?: string }) => void;
   updateLine: (id: string, patch: Partial<CartLine>) => void;
@@ -208,6 +212,7 @@ export const useSaleStore = create<SaleState>((set, get) => ({
 
   setStage: (s) => set({ stage: s }),
   setOrderNumber: (n) => set({ orderNumber: n }),
+  setHeldLabel: (label) => set({ heldLabel: label }),
 
   resetForNewSale: () => set({ ...blank() }),
 

@@ -18,18 +18,27 @@ import { useSaleStore, type CartLine } from "@/stores/sale";
 import { fireOpenOrder, voidOpenOrder } from "./api";
 
 /**
- * Return this order's short daily number ("001"), assigning one on first use and
- * caching it on the sale store so re-fires/void reuse the same number. Falls back
- * to the client_uuid prefix if the counter is unavailable.
+ * Return this order's number = the LOCAL INVOICE NUMBER ("KK-T3-2026-0000001").
+ * Assigned on the first save/send and cached on the sale store so re-fires, the
+ * KOT, the Open-orders card and the final invoice all show the SAME number.
+ * Generated from the paired branch/terminal so it matches the server format.
+ * Falls back to the client_uuid prefix only if pairing/numbering is unavailable.
  */
 async function ensureOrderNumber(): Promise<string> {
   const st = useSaleStore.getState();
   if (st.orderNumber) return st.orderNumber;
   try {
-    const n = await window.api.numbering.nextKitchenOrder();
-    if (n) {
-      useSaleStore.getState().setOrderNumber(n);
-      return n;
+    const s = await window.api.pairing.status();
+    const id = s.identity;
+    if (id) {
+      const n = await window.api.numbering.next({
+        branchCode: id.branchCode,
+        terminalIndex: id.terminalIndex,
+      });
+      if (n) {
+        useSaleStore.getState().setOrderNumber(n);
+        return n;
+      }
     }
   } catch {
     /* fall through to the uuid prefix */
@@ -81,6 +90,7 @@ export async function fireUnsentToKitchen(opts: {
         buyer_name: st.customer?.name ?? null,
         buyer_phone: st.customer?.phone ?? null,
         cart_discount_pct: st.cartDiscountPct,
+        local_invoice_number: orderNo,
         fire: true,
         cart_lines: allLines.map((l) => ({
           product: l.product_id,
@@ -176,9 +186,9 @@ export async function saveOpenOrder(opts: {
   if (!opts.branchId || !opts.terminalId) {
     return { serverOk: false, serverErr: "terminal not paired to a branch" };
   }
-  // Assign the short daily order number now so a saved (not-yet-fired) order
-  // already has "001" in Open orders.
-  await ensureOrderNumber();
+  // Assign the order number (local invoice number) now so a saved order already
+  // carries its final number in Open orders and on the eventual invoice.
+  const orderNo = await ensureOrderNumber();
   try {
     await fireOpenOrder({
       client_uuid: st.clientUuid,
@@ -192,6 +202,7 @@ export async function saveOpenOrder(opts: {
       buyer_name: st.customer?.name ?? null,
       buyer_phone: st.customer?.phone ?? null,
       cart_discount_pct: st.cartDiscountPct,
+      local_invoice_number: orderNo,
       held_label: opts.heldLabel ?? null,
       fire: false,
       cart_lines: allLines.map((l) => ({

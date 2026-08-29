@@ -38,10 +38,10 @@ export function SaveOrder({
     }
 
     // Require a reference so the parked order is recognisable in Open orders.
-    // Pre-fill the table name when a dine-in table is picked; otherwise leave it
-    // blank so the cashier types something memorable (a name, a landmark, etc.).
+    // Pre-fill with the EXISTING reference when re-saving a resumed order (so we
+    // don't ask for the name again), else the table name, else blank.
     const st0 = useSaleStore.getState();
-    const suggested = st0.tableName ? `Table ${st0.tableName}` : "";
+    const suggested = st0.heldLabel || (st0.tableName ? `Table ${st0.tableName}` : "");
     const label = await prompt({
       title: "Save order",
       description:
