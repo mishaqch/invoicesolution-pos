@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useSessionStore } from "@/stores/session";
+import { normalizeKitchenInterface } from "@/lib/printer-interface";
 
 /**
  * Per-station Hardware settings — printer interface URL, test print,
@@ -26,6 +27,7 @@ import { useSessionStore } from "@/stores/session";
  *   //USB/EPSON-TM-T20III     USB on Windows
  *   /dev/cu.usbserial-XXXX    serial on macOS
  */
+
 export default function HardwareRoute() {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -113,9 +115,14 @@ export default function HardwareRoute() {
     setSaving(true);
     try {
       await window.api.meta.set("printer.interface", printerUrl.trim());
-      // Persist the kitchen printer too (blank clears it → KOTs use the counter
-      // printer). Both saved together from the one Save button.
-      await window.api.meta.set("kitchen.interface", kitchenUrl.trim());
+      // Persist the kitchen printer too (blank clears it → KOTs then save to
+      // disk; there is NO counter fallback, so a kitchen ticket never lands on
+      // the customer roll). A bare IP is normalized to tcp://IP:9100 so a WiFi
+      // printer entered as just "192.168.1.20" still works. Reflect the
+      // normalized value back into the field so the user sees what was saved.
+      const normalizedKitchen = normalizeKitchenInterface(kitchenUrl);
+      if (normalizedKitchen !== kitchenUrl) setKitchenUrl(normalizedKitchen);
+      await window.api.meta.set("kitchen.interface", normalizedKitchen);
     } finally {
       setSaving(false);
     }
@@ -126,17 +133,19 @@ export default function HardwareRoute() {
   // the network (same router/bridged extender). Saves the typed value first so
   // the test uses exactly what will be saved.
   async function testKitchenPrint() {
-    const target = kitchenUrl.trim();
-    // A kitchen test needs a kitchen printer address. Without one the underlying
-    // test would fall back to the COUNTER printer (or disk) and wrongly look
-    // like the kitchen printer works — so require an address here.
+    const target = normalizeKitchenInterface(kitchenUrl);
+    // A kitchen test needs a kitchen printer address. Without one the KOT would
+    // just save to disk (there is NO counter fallback) and wrongly look like the
+    // kitchen printer failed — so require an address here.
     if (!target) {
       setKitchenTestStatus({
         ok: false,
-        msg: "Enter the kitchen printer first — a Windows name like POS-80-Series (1), or a network address like tcp://192.168.0.60:9100.",
+        msg: "Enter the kitchen printer first — a WiFi/network printer like 192.168.1.20 (saved as tcp://192.168.1.20:9100), or a Windows name like POS-80-Series (1).",
       });
       return;
     }
+    // Reflect the normalized value so the field shows exactly what is tested/saved.
+    if (target !== kitchenUrl) setKitchenUrl(target);
     setKitchenTesting(true);
     setKitchenTestStatus(null);
     try {
@@ -291,7 +300,7 @@ export default function HardwareRoute() {
                 <Input
                   value={kitchenUrl}
                   onChange={(e) => setKitchenUrl(e.target.value)}
-                  placeholder="POS-80-Series (1)  or  tcp://192.168.0.60:9100"
+                  placeholder="192.168.1.20  (WiFi)   or   POS-80-Series (1)  (USB)"
                 />
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
