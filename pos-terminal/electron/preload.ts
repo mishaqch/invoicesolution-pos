@@ -287,6 +287,9 @@ const api = {
     /** List installed Windows printers (name + default) for the picker. */
     listWindows: (): Promise<{ name: string; isDefault: boolean }[]> =>
       ipcRenderer.invoke("printer:list-windows"),
+    /** This PC's own LAN IPv4 addresses — to check the terminal and a network
+     * printer share a subnet when a "printer unreachable" error appears. */
+    localIps: (): Promise<{ ips: string[] }> => ipcRenderer.invoke("printer:local-ips"),
   },
   drawer: {
     open: (): Promise<{ success: boolean; reason?: string }> => ipcRenderer.invoke("drawer:open"),

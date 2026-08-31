@@ -269,6 +269,23 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   ipcMain.handle("printer:print-folio", async (_e, payload) => printFolioBill(payload));
   ipcMain.handle("printer:test", async (_e, iface?: string) => testPrint(iface));
   ipcMain.handle("printer:list-windows", async () => listWindowsPrinters());
+  // This PC's own LAN IPv4 addresses — shown next to the kitchen-printer field
+  // so an operator can instantly see whether the terminal and a WiFi/network
+  // printer are on the SAME subnet. A "printer unreachable" almost always means
+  // the two are on different networks (e.g. PC on 192.168.0.x, printer on
+  // 192.168.1.x) or the router has client/AP isolation on.
+  ipcMain.handle("printer:local-ips", async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const os = require("node:os") as typeof import("node:os");
+    const nics = os.networkInterfaces();
+    const ips: string[] = [];
+    for (const addrs of Object.values(nics)) {
+      for (const a of addrs ?? []) {
+        if (a && !a.internal && a.family === "IPv4") ips.push(a.address);
+      }
+    }
+    return { ips };
+  });
   ipcMain.handle("drawer:open", async () => openCashDrawer());
 
   // Customer-facing display (second monitor). Returns success=false when

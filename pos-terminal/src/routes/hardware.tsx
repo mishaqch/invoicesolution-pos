@@ -37,12 +37,16 @@ export default function HardwareRoute() {
   const [testStatus, setTestStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testing, setTesting] = useState(false);
   // Kitchen printer (restaurant): a SEPARATE network printer in the kitchen that
-  // auto-prints KOTs. Blank = KOTs fall back to the counter printer above.
+  // auto-prints KOTs. Blank = KOTs are saved to disk (there is NO counter
+  // fallback — a kitchen ticket never lands on the customer roll).
   const [kitchenUrl, setKitchenUrl] = useState("");
   const [kitchenTesting, setKitchenTesting] = useState(false);
   const [kitchenTestStatus, setKitchenTestStatus] = useState<{ ok: boolean; msg: string } | null>(
     null,
   );
+  // This PC's own LAN IPv4(s) — shown by the kitchen printer so an operator can
+  // see at a glance whether the terminal and a WiFi printer share a subnet.
+  const [localIps, setLocalIps] = useState<string[]>([]);
   // Installed Windows printers (USB thermal printers show up here). Empty on
   // macOS/Linux — those use tcp:// or cups:// interfaces instead.
   const [winPrinters, setWinPrinters] = useState<{ name: string; isDefault: boolean }[]>([]);
@@ -61,6 +65,7 @@ export default function HardwareRoute() {
   useEffect(() => {
     void window.api.meta.get("printer.interface").then((v) => setPrinterUrl(v ?? ""));
     void window.api.meta.get("kitchen.interface").then((v) => setKitchenUrl(v ?? ""));
+    void window.api.printer.localIps?.().then((r) => setLocalIps(r?.ips ?? [])).catch(() => {});
     void window.api.sdc.getUrl().then((v) => setSdcUrl(v ?? ""));
     void window.api.pairing.status().then((s) => setIdentity(s.identity));
     // Load installed Windows printers so the operator can pick instead of
@@ -153,11 +158,26 @@ export default function HardwareRoute() {
       // Pass the explicit kitchen address so the test targets IT, not the
       // counter printer.
       const r = await window.api.printer.test?.(target);
+      // On a network failure, add a concrete subnet hint using this PC's IP so
+      // the operator can see whether the terminal and printer are even on the
+      // same network (the usual cause of "unreachable").
+      let failHint = "";
+      if (!r?.success && target.startsWith("tcp://")) {
+        const printerIp = target.replace(/^tcp:\/\//, "").split(":")[0];
+        const printerNet = printerIp.split(".").slice(0, 3).join(".");
+        const sameNet = localIps.some((ip) => ip.split(".").slice(0, 3).join(".") === printerNet);
+        failHint = localIps.length
+          ? sameNet
+            ? " This PC is on the same network — check the printer is powered on, on WiFi, and that its port 9100 (raw printing) is enabled."
+            : ` This PC (${localIps.join(", ")}) is on a DIFFERENT network than the printer (${printerNet}.x). Connect this terminal to the printer's WiFi.`
+          : "";
+      }
       setKitchenTestStatus({
         ok: !!r?.success,
         msg: r?.success
           ? `Test slip sent to the kitchen printer (${target}).`
           : (r?.reason ?? "Kitchen printer unreachable — check the address and network.") +
+            failHint +
             (r?.fallbackPath ? ` (saved to ${r.fallbackPath})` : ""),
       });
     } finally {
@@ -302,6 +322,15 @@ export default function HardwareRoute() {
                   onChange={(e) => setKitchenUrl(e.target.value)}
                   placeholder="192.168.1.20  (WiFi)   or   POS-80-Series (1)  (USB)"
                 />
+                {localIps.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    This terminal's IP:{" "}
+                    <span className="font-mono">{localIps.join(", ")}</span>. A WiFi printer must be
+                    on the SAME network — the first three number groups should match (e.g.
+                    <span className="font-mono"> 192.168.1</span>.x). If they differ, connect this PC
+                    to the printer's WiFi.
+                  </p>
+                )}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button
