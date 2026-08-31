@@ -77,3 +77,25 @@ def test_terminal_scope_excludes_other_terminal_even_same_branch(scene):
     _open_order(tenant, branch, t2, "T2-1", cashier)
     t3_orders = list(open_orders_qs(tenant.id, branch_id=str(branch.id), terminal_id=str(t3.id)))
     assert t3_orders == []
+
+
+def test_resume_rejects_other_terminals_order(scene):
+    """A till may not resume an order another terminal owns (occupied-but-not-
+    openable). getOpenOrder(?id=&terminal=) 404s for a foreign terminal."""
+    from rest_framework.test import APIRequestFactory, force_authenticate
+
+    from apps.restaurant.views import OpenOrderView
+
+    tenant, branch, t2, t3, cashier = scene
+    order = _open_order(tenant, branch, t2, "T2-1", cashier)  # owned by T2
+    factory = APIRequestFactory()
+
+    def _fetch(as_terminal):
+        req = factory.get(f"/api/restaurant/orders/?id={order.id}&terminal={as_terminal.id}")
+        force_authenticate(req, user=cashier)
+        req.tenant_id = str(tenant.id)
+        return OpenOrderView.as_view()(req)
+
+    # T2 (owner) can resume; T3 cannot.
+    assert _fetch(t2).status_code == 200
+    assert _fetch(t3).status_code == 404

@@ -274,6 +274,14 @@ class OpenOrderView(APIView):
             inv = Invoice.objects.for_tenant(request.tenant_id).filter(pk=oid).first()
             if not inv:
                 raise NotFound("Order not found.")
+            # Terminal ownership: a till may only resume its OWN open order. This
+            # is what makes a table read "occupied but not openable" on another
+            # terminal (the floor view still shows occupancy branch-wide, but the
+            # order itself belongs to the terminal that opened it). Admin/KDS
+            # callers omit `terminal` and can read any order.
+            req_terminal = request.query_params.get("terminal")
+            if req_terminal and str(inv.terminal_id) != req_terminal:
+                raise NotFound("Order not found.")
             return Response(_order_detail_payload(inv))
         branch_id = request.query_params.get("branch")
         # Terminal-scoped: a till sees only its OWN open orders (each terminal

@@ -51,7 +51,7 @@ export function OpenOrdersPanel({
   async function resume(id: string) {
     setLoadingId(id);
     try {
-      const o = await getOpenOrder(id);
+      const o = await getOpenOrder(id, terminalId);
       const lines: CartLine[] = o.cart_lines.map((l) => ({
         id: crypto.randomUUID(),
         product_id: l.product,

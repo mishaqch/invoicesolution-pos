@@ -96,9 +96,13 @@ export function listOpenOrders(
   return api(`/restaurant/orders/${qs ? `?${qs}` : ""}`);
 }
 
-/** One open order with cart_lines to rebuild the cart on resume. */
-export function getOpenOrder(id: string): Promise<OpenOrderDetail> {
-  return api(`/restaurant/orders/?id=${id}`);
+/** One open order with cart_lines to rebuild the cart on resume. Passing the
+ * terminal id lets the server refuse to resume another terminal's order (a
+ * table shows "occupied but not openable" on other tills). */
+export function getOpenOrder(id: string, terminalId?: string | null): Promise<OpenOrderDetail> {
+  const params = new URLSearchParams({ id });
+  if (terminalId) params.set("terminal", terminalId);
+  return api(`/restaurant/orders/?${params.toString()}`);
 }
 
 /**
