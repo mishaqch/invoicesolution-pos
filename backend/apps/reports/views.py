@@ -30,9 +30,25 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+
+class _IgnoreFormatQueryParam(DefaultContentNegotiation):
+    """The export endpoint uses ?format=pdf|xlsx|csv to pick the FILE format it
+    generates itself — it is NOT a DRF renderer suffix. DRF's default negotiation
+    treats ?format=pdf as a request for a renderer named "pdf", finds none, and
+    404s before the view body ever runs (so CSV/XLSX/PDF downloads all failed).
+    Forcing the first configured renderer (JSON) regardless of the query param
+    lets the view read `format` itself and return the right file. See
+    ReportExportView."""
+
+    def select_renderer(self, request, renderers, format_suffix=None):
+        # Ignore any requested format suffix entirely — always use the first
+        # renderer so negotiation never 404s on ?format=pdf|xlsx|csv.
+        return (renderers[0], renderers[0].media_type)
 
 from apps.accounts.permissions import HasModule
 from apps.fbr.models import FbrSubmission
@@ -154,6 +170,9 @@ class ReportExportView(APIView):
     # Exports are advanced: PDF/Excel/CSV downloads cost more compute
     # and are typically tied to scheduled reports.
     permission_classes = [_REPORTS_ADVANCED_GATE, IsAuthenticated]
+    # ?format=pdf|xlsx|csv selects the FILE format, not a DRF renderer — without
+    # this, DRF 404s on the unknown format before the view runs.
+    content_negotiation_class = _IgnoreFormatQueryParam
 
     def post(self, request, name: str):
         tenant_id = _require_tenant(request)
