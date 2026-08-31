@@ -82,9 +82,18 @@ export function fireOpenOrder(payload: FireOrderPayload): Promise<OpenOrderDetai
   });
 }
 
-/** List the open orders (the table/order book) for resuming. */
-export function listOpenOrders(branchId?: string | null): Promise<{ orders: OpenOrderSummary[] }> {
-  return api(`/restaurant/orders/${branchId ? `?branch=${branchId}` : ""}`);
+/** List the open orders (the table/order book) for resuming. Terminal-scoped:
+ * each till gets ONLY its own open orders, so one terminal never sees another
+ * terminal's unpaid orders. (Admin/KDS views can still list a whole branch.) */
+export function listOpenOrders(
+  branchId?: string | null,
+  terminalId?: string | null,
+): Promise<{ orders: OpenOrderSummary[] }> {
+  const params = new URLSearchParams();
+  if (branchId) params.set("branch", branchId);
+  if (terminalId) params.set("terminal", terminalId);
+  const qs = params.toString();
+  return api(`/restaurant/orders/${qs ? `?${qs}` : ""}`);
 }
 
 /** One open order with cart_lines to rebuild the cart on resume. */

@@ -219,7 +219,7 @@ def void_open_order(*, tenant_id, client_uuid, user=None, request=None) -> Invoi
     return invoice
 
 
-def open_orders_qs(tenant_id, *, branch_id=None):
+def open_orders_qs(tenant_id, *, branch_id=None, terminal_id=None):
     """Held (open) restaurant orders for a tenant, optionally one branch.
 
     "Restaurant open order" = held + carries restaurant context. We key that on
@@ -228,6 +228,12 @@ def open_orders_qs(tenant_id, *, branch_id=None):
     order_type — a cashier can Save an order before choosing dine-in/takeaway,
     and it must still show up here. (The old order_type__isnull=False filter
     silently hid such saved orders.)
+
+    Scoped to ONE terminal when terminal_id is given: each till owns its own open
+    orders, so Terminal 2's unpaid orders never appear on Terminal 3. (All
+    terminals' sales still converge on the Admin invoice list, which is not
+    terminal-scoped.) branch_id alone (no terminal) still works for admin/KDS
+    views that legitimately want the whole branch.
     """
     from django.db.models import Q
     qs = (
@@ -240,4 +246,6 @@ def open_orders_qs(tenant_id, *, branch_id=None):
     )
     if branch_id:
         qs = qs.filter(branch_id=branch_id)
+    if terminal_id:
+        qs = qs.filter(terminal_id=terminal_id)
     return qs

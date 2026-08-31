@@ -407,7 +407,9 @@ export default function SaleRoute() {
         </div>
       </header>
 
-      {isRestaurant && <OrderTypeBar branchId={ctx.branch?.id ?? null} />}
+      {isRestaurant && (
+        <OrderTypeBar branchId={ctx.branch?.id ?? null} terminalId={ctx.terminal?.id ?? null} />
+      )}
 
       {/* The grid takes the rest of the viewport. min-h-0 is critical:
           without it, a flex child can't shrink below its content's

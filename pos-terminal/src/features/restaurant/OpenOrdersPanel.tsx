@@ -15,9 +15,11 @@ import { getOpenOrder, listOpenOrders, type OpenOrderSummary } from "./api";
 
 export function OpenOrdersPanel({
   branchId,
+  terminalId,
   onClose,
 }: {
   branchId: string | null;
+  terminalId: string | null;
   onClose: () => void;
 }) {
   const [orders, setOrders] = useState<OpenOrderSummary[] | null>(null);
@@ -31,7 +33,7 @@ export function OpenOrdersPanel({
   useEffect(() => {
     let alive = true;
     const load = () =>
-      listOpenOrders(branchId)
+      listOpenOrders(branchId, terminalId)
         .then((d) => {
           if (alive) setOrders(d.orders);
         })
@@ -44,7 +46,7 @@ export function OpenOrdersPanel({
       alive = false;
       clearInterval(t);
     };
-  }, [branchId]);
+  }, [branchId, terminalId]);
 
   async function resume(id: string) {
     setLoadingId(id);
@@ -133,9 +135,7 @@ export function OpenOrdersPanel({
                     the cashier's reference/name, else the order number — never a
                     generic "dine_in" (which tells the cashier nothing). */}
                 <div className="truncate font-semibold">
-                  {o.table
-                    ? `Table ${o.table}`
-                    : o.held_label || o.local_invoice_number || "Order"}
+                  {o.table ? `Table ${o.table}` : o.held_label || o.local_invoice_number || "Order"}
                 </div>
                 {/* Reference as a subtitle when it isn't already the headline. */}
                 {o.held_label && o.table && (
@@ -144,7 +144,9 @@ export function OpenOrdersPanel({
                 {/* Always show the order number small so it can be matched to the
                     KOT / invoice, unless it's already the headline. */}
                 {(o.table || o.held_label) && (
-                  <div className="truncate text-[10px] text-muted-foreground">{o.local_invoice_number}</div>
+                  <div className="truncate text-[10px] text-muted-foreground">
+                    {o.local_invoice_number}
+                  </div>
                 )}
                 {/* Status badge: clearly shows whether the order is just SAVED
                     (not sent) or already IN KITCHEN (fired) / ready / served. */}

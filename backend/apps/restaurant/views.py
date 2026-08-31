@@ -276,7 +276,12 @@ class OpenOrderView(APIView):
                 raise NotFound("Order not found.")
             return Response(_order_detail_payload(inv))
         branch_id = request.query_params.get("branch")
-        orders = services.open_orders_qs(request.tenant_id, branch_id=branch_id)
+        # Terminal-scoped: a till sees only its OWN open orders (each terminal
+        # owns its sales). Admin/KDS callers omit `terminal` to see the branch.
+        terminal_id = request.query_params.get("terminal")
+        orders = services.open_orders_qs(
+            request.tenant_id, branch_id=branch_id, terminal_id=terminal_id,
+        )
         return Response({"orders": [_order_payload(o) for o in orders]})
 
     def post(self, request):

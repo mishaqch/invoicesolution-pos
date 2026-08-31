@@ -22,7 +22,13 @@ const TYPES: { value: OrderType; label: string }[] = [
   { value: "delivery", label: "Delivery" },
 ];
 
-export function OrderTypeBar({ branchId }: { branchId: string | null }) {
+export function OrderTypeBar({
+  branchId,
+  terminalId,
+}: {
+  branchId: string | null;
+  terminalId: string | null;
+}) {
   const orderType = useSaleStore((s) => s.orderType);
   const tableName = useSaleStore((s) => s.tableName);
   const tableId = useSaleStore((s) => s.tableId);
@@ -209,7 +215,13 @@ export function OrderTypeBar({ branchId }: { branchId: string | null }) {
       >
         Open orders
       </button>
-      {showOrders && <OpenOrdersPanel branchId={branchId} onClose={() => setShowOrders(false)} />}
+      {showOrders && (
+        <OpenOrdersPanel
+          branchId={branchId}
+          terminalId={terminalId}
+          onClose={() => setShowOrders(false)}
+        />
+      )}
     </div>
   );
 }
