@@ -109,6 +109,13 @@ class Report:
     def totals(self, rows: list[dict]) -> dict[str, Any]:
         return {}
 
+    def _ensure_aggregate(self) -> None:
+        """Hook for aggregate-backed reports to recompute their snapshot table
+        for the requested window on demand, so the report is always current and
+        never depends on the Celery beat aggregate task having run. Live reports
+        (those that query Invoice/SaleItem directly) leave this as a no-op."""
+        return None
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -120,6 +127,9 @@ class Report:
             if cached is not None:
                 return cached
 
+        # Refresh the backing aggregate for the requested window (no-op for live
+        # reports) so a cache-miss always reflects current data.
+        self._ensure_aggregate()
         raw = list(self.query())
         truncated = False
         if len(raw) > cap:

@@ -9,6 +9,7 @@ from django.db.models import F, Sum
 
 from apps.catalog.models import Category
 
+from ..aggregates.ensure import EnsuresProductVelocity
 from ..base import BaseFilters, ChartSpec, Column, Report
 from ..models import ProductVelocity
 from ..registry import register
@@ -20,7 +21,7 @@ class _Filters(BaseFilters):
 
 
 @register
-class CategoryWiseReport(Report):
+class CategoryWiseReport(EnsuresProductVelocity, Report):
     name = "category_wise"
     Filters = _Filters
     columns = (

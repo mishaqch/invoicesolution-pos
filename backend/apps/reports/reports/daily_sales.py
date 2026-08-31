@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
+from ..aggregates.ensure import EnsuresDailySales
 from ..base import BaseFilters, ChartSpec, Column, Report
 from ..models import DailySalesSummary
 from ..registry import register
@@ -23,7 +24,7 @@ class _Filters(BaseFilters):
 
 
 @register
-class DailySalesReport(Report):
+class DailySalesReport(EnsuresDailySales, Report):
     name = "daily_sales"
     Filters = _Filters
     columns = (
@@ -38,32 +39,7 @@ class DailySalesReport(Report):
     )
     chart_spec = ChartSpec(type="line", x_key="date", y_keys=("gross", "net"))
 
-    def _ensure_aggregate(self):
-        """Recompute daily_sales_summary for the filtered window so the report is
-        always current, independent of the Celery beat schedule."""
-        import datetime as _dt
-
-        from apps.tenants.models import Tenant
-
-        from ..aggregates.daily_sales import rebuild_daily_sales
-
-        tenant = Tenant.objects.filter(pk=self.tenant_id).first()
-        if tenant is None:
-            return
-        today = _dt.date.today()
-        date_from = self.filters.date_from or (today - _dt.timedelta(days=365))
-        date_to = self.filters.date_to or today
-        if isinstance(date_from, str):
-            date_from = _dt.date.fromisoformat(date_from)
-        if isinstance(date_to, str):
-            date_to = _dt.date.fromisoformat(date_to)
-        try:
-            rebuild_daily_sales(tenant, date_from=date_from, date_to=date_to)
-        except Exception:  # never let a recompute hiccup break the report read
-            pass
-
     def query(self):
-        self._ensure_aggregate()
         qs = DailySalesSummary.objects.for_tenant(self.tenant_id).select_related("branch")
         if self.filters.branch_id:
             qs = qs.filter(branch_id=self.filters.branch_id)

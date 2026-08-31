@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
+from ..aggregates.ensure import EnsuresProductVelocity
 from ..base import BaseFilters, ChartSpec, Column, Report
 from ..models import ProductVelocity
 from ..registry import register
@@ -21,7 +22,7 @@ class _Filters(BaseFilters):
 
 
 @register
-class ItemWiseReport(Report):
+class ItemWiseReport(EnsuresProductVelocity, Report):
     name = "item_wise"
     Filters = _Filters
     columns = (

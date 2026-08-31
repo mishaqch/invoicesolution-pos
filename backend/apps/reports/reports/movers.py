@@ -16,6 +16,7 @@ from django.db.models import Sum
 from apps.catalog.models import Product
 from apps.inventory.models import StockLevel
 
+from ..aggregates.ensure import EnsuresProductVelocity
 from ..base import BaseFilters, Column, Report
 from ..models import ProductVelocity
 from ..registry import register
@@ -30,7 +31,7 @@ class _MoversFilters(BaseFilters):
 
 
 @register
-class TopMoversReport(Report):
+class TopMoversReport(EnsuresProductVelocity, Report):
     name = "top_movers"
     Filters = _MoversFilters
     columns = (
@@ -71,7 +72,7 @@ class TopMoversReport(Report):
 
 
 @register
-class SlowMoversReport(Report):
+class SlowMoversReport(EnsuresProductVelocity, Report):
     name = "slow_movers"
     Filters = _MoversFilters
     columns = (

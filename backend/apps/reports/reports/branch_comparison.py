@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from django.db.models import Sum
 
+from ..aggregates.ensure import EnsuresDailySales
 from ..base import BaseFilters, ChartSpec, Column, Report
 from ..models import DailySalesSummary
 from ..registry import register
@@ -18,7 +19,7 @@ class _Filters(BaseFilters):
 
 
 @register
-class BranchComparisonReport(Report):
+class BranchComparisonReport(EnsuresDailySales, Report):
     name = "branch_comparison"
     Filters = _Filters
     columns = (
