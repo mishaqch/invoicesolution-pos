@@ -108,6 +108,7 @@ def rebuild_daily_sales(tenant: Tenant, *, date_from: dt.date, date_to: dt.date)
     for key, rk in refund_map.items():
         if key in seen:
             continue
+        seen.add(key)
         DailySalesSummary.objects.update_or_create(
             tenant=tenant, branch_id=key[0], date=key[1],
             defaults={
@@ -120,5 +121,18 @@ def rebuild_daily_sales(tenant: Tenant, *, date_from: dt.date, date_to: dt.date)
             },
         )
         upserted += 1
+
+    # Prune STALE rows: any snapshot row in this window that no longer has a
+    # qualifying invoice/refund must be deleted, not left behind. Without this,
+    # an invoice that was later voided/held/deleted leaves a phantom sales row
+    # that the report keeps showing forever (update_or_create only ever writes).
+    stale = DailySalesSummary.objects.filter(
+        tenant=tenant, date__gte=date_from, date__lte=date_to,
+    )
+    for existing in stale.values_list("branch_id", "date"):
+        if existing not in seen:
+            DailySalesSummary.objects.filter(
+                tenant=tenant, branch_id=existing[0], date=existing[1],
+            ).delete()
 
     return upserted

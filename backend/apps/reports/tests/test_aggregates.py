@@ -90,6 +90,27 @@ class TestDailySalesRebuild:
         rebuild_daily_sales(tenant, **SPAN)
         assert not DailySalesSummary.objects.filter(tenant=tenant).exists()
 
+    def test_stale_row_pruned_when_invoice_becomes_held(self, tenant, branch, make_invoice):
+        # A completed sale is snapshotted; then it's re-held (e.g. reverted to an
+        # open order). A rebuild must DELETE the now-phantom snapshot row.
+        inv = make_invoice(grand_total=Decimal("100"), tax_total=Decimal("16"))
+        rebuild_daily_sales(tenant, **SPAN)
+        assert DailySalesSummary.objects.filter(tenant=tenant, date=TODAY).count() == 1
+        inv.is_held = True
+        inv.save(update_fields=["is_held"])
+        rebuild_daily_sales(tenant, **SPAN)
+        assert DailySalesSummary.objects.filter(tenant=tenant, date=TODAY).count() == 0
+
+    def test_stale_row_pruned_when_invoice_soft_deleted(self, tenant, branch, make_invoice):
+        import django.utils.timezone as tz
+        inv = make_invoice(grand_total=Decimal("100"), tax_total=Decimal("16"))
+        rebuild_daily_sales(tenant, **SPAN)
+        assert DailySalesSummary.objects.filter(tenant=tenant).exists()
+        inv.deleted_at = tz.now()
+        inv.save(update_fields=["deleted_at"])
+        rebuild_daily_sales(tenant, **SPAN)
+        assert not DailySalesSummary.objects.filter(tenant=tenant).exists()
+
 
 class TestProductVelocityRebuild:
     def test_pending_sync_sale_counts(self, tenant, branch, product, make_invoice):

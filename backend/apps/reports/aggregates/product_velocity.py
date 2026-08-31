@@ -55,8 +55,10 @@ def rebuild_product_velocity(tenant: Tenant, *, date_from: dt.date, date_to: dt.
     cogs_map = _cogs_per_group(tenant, date_from=date_from, date_to=date_to)
 
     upserted = 0
+    seen: set[tuple] = set()
     for row in items:
         key = (row["product_id"], row["branch_id"], row["date"])
+        seen.add(key)
         ProductVelocity.objects.update_or_create(
             tenant=tenant,
             product_id=row["product_id"],
@@ -70,6 +72,19 @@ def rebuild_product_velocity(tenant: Tenant, *, date_from: dt.date, date_to: dt.
             },
         )
         upserted += 1
+
+    # Prune STALE rows in the window (see rebuild_daily_sales) — a product line
+    # whose invoice was later voided/held/deleted must not linger in velocity.
+    stale = ProductVelocity.objects.filter(
+        tenant=tenant, date__gte=date_from, date__lte=date_to,
+    ).values_list("product_id", "branch_id", "date")
+    for existing in stale:
+        if existing not in seen:
+            ProductVelocity.objects.filter(
+                tenant=tenant, product_id=existing[0],
+                branch_id=existing[1], date=existing[2],
+            ).delete()
+
     return upserted
 
 
