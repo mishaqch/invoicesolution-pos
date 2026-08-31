@@ -24,7 +24,15 @@ from apps.tenants.models import Tenant
 from ..models import DailySalesSummary
 
 
+# A sale "counts" the moment it is a COMPLETED (charged, not-held) invoice —
+# NOT only after FBR validation. Non-fiscal tenants (fbr_connection_type="none",
+# e.g. resorts on PRA) never get an FBR number, so their invoices stay
+# "pending_sync"/"submitted" forever; excluding those hid every non-fiscal sale
+# from every report. We include them here and rely on the is_held=False /
+# deleted_at filters (see rebuild_daily_sales) to keep OPEN orders and drafts
+# out. "failed" is deliberately excluded (the sale did not complete).
 COUNTED_STATUSES = (
+    "pending_sync", "submitted",
     "valid", "edited", "partially_edited", "partially_cancelled",
     "partially_edited_and_cancelled", "finalized", "cancelled",
 )
@@ -47,6 +55,8 @@ def rebuild_daily_sales(tenant: Tenant, *, date_from: dt.date, date_to: dt.date)
             invoice_date__gte=date_from,
             invoice_date__lte=date_to,
             status__in=COUNTED_STATUSES,
+            is_held=False,               # exclude OPEN/parked orders — not sales yet
+            deleted_at__isnull=True,     # exclude soft-deleted invoices
         )
         .values("branch_id", "invoice_date")
         .annotate(

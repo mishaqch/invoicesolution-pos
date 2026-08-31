@@ -35,6 +35,8 @@ def rebuild_product_velocity(tenant: Tenant, *, date_from: dt.date, date_to: dt.
             invoice__invoice_date__gte=date_from,
             invoice__invoice_date__lte=date_to,
             invoice__status__in=COUNTED_SALES_STATUSES,
+            invoice__is_held=False,               # exclude open/parked orders
+            invoice__deleted_at__isnull=True,     # exclude soft-deleted
             is_cancelled=False,
         )
         .values(
@@ -91,6 +93,8 @@ def _cogs_per_group(tenant: Tenant, *, date_from: dt.date, date_to: dt.date) -> 
           AND inv.invoice_date >= %s
           AND inv.invoice_date <= %s
           AND inv.status = ANY(%s)
+          AND inv.is_held = FALSE
+          AND inv.deleted_at IS NULL
           AND si.is_cancelled = FALSE
         GROUP BY si.product_id, inv.branch_id, inv.invoice_date
     """
