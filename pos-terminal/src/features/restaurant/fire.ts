@@ -15,6 +15,7 @@
  */
 
 import { useSaleStore, type CartLine } from "@/stores/sale";
+import { pkTimeHHMM } from "@/lib/pk-time";
 import { fireOpenOrder, voidOpenOrder } from "./api";
 
 /**
@@ -115,8 +116,7 @@ export async function fireUnsentToKitchen(opts: {
   // 2) Print a KOT for the un-fired lines.
   let printOk = false;
   try {
-    const now = new Date();
-    const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    const time = pkTimeHHMM();
     const res = await window.api.printer.printKOT({
       order_number: orderNo,
       order_type: st.orderType ?? "dine_in",
@@ -264,8 +264,7 @@ export async function voidOrderAndNotifyKitchen(): Promise<VoidResult> {
   // 2) Kitchen cancellation ticket — ONLY if something was already fired.
   if (hadFired) {
     try {
-      const now = new Date();
-      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const time = pkTimeHHMM();
       await window.api.printer.printKOT({
         // Same order number the order was fired with, so the cook matches the
         // cancellation to the original ticket.

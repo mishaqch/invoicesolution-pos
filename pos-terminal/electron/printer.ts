@@ -56,6 +56,27 @@ interface ReceiptInput {
 }
 
 // Shared formatters (used by both the styled print + the plain disk fallback).
+
+// Pakistan-local date/time for anything printed on a receipt/KOT. We force the
+// Asia/Karachi zone so the printed time is correct even when the terminal PC's
+// Windows clock is set to the wrong timezone (a common on-site misconfig).
+const PK_TZ = "Asia/Karachi";
+export function pkDateTime(d: Date = new Date()): string {
+  return d.toLocaleString("en-GB", { timeZone: PK_TZ, hour12: false });
+}
+export function pkTimeHHMM(d: Date = new Date()): string {
+  return d.toLocaleTimeString("en-GB", {
+    timeZone: PK_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+export function pkDate(d: Date = new Date()): string {
+  // YYYY-MM-DD in Karachi (so the printed date matches the invoice_date the
+  // server assigns, which is Asia/Karachi too). en-CA yields YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: PK_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(d);
+}
+
 function money2(s: string | number | null | undefined): string {
   const n = Number(s ?? 0);
   return Number.isFinite(n) ? n.toFixed(2) : "0.00";
@@ -677,8 +698,8 @@ function renderFolioText(input: FolioBillInput): string {
   } else if (f.room) {
     L.push(row("Room", `${f.room.number} (${f.room.type})`));
   }
-  if (f.check_in) L.push(row("Check-in", new Date(f.check_in).toLocaleString()));
-  if (f.check_out) L.push(row("Check-out", new Date(f.check_out).toLocaleString()));
+  if (f.check_in) L.push(row("Check-in", pkDateTime(new Date(f.check_in))));
+  if (f.check_out) L.push(row("Check-out", pkDateTime(new Date(f.check_out))));
   L.push(row("Nights", String(f.nights)));
   L.push(rule);
 
@@ -1139,7 +1160,9 @@ function renderBodyText(input: ReceiptInput): string {
   const lines: string[] = [];
 
   lines.push(`Invoice: ${input.invoice.local_invoice_number}`);
-  lines.push(`Date:    ${input.invoice.invoice_date}`);
+  // Date from the invoice; time from Karachi-local now (the sale just completed).
+  // Printing the time makes each receipt individually timestamped, in PKT.
+  lines.push(`Date:    ${input.invoice.invoice_date}  ${pkTimeHHMM()}`);
   // Restaurant: order type + table for the customer's reference.
   if (input.order_type) {
     const ot = input.order_type.replace("_", " ");

@@ -15,6 +15,7 @@ import {
   type ChosenModifiers,
 } from "@/features/restaurant/ModifierPicker";
 import { Money, rs } from "@/lib/money";
+import { pkDate } from "@/lib/pk-time";
 import { CartPane } from "@/features/sale/CartPane";
 import { ProductGrid } from "@/features/sale/ProductGrid";
 import { TotalsPane } from "@/features/sale/TotalsPane";
@@ -211,7 +212,7 @@ export default function SaleRoute() {
         line_total: q.line_total.toStorageString(),
         notes: null,
       }));
-      const invoiceDate = new Date().toISOString().slice(0, 10);
+      const invoiceDate = pkDate(); // Pakistan-local date, not UTC
       await window.api.sales.persistInvoice({
         invoice: {
           id: invoiceId,

@@ -19,6 +19,7 @@ import { TenderList } from "@/features/payment/TenderList";
 import { usePaymentMethods } from "@/features/payment/usePaymentMethods";
 import { usePosContext } from "@/features/sale/usePosContext";
 import { Money } from "@/lib/money";
+import { pkDate } from "@/lib/pk-time";
 import { newClientUuid } from "@/lib/uuid";
 import { applyPaymentServicesRate, quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
@@ -114,7 +115,9 @@ export default function PaymentRoute() {
           terminalIndex: ctx.terminal.index,
         }));
       const invoiceId = newClientUuid();
-      const invoiceDate = new Date().toISOString().slice(0, 10);
+      // Pakistan-local date (NOT UTC). Using toISOString() here dated late-night
+      // PKT sales (00:00–05:00) to the PREVIOUS day, because UTC is 5h behind.
+      const invoiceDate = pkDate();
 
       const items = totals.lines.map((q, i) => ({
         id: newClientUuid(),

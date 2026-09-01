@@ -84,7 +84,13 @@ export default function InvoiceDetail() {
   const navigate = useNavigate();
   // Tax authority this tenant fiscalizes with. PRA POS tenants (pra_cloud)
   // must see "PRA" on the buttons/messages; everyone else sees "FBR".
-  const authority = useFbrConnectionType() === "pra_cloud" ? "PRA" : "FBR";
+  const connType = useFbrConnectionType();
+  const authority = connType === "pra_cloud" ? "PRA" : "FBR";
+  // Non-fiscal tenants (fbr_connection_type="none", e.g. the TDCP resort) are
+  // NOT connected to FBR/PRA. Hide every fiscalization/validation button for
+  // them — there is no authority to validate or submit against. All other
+  // tenants are unaffected.
+  const isNonFiscal = connType === "none";
   const { data: invoice, isLoading } = useInvoice(id);
   const cancel = useCancelInvoice();
   const cancelItem = useCancelInvoiceItem();
@@ -294,8 +300,8 @@ export default function InvoiceDetail() {
       <div className="flex flex-wrap items-center gap-2">
         {/* DI-API "Validate with FBR" — only for DI-API tenants. Hidden for
             SDC/POS tenants (they use the SDC button below; the DI-API path
-            would error with "no token"). */}
-        {!isPosFiscalizationTenant && (
+            would error with "no token") AND for non-fiscal tenants (no authority). */}
+        {!isPosFiscalizationTenant && !isNonFiscal && (
         <Button
           variant="outline"
           onClick={async () => {
@@ -414,6 +420,7 @@ export default function InvoiceDetail() {
             PRAL then issues the FBR Invoice Number on success. Failed
             submissions can be retried via the same button. */}
         {!isPosFiscalizationTenant
+          && !isNonFiscal
           && (invoice.status === "failed" || invoice.status === "pending_sync")
           && !invoice.fbr_invoice_number && (
           <Button
