@@ -55,11 +55,17 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
     invoice = Invoice.objects.filter(tenant_id=tenant_id, client_uuid=client_uuid).first()
     is_new = invoice is None
     if is_new:
-        from apps.sales.services.numbering import next_invoice_number
         invoice = Invoice(
             tenant_id=tenant_id, branch=branch, terminal=terminal, cashier=cashier,
             client_uuid=client_uuid, invoice_type="sale",
-            local_invoice_number=payload.get("local_invoice_number") or next_invoice_number(terminal=terminal),
+            # A held/open order carries only a temporary ORDER TAG, never a real
+            # invoice number — the number is minted at charge. Use the tag the
+            # terminal sent; if absent, fall back to a client_uuid-derived tag
+            # (NOT next_invoice_number, which would burn an invoice number on a
+            # draft and leave gaps in the completed sequence).
+            local_invoice_number=(
+                payload.get("local_invoice_number") or f"ORD-{str(client_uuid)[:8]}"
+            ),
             invoice_date=dt.date.today(), status="pending_sync",
         )
 

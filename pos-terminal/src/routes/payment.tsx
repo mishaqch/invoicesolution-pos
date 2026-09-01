@@ -103,17 +103,15 @@ export default function PaymentRoute() {
     setBusy(true);
     setError(null);
     try {
-      // Reuse the number already assigned when the order was saved/sent to the
-      // kitchen (so the KOT, the Open-orders card and this invoice all match).
-      // Only generate a fresh number for a straight-through sale that was never
-      // saved/fired.
-      const existingOrderNo = useSaleStore.getState().orderNumber;
-      const localNumber =
-        existingOrderNo ||
-        (await window.api.numbering.next({
-          branchCode: ctx.branch.code,
-          terminalIndex: ctx.terminal.index,
-        }));
+      // Mint the invoice number NOW, at charge — never before. A held/open order
+      // only carried a temporary order TAG (KK-T3-045), not an invoice number,
+      // so a voided/abandoned order leaves no gap in the invoice sequence. The
+      // server is authoritative and mints its own number when it finalizes the
+      // held row; this local number is for the offline receipt printed here.
+      const localNumber = await window.api.numbering.next({
+        branchCode: ctx.branch.code,
+        terminalIndex: ctx.terminal.index,
+      });
       const invoiceId = newClientUuid();
       // Pakistan-local date (NOT UTC). Using toISOString() here dated late-night
       // PKT sales (00:00–05:00) to the PREVIOUS day, because UTC is 5h behind.

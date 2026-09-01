@@ -133,9 +133,14 @@ def create_invoice(
         cashier=cashier,
         cash_session=cash_session,
         customer=customer or (reference_invoice.customer if reference_invoice else None),
-        # Finalizing a held order keeps its existing number; a fresh sale gets a new one.
+        # The invoice number is minted at CHARGE time. Finalizing a held order
+        # ALWAYS mints a fresh server number (the held row only carried a
+        # temporary order tag, never a real invoice number), so voided/abandoned
+        # orders don't burn a number and completed invoices stay gapless. A
+        # straight-through sale uses the number the terminal sent, else mints one.
+        # (Previously a held order kept its tag, leaving gaps like "0032 → 0036".)
         local_invoice_number=(
-            finalize_held.local_invoice_number if finalize_held
+            next_invoice_number(terminal=terminal) if finalize_held
             else (local_invoice_number or next_invoice_number(terminal=terminal))
         ),
         invoice_type=invoice_type,

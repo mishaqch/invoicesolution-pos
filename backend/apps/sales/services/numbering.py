@@ -44,9 +44,14 @@ def next_invoice_number(*, terminal: Terminal) -> str:
     # but use their own numbering namespace ('R0000001-CN'), which would
     # otherwise confuse the trailing-digit parse and cause sequence
     # collisions.
+    # Only COMPLETED (charged, not-held) invoices advance the sequence, so the
+    # invoice number is minted only at charge time — an open/held order or a
+    # voided draft never consumes a number. This keeps completed-invoice numbers
+    # gapless per terminal per day (the reported "closed at 0032, reopened at
+    # 0036" gaps came from held/voided orders burning numbers).
     last = (
         Invoice.objects.filter(
-            terminal=locked_terminal, invoice_date__year=year,
+            terminal=locked_terminal, invoice_date__year=year, is_held=False,
         )
         .exclude(invoice_type__in=("credit_note", "debit_note"))
         .order_by("-local_invoice_number")

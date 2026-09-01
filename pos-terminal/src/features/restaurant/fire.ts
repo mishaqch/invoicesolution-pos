@@ -19,11 +19,14 @@ import { pkTimeHHMM } from "@/lib/pk-time";
 import { fireOpenOrder, voidOpenOrder } from "./api";
 
 /**
- * Return this order's number = the LOCAL INVOICE NUMBER ("KK-T3-2026-0000001").
- * Assigned on the first save/send and cached on the sale store so re-fires, the
- * KOT, the Open-orders card and the final invoice all show the SAME number.
- * Generated from the paired branch/terminal so it matches the server format.
- * Falls back to the client_uuid prefix only if pairing/numbering is unavailable.
+ * Return this order's TEMPORARY ORDER TAG (e.g. "KK-T3-045"), NOT a real invoice
+ * number. A held/open order must not consume an invoice number — the invoice
+ * number is minted only at CHARGE (server-side), so voided/abandoned orders
+ * leave no gaps in the invoice sequence. The tag is a short daily counter
+ * (001, 002…) scoped to the branch+terminal, used on the KOT + the Open-orders
+ * card so cook and cashier can call it out. Cached on the sale store so re-fires
+ * and the eventual charge all reference the SAME order. Falls back to the
+ * client_uuid prefix only if pairing/numbering is unavailable.
  */
 async function ensureOrderNumber(): Promise<string> {
   const st = useSaleStore.getState();
@@ -31,15 +34,15 @@ async function ensureOrderNumber(): Promise<string> {
   try {
     const s = await window.api.pairing.status();
     const id = s.identity;
-    if (id) {
-      const n = await window.api.numbering.next({
-        branchCode: id.branchCode,
-        terminalIndex: id.terminalIndex,
-      });
-      if (n) {
-        useSaleStore.getState().setOrderNumber(n);
-        return n;
-      }
+    const daily = await window.api.numbering.nextKitchenOrder();
+    if (id && daily) {
+      const tag = `${id.branchCode}-T${id.terminalIndex}-${daily}`;
+      useSaleStore.getState().setOrderNumber(tag);
+      return tag;
+    }
+    if (daily) {
+      useSaleStore.getState().setOrderNumber(daily);
+      return daily;
     }
   } catch {
     /* fall through to the uuid prefix */

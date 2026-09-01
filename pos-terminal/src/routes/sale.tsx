@@ -190,10 +190,12 @@ export default function SaleRoute() {
     const totals = quoteCart(useSaleStore.getState());
     const invoiceId = newClientUuid();
     try {
-      const localNumber = await window.api.numbering.next({
-        branchCode: ctx.branch.code,
-        terminalIndex: terminalIndexFromName(ctx.terminal.name),
-      });
+      // A HELD sale carries only a temporary order tag (KK-T1-045), NOT an
+      // invoice number — the number is minted at charge, so parking a sale
+      // never burns an invoice number (no gaps in the completed sequence).
+      const tIdx = terminalIndexFromName(ctx.terminal.name);
+      const daily = await window.api.numbering.nextKitchenOrder();
+      const localNumber = `${ctx.branch.code}-T${tIdx}-${daily}`;
       const items = totals.lines.map((q, i) => ({
         id: newClientUuid(),
         invoice_id: invoiceId,
