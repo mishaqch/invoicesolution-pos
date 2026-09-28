@@ -12,9 +12,8 @@ atomic place that's per-terminal). The Phase 2 plan called this out.
 
 from __future__ import annotations
 
-import datetime as dt
-
 from django.db import transaction
+from django.utils import timezone
 
 from apps.sales.models import Invoice
 from apps.tenants.models import Branch, Terminal
@@ -32,7 +31,11 @@ def next_invoice_number(*, terminal: Terminal) -> str:
     )
     locked_terminal = Terminal.objects.select_for_update().get(pk=terminal.pk)
 
-    today = dt.date.today()
+    # localdate() honours Django's TIME_ZONE (Asia/Karachi) regardless of the
+    # host OS zone — so a sale rung up 00:00–05:00 PKT is numbered under the
+    # correct Karachi day/year, not the UTC day (which would still read as the
+    # previous day/year and could mis-sequence around midnight / New Year).
+    today = timezone.localdate()
     year = today.year
 
     # Use the existing invoices count for this terminal in this year as the

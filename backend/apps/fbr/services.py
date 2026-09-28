@@ -87,10 +87,12 @@ def _make_sandbox_client(tenant: Tenant) -> FbrClient:
 def _run_one_scenario(
     tenant: Tenant, meta, client: FbrClient, *,
     payload_override: dict | None = None,
+    force: bool = False,
 ) -> tuple[str, dict]:
     """Run a single scenario against PRAL sandbox.
 
-    Returns (status, payload) where status ∈ {"success", "failed"}.
+    Returns (status, payload) where status ∈ {"success", "failed",
+    "reconciled"}.
     Persists the FbrScenarioTest row AND an FbrSubmission row with
     request + response so the UI's diagnostic panel can render them.
 
@@ -100,7 +102,24 @@ def _run_one_scenario(
     PRAL feedback without redeploying code. The override is one-off:
     the builder code remains the source of truth for the next regular
     run.
+
+    Reconciled lock: if a platform admin has marked this scenario
+    `reconciled=True` (FBR/IRIS already confirmed it passed for this
+    taxpayer), we DO NOT contact FBR and DO NOT touch the row — so no
+    run, batch OR per-scenario, can overwrite an FBR-confirmed pass
+    with a builder "failed". `force=True` (deliberate re-test) or a
+    `payload_override` (operator hand-fired a specific JSON) bypasses
+    the lock; those are the only two ways to re-run a locked scenario.
     """
+    if not force and payload_override is None:
+        existing = (
+            FbrScenarioTest.objects
+            .filter(tenant=tenant, scenario_code=meta.code, reconciled=True)
+            .first()
+        )
+        if existing is not None:
+            return "reconciled", {}
+
     payload = payload_override if payload_override is not None else meta.builder(tenant)
     scenario_test, _ = FbrScenarioTest.objects.update_or_create(
         tenant=tenant, scenario_code=meta.code,
@@ -151,6 +170,7 @@ def _run_one_scenario(
 def run_single_scenario(
     tenant: Tenant, scenario_code: str, *,
     payload_override: dict | None = None,
+    force: bool = False,
 ) -> str:
     """Run ONE specific scenario by code. Used by the per-scenario
     'Run' button on the admin-web Scenarios page so the operator can
@@ -198,7 +218,7 @@ def run_single_scenario(
             builder=lambda t: payload_override,
         )
     status, _payload = _run_one_scenario(
-        tenant, meta, client, payload_override=payload_override,
+        tenant, meta, client, payload_override=payload_override, force=force,
     )
     return status
 
@@ -240,8 +260,20 @@ def run_scenarios(tenant: Tenant) -> dict:
         )
         results[code] = "not_implemented"
 
+    # Statuses a platform admin has confirmed against FBR/IRIS directly are
+    # authoritative — the tenant passed them on the FBR portal, so re-running
+    # OUR builder (which may not reproduce the exact FBR-valid payload) must not
+    # overwrite a confirmed pass with a builder "failed". Skip those rows.
+    reconciled_codes = set(
+        FbrScenarioTest.objects.filter(tenant=tenant, reconciled=True)
+        .values_list("scenario_code", flat=True)
+    )
+
     client = _make_sandbox_client(tenant)
     for meta in eligible_scenarios(tenant):
+        if meta.code in reconciled_codes:
+            results[meta.code] = "reconciled"
+            continue
         status, _ = _run_one_scenario(tenant, meta, client)
         results[meta.code] = status
 

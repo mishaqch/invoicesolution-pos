@@ -48,6 +48,11 @@ ROLE_DESCRIPTIONS: dict[str, str] = {
         "Front-of-house. Ring up sales, accept payments, cancel "
         "low-value sales. Cannot adjust inventory, manage products, "
         "or see reports beyond today's totals.",
+    "waiter":
+        "Order-taking only (waiter tablet). Take restaurant orders, "
+        "fire them to the kitchen, save/resume open orders. Cannot "
+        "charge, accept payments, cancel, adjust inventory, or see "
+        "reports — a cashier till closes the order the waiter fired.",
     "accountant":
         "Finance role. View invoices + payments + ledger across all "
         "branches, view audit log, run reports. Read-only for sales "

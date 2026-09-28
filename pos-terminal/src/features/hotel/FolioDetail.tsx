@@ -27,7 +27,12 @@ import {
   type UpdateStayBody,
 } from "@/features/hotel/api";
 import {
-  cnicMask, phoneMask, formatCnic, formatPkMobile, isValidCnic, isValidPkMobile,
+  cnicMask,
+  phoneMask,
+  formatCnic,
+  formatPkMobile,
+  isValidCnic,
+  isValidPkMobile,
 } from "@/features/hotel/validation";
 import type { CartLine } from "@/stores/sale";
 
@@ -224,7 +229,9 @@ export function FolioDetail({
       partner_cnic: bill.guest.partner_cnic || "",
       // datetime-local wants "YYYY-MM-DDTHH:mm".
       check_in: bill.check_in ? toLocalInput(bill.check_in) : undefined,
-      expected_check_out: bill.expected_check_out ? toLocalInput(bill.expected_check_out) : undefined,
+      expected_check_out: bill.expected_check_out
+        ? toLocalInput(bill.expected_check_out)
+        : undefined,
     });
     setMode("edit");
   }
@@ -234,15 +241,24 @@ export function FolioDetail({
     // Validate PK CNIC / phone before sending (guards the server's 20-char /
     // format rules). Only checks fields the operator actually changed.
     if (editForm.guest_cnic !== undefined && !isValidCnic(editForm.guest_cnic)) {
-      toast.show({ message: "CNIC must be 13 digits (e.g. 35201-1234567-1).", variant: "destructive" });
+      toast.show({
+        message: "CNIC must be 13 digits (e.g. 35201-1234567-1).",
+        variant: "destructive",
+      });
       return;
     }
     if (editForm.guest_phone !== undefined && !isValidPkMobile(editForm.guest_phone)) {
-      toast.show({ message: "Enter a valid PK mobile (e.g. 0300-1234567).", variant: "destructive" });
+      toast.show({
+        message: "Enter a valid PK mobile (e.g. 0300-1234567).",
+        variant: "destructive",
+      });
       return;
     }
     if (editForm.partner_cnic && !isValidCnic(editForm.partner_cnic)) {
-      toast.show({ message: "Partner CNIC must be 13 digits (e.g. 35201-1234567-1).", variant: "destructive" });
+      toast.show({
+        message: "Partner CNIC must be 13 digits (e.g. 35201-1234567-1).",
+        variant: "destructive",
+      });
       return;
     }
     setBusy(true);
@@ -267,23 +283,43 @@ export function FolioDetail({
     }
   }
 
-  // Load available rooms when the edit form opens (for the "add room" picker).
+  // Load ALL rooms when the edit form opens (for the "add room" picker) so the
+  // cashier can SEE booked rooms (shown disabled with "(booked)") rather than
+  // wondering why a room is missing. Available first.
+  const sortRooms = (all: Room[]) =>
+    [...all].sort(
+      (a, b) =>
+        (a.status === "available" ? 0 : 1) - (b.status === "available" ? 0 : 1) ||
+        a.room_number.localeCompare(b.room_number),
+    );
   useEffect(() => {
     if (mode !== "edit") return;
-    void listRooms({ status: "available" })
-      .then((r) => setAvailRooms(r))
+    void listRooms()
+      .then((r) => setAvailRooms(sortRooms(r)))
       .catch(() => setAvailRooms([]));
   }, [mode]);
 
   async function doAddRoom() {
     if (!bill || !addRoomId) return;
+    // Guard: don't attempt to add a room that's already booked — the server
+    // would reject it; tell the cashier up front.
+    const picked = availRooms.find((r) => r.id === addRoomId);
+    if (picked && picked.status !== "available") {
+      toast.show({
+        message: `Room ${picked.room_number} is already booked — pick another room.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setBusy(true);
     try {
       const updated = await addRoom(bill.id, addRoomId);
       applyBill(updated);
       setAddRoomId("");
-      // Refresh the available list (the added room is now occupied).
-      void listRooms({ status: "available" }).then((r) => setAvailRooms(r)).catch(() => {});
+      // Refresh the room list (the added room is now occupied).
+      void listRooms()
+        .then((r) => setAvailRooms(sortRooms(r)))
+        .catch(() => {});
       toast.show({ message: "Room added to the stay.", variant: "success" });
     } catch (e) {
       toast.show({ message: errMsg(e), variant: "destructive" });
@@ -294,7 +330,12 @@ export function FolioDetail({
 
   async function doRemoveRoom(roomId: string, number: string) {
     if (!bill) return;
-    if (!confirm(`Remove Room ${number} from this stay? Its charges will be voided and the room freed.`)) return;
+    if (
+      !confirm(
+        `Remove Room ${number} from this stay? Its charges will be voided and the room freed.`,
+      )
+    )
+      return;
     setBusy(true);
     try {
       const updated = await removeRoom(bill.id, roomId);
@@ -357,7 +398,11 @@ export function FolioDetail({
   const dueMoney = bill ? Money.fromStr(bill.grand_total) : Money.zero();
   let tenderedMoney: Money | null = null;
   if (isCash && tendered.trim() !== "") {
-    try { tenderedMoney = Money.fromStr(tendered); } catch { tenderedMoney = null; }
+    try {
+      tenderedMoney = Money.fromStr(tendered);
+    } catch {
+      tenderedMoney = null;
+    }
   }
   const changeMoney = tenderedMoney ? tenderedMoney.sub(dueMoney) : null;
   // Short by cash: a valid tendered amount below the total. Blocks checkout.
@@ -365,7 +410,9 @@ export function FolioDetail({
 
   if (loading || !bill) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
     );
   }
 
@@ -374,7 +421,14 @@ export function FolioDetail({
     return (
       <div className="flex h-full flex-col">
         <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
-          <button type="button" onClick={() => { setCart([]); setMode("view"); }} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted">
+          <button
+            type="button"
+            onClick={() => {
+              setCart([]);
+              setMode("view");
+            }}
+            className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+          >
             <ArrowLeft className="h-4 w-4" /> Cancel
           </button>
           <div className="flex items-center gap-3">
@@ -388,7 +442,9 @@ export function FolioDetail({
               >
                 <option value="">Whole stay (no room)</option>
                 {bill.rooms.map((r) => (
-                  <option key={r.id} value={r.id}>Room {r.number}</option>
+                  <option key={r.id} value={r.id}>
+                    Room {r.number}
+                  </option>
                 ))}
               </select>
             )}
@@ -404,16 +460,27 @@ export function FolioDetail({
           <div className="flex min-h-0 flex-col">
             <div className="flex-1 overflow-auto p-3">
               {cart.length === 0 ? (
-                <div className="p-6 text-center text-xs text-muted-foreground">Tap items to add to this guest's tab.</div>
+                <div className="p-6 text-center text-xs text-muted-foreground">
+                  Tap items to add to this guest's tab.
+                </div>
               ) : (
                 <div className="divide-y">
                   {cart.map((l) => (
-                    <div key={l.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                    <div
+                      key={l.id}
+                      className="flex items-center justify-between gap-2 py-2 text-sm"
+                    >
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium">{l.product_name}</div>
-                        <div className="text-xs text-muted-foreground">{qty(l.quantity)} × Rs {rs(l.unit_price)}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {qty(l.quantity)} × Rs {rs(l.unit_price)}
+                        </div>
                       </div>
-                      <button type="button" onClick={() => setCart((c) => c.filter((x) => x.id !== l.id))} className="text-muted-foreground hover:text-destructive">
+                      <button
+                        type="button"
+                        onClick={() => setCart((c) => c.filter((x) => x.id !== l.id))}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
@@ -423,13 +490,16 @@ export function FolioDetail({
             </div>
             <div className="space-y-1 border-t p-3 text-sm">
               <div className="flex justify-between text-muted-foreground">
-                <span>Subtotal</span><span className="font-mono">Rs {rs(cartBreakdown.sub)}</span>
+                <span>Subtotal</span>
+                <span className="font-mono">Rs {rs(cartBreakdown.sub)}</span>
               </div>
               <div className="flex justify-between text-muted-foreground">
-                <span>Tax (16%)</span><span className="font-mono">Rs {rs(cartBreakdown.tax)}</span>
+                <span>Tax (16%)</span>
+                <span className="font-mono">Rs {rs(cartBreakdown.tax)}</span>
               </div>
               <div className="flex justify-between border-t pt-1 font-semibold">
-                <span>This charge</span><span className="font-mono">Rs {rs(cartTotal)}</span>
+                <span>This charge</span>
+                <span className="font-mono">Rs {rs(cartTotal)}</span>
               </div>
             </div>
           </div>
@@ -442,10 +512,16 @@ export function FolioDetail({
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center justify-between border-b px-4">
-        <button type="button" onClick={onBack} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+        >
           <ArrowLeft className="h-4 w-4" /> Stays
         </button>
-        <div className="text-sm font-semibold">{bill.guest.name} · {bill.room?.number ?? "—"}</div>
+        <div className="text-sm font-semibold">
+          {bill.guest.name} · {bill.room?.number ?? "—"}
+        </div>
         <div className="flex gap-2">
           {isOpen && (
             <Button size="sm" variant="outline" onClick={startEdit}>
@@ -453,7 +529,9 @@ export function FolioDetail({
             </Button>
           )}
           {isOpen && (
-            <Button size="sm" variant="outline" onClick={() => setMode("add")}><Plus className="mr-1 h-4 w-4" /> Add charges</Button>
+            <Button size="sm" variant="outline" onClick={() => setMode("add")}>
+              <Plus className="mr-1 h-4 w-4" /> Add charges
+            </Button>
           )}
           {isOpen && canCancel && (
             <Button
@@ -466,7 +544,11 @@ export function FolioDetail({
               <XCircle className="mr-1 h-4 w-4" /> Cancel stay
             </Button>
           )}
-          {isOpen && <Button size="sm" onClick={() => setMode("checkout")}>Checkout</Button>}
+          {isOpen && (
+            <Button size="sm" onClick={() => setMode("checkout")}>
+              Checkout
+            </Button>
+          )}
         </div>
       </header>
 
@@ -488,7 +570,9 @@ export function FolioDetail({
             <Info label="Phone" value={bill.guest.phone} />
             {bill.guest.email && <Info label="Email" value={bill.guest.email} />}
             {bill.guest.partner_name && <Info label="Partner" value={bill.guest.partner_name} />}
-            {bill.guest.partner_cnic && <Info label="Partner CNIC" value={bill.guest.partner_cnic} />}
+            {bill.guest.partner_cnic && (
+              <Info label="Partner CNIC" value={bill.guest.partner_cnic} />
+            )}
             <Info label="Check-in" value={fmtDate(bill.check_in)} />
             {bill.check_out && <Info label="Check-out" value={fmtDate(bill.check_out)} />}
             {bill.guest.address && (
@@ -504,42 +588,107 @@ export function FolioDetail({
             <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <div className="text-sm font-semibold">Edit stay</div>
-                <button type="button" onClick={() => setMode("view")} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+                <button
+                  type="button"
+                  onClick={() => setMode("view")}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Close
+                </button>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Guest name">
-                  <input className={inputCls} value={editForm.guest_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_name: e.target.value }))} />
+                  <input
+                    className={inputCls}
+                    value={editForm.guest_name ?? ""}
+                    onChange={(e) => setEditForm((f) => ({ ...f, guest_name: e.target.value }))}
+                  />
                 </Field>
                 <Field label="CNIC">
-                  <input className={inputCls} value={editForm.guest_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_cnic: cnicMask(e.target.value) }))} inputMode="numeric" maxLength={15} placeholder="35201-1234567-1" />
+                  <input
+                    className={inputCls}
+                    value={editForm.guest_cnic ?? ""}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, guest_cnic: cnicMask(e.target.value) }))
+                    }
+                    inputMode="numeric"
+                    maxLength={15}
+                    placeholder="35201-1234567-1"
+                  />
                 </Field>
                 <Field label="Phone">
-                  <input className={inputCls} value={editForm.guest_phone ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_phone: phoneMask(e.target.value) }))} inputMode="tel" maxLength={12} placeholder="0300-1234567" />
+                  <input
+                    className={inputCls}
+                    value={editForm.guest_phone ?? ""}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, guest_phone: phoneMask(e.target.value) }))
+                    }
+                    inputMode="tel"
+                    maxLength={12}
+                    placeholder="0300-1234567"
+                  />
                 </Field>
                 <Field label="Email">
-                  <input className={inputCls} value={editForm.guest_email ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_email: e.target.value }))} />
+                  <input
+                    className={inputCls}
+                    value={editForm.guest_email ?? ""}
+                    onChange={(e) => setEditForm((f) => ({ ...f, guest_email: e.target.value }))}
+                  />
                 </Field>
                 <Field label="Address" full>
-                  <input className={inputCls} value={editForm.guest_address ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, guest_address: e.target.value }))} />
+                  <input
+                    className={inputCls}
+                    value={editForm.guest_address ?? ""}
+                    onChange={(e) => setEditForm((f) => ({ ...f, guest_address: e.target.value }))}
+                  />
                 </Field>
                 <Field label="Partner name (optional)">
-                  <input className={inputCls} value={editForm.partner_name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, partner_name: e.target.value }))} />
+                  <input
+                    className={inputCls}
+                    value={editForm.partner_name ?? ""}
+                    onChange={(e) => setEditForm((f) => ({ ...f, partner_name: e.target.value }))}
+                  />
                 </Field>
                 <Field label="Partner CNIC (optional)">
-                  <input className={inputCls} value={editForm.partner_cnic ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, partner_cnic: cnicMask(e.target.value) }))} inputMode="numeric" maxLength={15} placeholder="35201-1234567-2" />
+                  <input
+                    className={inputCls}
+                    value={editForm.partner_cnic ?? ""}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, partner_cnic: cnicMask(e.target.value) }))
+                    }
+                    inputMode="numeric"
+                    maxLength={15}
+                    placeholder="35201-1234567-2"
+                  />
                 </Field>
                 <Field label="Check-in">
-                  <input type="datetime-local" className={inputCls} value={editForm.check_in ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, check_in: e.target.value }))} />
+                  <input
+                    type="datetime-local"
+                    className={inputCls}
+                    value={editForm.check_in ?? ""}
+                    onChange={(e) => setEditForm((f) => ({ ...f, check_in: e.target.value }))}
+                  />
                 </Field>
                 <Field label="Expected check-out">
-                  <input type="datetime-local" className={inputCls} value={editForm.expected_check_out ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, expected_check_out: e.target.value }))} />
+                  <input
+                    type="datetime-local"
+                    className={inputCls}
+                    value={editForm.expected_check_out ?? ""}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, expected_check_out: e.target.value }))
+                    }
+                  />
                 </Field>
               </div>
-              <p className="mt-2 text-[11px] text-muted-foreground">Changing dates re-prices each room's nights.</p>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Changing dates re-prices each room's nights.
+              </p>
 
               <div className="mt-3 flex justify-end">
-                <Button size="sm" onClick={saveEdit} disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>
+                <Button size="sm" onClick={saveEdit} disabled={busy}>
+                  {busy ? "Saving…" : "Save changes"}
+                </Button>
               </div>
 
               {/* Rooms on this stay — add / remove */}
@@ -549,8 +698,16 @@ export function FolioDetail({
                 </div>
                 <div className="space-y-1">
                   {bill.rooms.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between rounded border px-2 py-1 text-sm">
-                      <span>Room {r.number} <span className="text-muted-foreground">({r.type}) · {r.nights}n</span></span>
+                    <div
+                      key={r.id}
+                      className="flex items-center justify-between rounded border px-2 py-1 text-sm"
+                    >
+                      <span>
+                        Room {r.number}{" "}
+                        <span className="text-muted-foreground">
+                          ({r.type}) · {r.nights}n
+                        </span>
+                      </span>
                       {/* Any cashier can remove a room from an OPEN stay (voids
                           only that room's charges). Can't remove the last room —
                           cancel the whole stay for that. */}
@@ -575,11 +732,26 @@ export function FolioDetail({
                     className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
                   >
                     <option value="">Add a room…</option>
-                    {availRooms.map((r) => (
-                      <option key={r.id} value={r.id}>Room {r.room_number} ({r.room_type}) — Rs {rs(r.nightly_total)}/night</option>
-                    ))}
+                    {availRooms
+                      // Hide rooms already on THIS stay; show the rest, with
+                      // booked ones disabled + labelled so the cashier sees them.
+                      .filter((r) => !(bill?.rooms ?? []).some((br) => br.id === r.id))
+                      .map((r) => {
+                        const booked = r.status !== "available";
+                        return (
+                          <option key={r.id} value={r.id} disabled={booked}>
+                            Room {r.room_number} ({r.room_type}) — Rs {rs(r.nightly_total)}/night
+                            {booked ? " — booked" : ""}
+                          </option>
+                        );
+                      })}
                   </select>
-                  <Button size="sm" variant="outline" onClick={doAddRoom} disabled={busy || !addRoomId}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={doAddRoom}
+                    disabled={busy || !addRoomId}
+                  >
                     <Plus className="mr-1 h-4 w-4" /> Add
                   </Button>
                 </div>
@@ -593,7 +765,9 @@ export function FolioDetail({
               items with a per-charge subtotal only when there's more than one. */}
           {bill.days.map((day) => (
             <div key={day.date} className="mb-3">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{day.date}</div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {day.date}
+              </div>
               <div className="overflow-hidden rounded-lg border">
                 {day.charges.map((ch) => {
                   const isRoom = ch.kind === "room";
@@ -607,12 +781,18 @@ export function FolioDetail({
                           {isRoom ? (
                             <>
                               {ch.room_type && (
-                                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">{ch.room_type}</span>
+                                <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                                  {ch.room_type}
+                                </span>
                               )}
                               <span>Room {ch.room_number}</span>
                             </>
                           ) : (
-                            <span>{ch.room_number ? `Restaurant · Room ${ch.room_number}` : "Restaurant"}</span>
+                            <span>
+                              {ch.room_number
+                                ? `Restaurant · Room ${ch.room_number}`
+                                : "Restaurant"}
+                            </span>
                           )}
                         </span>
                         <div className="flex items-center gap-2">
@@ -630,17 +810,22 @@ export function FolioDetail({
                       </div>
                       {/* Line items */}
                       {ch.items.map((it) => (
-                        <div key={it.id} className="flex items-center justify-between gap-2 py-0.5 text-sm text-muted-foreground">
+                        <div
+                          key={it.id}
+                          className="flex items-center justify-between gap-2 py-0.5 text-sm text-muted-foreground"
+                        >
                           <span className="min-w-0 flex-1">
                             {isRoom
-                              // Room: "1 night × Rs 10,500" (tax-inclusive per-night
-                              // rate = line_total / nights, so the guest sees the
-                              // advertised price, not the tax-stripped base).
-                              ? `${qty(it.quantity)} ${Number(it.quantity) === 1 ? "night" : "nights"} × Rs ${rs(
-                                  (Number(it.line_total) / Math.max(1, Number(it.quantity))).toFixed(4),
+                              ? // Room: "1 night × Rs 10,500" (tax-inclusive per-night
+                                // rate = line_total / nights, so the guest sees the
+                                // advertised price, not the tax-stripped base).
+                                `${qty(it.quantity)} ${Number(it.quantity) === 1 ? "night" : "nights"} × Rs ${rs(
+                                  (
+                                    Number(it.line_total) / Math.max(1, Number(it.quantity))
+                                  ).toFixed(4),
                                 )}`
-                              // Restaurant: "2 × Chicken Karahi"
-                              : `${qty(it.quantity)} × ${it.name}${it.note ? ` (${it.note})` : ""}`}
+                              : // Restaurant: "2 × Chicken Karahi"
+                                `${qty(it.quantity)} × ${it.name}${it.note ? ` (${it.note})` : ""}`}
                           </span>
                           {/* Show the per-item amount only when it differs from the
                               charge total (i.e. multi-item restaurant charges). For a
@@ -670,7 +855,8 @@ export function FolioDetail({
             <Row label="Subtotal" value={rs(bill.subtotal)} />
             <Row label="Tax" value={rs(bill.tax_total)} />
             <div className="mt-1 flex justify-between border-t pt-2 text-base font-bold">
-              <span>Grand total</span><span className="font-mono">Rs {Money.fromStr(bill.grand_total).displayWhole()}</span>
+              <span>Grand total</span>
+              <span className="font-mono">Rs {Money.fromStr(bill.grand_total).displayWhole()}</span>
             </div>
             {Number(bill.paid_total) > 0 && <Row label="Paid" value={rs(bill.paid_total)} />}
           </div>
@@ -684,7 +870,10 @@ export function FolioDetail({
                   <button
                     key={m}
                     type="button"
-                    onClick={() => { setPayMethod(m); setTendered(""); }}
+                    onClick={() => {
+                      setPayMethod(m);
+                      setTendered("");
+                    }}
                     className={`rounded-md border px-2 py-2 text-xs font-medium capitalize ${payMethod === m ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
                   >
                     {m.replace("_", " ")}
@@ -697,7 +886,9 @@ export function FolioDetail({
               {isCash && (
                 <div className="mb-3 rounded-md border bg-background p-3">
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <label htmlFor="tendered" className="text-sm text-muted-foreground">Cash tendered</label>
+                    <label htmlFor="tendered" className="text-sm text-muted-foreground">
+                      Cash tendered
+                    </label>
                     <div className="flex items-center gap-1">
                       <span className="text-sm text-muted-foreground">Rs</span>
                       <input
@@ -734,7 +925,9 @@ export function FolioDetail({
                   {changeMoney !== null && !cashShort && changeMoney.ge(Money.zero()) && (
                     <div className="flex items-center justify-between border-t pt-2 text-sm">
                       <span className="font-medium">Change due</span>
-                      <span className="font-mono text-base font-bold text-primary">Rs {rs(changeMoney.toStorageString())}</span>
+                      <span className="font-mono text-base font-bold text-primary">
+                        Rs {rs(changeMoney.toStorageString())}
+                      </span>
                     </div>
                   )}
                   {cashShort && (
@@ -746,8 +939,13 @@ export function FolioDetail({
               )}
 
               <div className="flex items-center justify-between">
-                <span className="text-sm">Collect <b className="font-mono">Rs {rs(bill.grand_total)}</b> ({payMethod.replace("_", " ")})</span>
-                <Button onClick={doCheckout} disabled={busy || cashShort}>{busy ? "Processing…" : "Confirm checkout & print bill"}</Button>
+                <span className="text-sm">
+                  Collect <b className="font-mono">Rs {rs(bill.grand_total)}</b> (
+                  {payMethod.replace("_", " ")})
+                </span>
+                <Button onClick={doCheckout} disabled={busy || cashShort}>
+                  {busy ? "Processing…" : "Confirm checkout & print bill"}
+                </Button>
               </div>
             </div>
           )}
@@ -760,7 +958,15 @@ export function FolioDetail({
 const inputCls =
   "h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
+function Field({
+  label,
+  children,
+  full,
+}: {
+  label: string;
+  children: React.ReactNode;
+  full?: boolean;
+}) {
   return (
     <div className={full ? "sm:col-span-2" : ""}>
       <div className="mb-1 text-[11px] text-muted-foreground">{label}</div>
@@ -785,10 +991,18 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+// Pin to Pakistan Standard Time so the on-screen check-in/out matches the
+// printed ESC/POS receipt (Asia/Karachi) even if the terminal PC's clock is
+// set to another zone.
+const PK_TZ = "Asia/Karachi";
 function fmtDate(s: string | null): string {
   if (!s) return "—";
   const d = new Date(s);
-  return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    d.toLocaleDateString("en-GB", { timeZone: PK_TZ }) +
+    " " +
+    d.toLocaleTimeString("en-GB", { timeZone: PK_TZ, hour: "2-digit", minute: "2-digit" })
+  );
 }
 
 /** ISO string → "YYYY-MM-DDTHH:mm" for a datetime-local input (local time). */

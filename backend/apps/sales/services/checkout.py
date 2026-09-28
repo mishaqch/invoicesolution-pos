@@ -133,21 +133,32 @@ def create_invoice(
         cashier=cashier,
         cash_session=cash_session,
         customer=customer or (reference_invoice.customer if reference_invoice else None),
-        # The invoice number is minted at CHARGE time. Finalizing a held order
-        # ALWAYS mints a fresh server number (the held row only carried a
-        # temporary order tag, never a real invoice number), so voided/abandoned
-        # orders don't burn a number and completed invoices stay gapless. A
-        # straight-through sale uses the number the terminal sent, else mints one.
-        # (Previously a held order kept its tag, leaving gaps like "0032 → 0036".)
+        # Invoice number policy:
+        #   - Finalizing a HELD restaurant order: KEEP the number the order was
+        #     already given when it was fired to the kitchen. The kitchen slip
+        #     (KOT), the open-order card and the final bill therefore all show
+        #     the SAME number — the traceability the resort asked for. (The
+        #     terminal now mints a real invoice number at fire time, so the held
+        #     row already carries a proper number, not a throwaway tag.) The
+        #     tradeoff — a voided/abandoned order skips a number, so the daily
+        #     sequence can have small gaps — is the accepted restaurant-POS
+        #     behaviour: KOT # == bill #.
+        #   - Straight-through sale: use the number the terminal sent, else mint.
         local_invoice_number=(
-            next_invoice_number(terminal=terminal) if finalize_held
-            else (local_invoice_number or next_invoice_number(terminal=terminal))
+            (finalize_held.local_invoice_number if finalize_held else None)
+            or local_invoice_number
+            or next_invoice_number(terminal=terminal)
         ),
         invoice_type=invoice_type,
         reference_invoice=reference_invoice,
         reason=reason,
         reason_notes=reason_notes,
-        invoice_date=dt.date.today(),
+        # localdate() = today in Asia/Karachi (Django TIME_ZONE), not the host
+        # OS/UTC date. Without this a sale between 00:00–05:00 PKT is stamped
+        # with yesterday's date and disappears from "today" in the backend
+        # invoice list + daily reports (dashboard queries invoice_date = PKT
+        # today). Applies to live sales AND offline sales at ingest time.
+        invoice_date=timezone.localdate(),
         # Buyer snapshot — resolved above (customer arg, then reference, then None)
         buyer_name=buyer_name,
         buyer_phone=buyer_phone,

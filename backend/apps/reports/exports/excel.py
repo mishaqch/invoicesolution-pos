@@ -24,6 +24,15 @@ def _to_cell_value(value, kind: str):
         return ""
     if kind in ("money", "decimal", "int", "percent"):
         return Decimal(str(value)) if not isinstance(value, Decimal) else value
+    # openpyxl REFUSES tz-aware datetimes ("Excel does not support timezones").
+    # Datetimes are stored UTC-aware; convert to Asia/Karachi wall-clock and drop
+    # the tzinfo so the cell shows the same local time as the rest of the app.
+    import datetime as _dt
+    if isinstance(value, _dt.datetime) and value.tzinfo is not None:
+        from django.utils import timezone as _tz
+        return _tz.localtime(value).replace(tzinfo=None)
+    if isinstance(value, _dt.time) and value.tzinfo is not None:
+        return value.replace(tzinfo=None)
     return str(value) if kind == "text" else value
 
 

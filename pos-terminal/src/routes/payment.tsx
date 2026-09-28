@@ -103,21 +103,55 @@ export default function PaymentRoute() {
     setBusy(true);
     setError(null);
     try {
-      // Mint the invoice number NOW, at charge — never before. A held/open order
-      // only carried a temporary order TAG (KK-T3-045), not an invoice number,
-      // so a voided/abandoned order leaves no gap in the invoice sequence. The
-      // server is authoritative and mints its own number when it finalizes the
-      // held row; this local number is for the offline receipt printed here.
-      const localNumber = await window.api.numbering.next({
-        branchCode: ctx.branch.code,
-        terminalIndex: ctx.terminal.index,
-      });
+      // Invoice number: if this order already has one — a restaurant order that
+      // was fired to the kitchen, or a parked/held sale being resumed — REUSE it
+      // so the kitchen slip, the open-order card and this final bill all carry
+      // the SAME number. The server likewise keeps the held row's number when it
+      // finalizes. Only a brand-new straight-through sale mints a number here.
+      const existingNumber = useSaleStore.getState().orderNumber;
+      const localNumber =
+        existingNumber ??
+        (await window.api.numbering.next({
+          branchCode: ctx.branch.code,
+          terminalIndex: ctx.terminal.index,
+        }));
       const invoiceId = newClientUuid();
       // Pakistan-local date (NOT UTC). Using toISOString() here dated late-night
       // PKT sales (00:00–05:00) to the PREVIOUS day, because UTC is 5h behind.
       const invoiceDate = pkDate();
 
-      const items = totals.lines.map((q, i) => ({
+      // Cancelled lines are display-only (struck-through on the bill) — they are
+      // not part of the sale, so keep them out of the persisted/synced payload.
+      const items = totals.lines
+        .filter((q) => !q.cancelled)
+        .map((q, i) => ({
+          id: newClientUuid(),
+          invoice_id: invoiceId,
+          line_number: i + 1,
+          product_id: q.product_id,
+          product_name: q.product_name,
+          product_sku: q.product_sku,
+          uom_code: q.uom_code,
+          hs_code: q.hs_code,
+          quantity: q.quantity,
+          unit_price: q.unit_price,
+          discount_pct: q.discount_pct,
+          discount_amount: q.discount_amount,
+          tax_rate: q.tax_rate,
+          tax_amount: q.tax_amount.toStorageString(),
+          line_total: q.line_total.toStorageString(),
+          notes: null,
+          // FEFO batch (pharmacy) — server records the sale movement against it.
+          batch_id: q.batch_id ?? null,
+          // Restaurant — kept for receipt/KOT display (deltas already in price).
+          modifiers: q.modifiers ?? [],
+          item_note: q.item_note ?? null,
+        }));
+
+      // For the PRINTED bill we include cancelled lines too (struck-through,
+      // Rs 0) so the customer sees the void was applied rather than the item
+      // silently vanishing. These display-only rows are NOT in the synced sale.
+      const printItems = totals.lines.map((q, i) => ({
         id: newClientUuid(),
         invoice_id: invoiceId,
         line_number: i + 1,
@@ -134,11 +168,10 @@ export default function PaymentRoute() {
         tax_amount: q.tax_amount.toStorageString(),
         line_total: q.line_total.toStorageString(),
         notes: null,
-        // FEFO batch (pharmacy) — server records the sale movement against it.
         batch_id: q.batch_id ?? null,
-        // Restaurant — kept for receipt/KOT display (deltas already in price).
         modifiers: q.modifiers ?? [],
         item_note: q.item_note ?? null,
+        cancelled: q.cancelled ?? false,
       }));
 
       const payments = tenders.map((t) => ({
@@ -287,7 +320,7 @@ export default function PaymentRoute() {
         order_type: useSaleStore.getState().orderType,
         table_name: useSaleStore.getState().tableName,
         invoice: printInvoice,
-        items,
+        items: printItems,
         payments,
         width: 48,
         // Non-fiscal tenants (TDCP resort) print a plain bill — no FBR QR/number

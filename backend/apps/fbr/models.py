@@ -201,6 +201,13 @@ class FbrScenarioTest(TenantScopedModel):
     last_attempt_at = models.DateTimeField(blank=True, null=True)
     error_message = models.TextField(blank=True, null=True)
 
+    # Set True when a platform admin has confirmed this status against FBR/IRIS
+    # directly (the tenant passed the scenario on the FBR portal, not through
+    # our builder). A reconciled row is authoritative: the automated "Run all"
+    # batch skips it so a re-run can't silently overwrite an FBR-confirmed pass
+    # with a "failed" from a builder payload FBR no longer accepts.
+    reconciled = models.BooleanField(default=False)
+
     class Meta:
         db_table = "fbr_scenario_tests"
         constraints = [

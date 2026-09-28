@@ -18,7 +18,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/components/feedback/Toast";
 import { extractApiErrorMessage } from "@/lib/api";
 import {
@@ -37,6 +44,7 @@ const ROLE_LABELS: Record<Role, string> = {
   owner: "Owner",
   manager: "Manager",
   cashier: "Cashier",
+  waiter: "Waiter",
   accountant: "Accountant",
   auditor: "Auditor",
 };
@@ -85,9 +93,17 @@ export default function UsersList() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">Loading…</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    Loading…
+                  </TableCell>
+                </TableRow>
               ) : rows.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No staff yet. Add your first user above.</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    No staff yet. Add your first user above.
+                  </TableCell>
+                </TableRow>
               ) : (
                 rows.map((s) => (
                   <StaffRow
@@ -115,13 +131,18 @@ function AddStaffForm({ branches, isManager }: { branches: BranchOption[]; isMan
   const create = useCreateStaff();
   const [error, setError] = useState<string | null>(null);
   const [v, setV] = useState<CreateStaffBody>({
-    email: "", full_name: "", role: "cashier", branch_ids: [], preferred_language: "en", pin: "",
+    email: "",
+    full_name: "",
+    role: "cashier",
+    branch_ids: [],
+    preferred_language: "en",
+    pin: "",
   });
 
   // Managers can't create owners.
   const roles: Role[] = isManager
-    ? ["cashier", "manager", "accountant", "auditor"]
-    : ["cashier", "manager", "owner", "accountant", "auditor"];
+    ? ["cashier", "waiter", "manager", "accountant", "auditor"]
+    : ["cashier", "waiter", "manager", "owner", "accountant", "auditor"];
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -133,7 +154,14 @@ function AddStaffForm({ branches, isManager }: { branches: BranchOption[]; isMan
     try {
       await create.mutateAsync({ ...v, pin: v.pin || undefined });
       toast.show({ message: `${v.full_name} added.`, variant: "success" });
-      setV({ email: "", full_name: "", role: "cashier", branch_ids: [], preferred_language: "en", pin: "" });
+      setV({
+        email: "",
+        full_name: "",
+        role: "cashier",
+        branch_ids: [],
+        preferred_language: "en",
+        pin: "",
+      });
     } catch (err) {
       setError(extractApiErrorMessage(err));
     }
@@ -141,36 +169,66 @@ function AddStaffForm({ branches, isManager }: { branches: BranchOption[]; isMan
 
   return (
     <Card>
-      <CardHeader><CardTitle>Add user</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle>Add user</CardTitle>
+      </CardHeader>
       <CardContent>
         <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Full name *">
-            <Input value={v.full_name} onChange={(e) => setV({ ...v, full_name: e.target.value })} required />
+            <Input
+              value={v.full_name}
+              onChange={(e) => setV({ ...v, full_name: e.target.value })}
+              required
+            />
           </Field>
           <Field label="Email *">
-            <Input type="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} required />
+            <Input
+              type="email"
+              value={v.email}
+              onChange={(e) => setV({ ...v, email: e.target.value })}
+              required
+            />
           </Field>
           <Field label="Role *">
             <Select value={v.role} onChange={(e) => setV({ ...v, role: e.target.value as Role })}>
-              {roles.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              {roles.map((r) => (
+                <option key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label="Language">
-            <Select value={v.preferred_language} onChange={(e) => setV({ ...v, preferred_language: e.target.value })}>
+            <Select
+              value={v.preferred_language}
+              onChange={(e) => setV({ ...v, preferred_language: e.target.value })}
+            >
               <option value="en">English</option>
               <option value="ur">اردو</option>
             </Select>
           </Field>
           <Field label="PIN (6 digits, optional)">
-            <Input inputMode="numeric" maxLength={6} value={v.pin ?? ""}
+            <Input
+              inputMode="numeric"
+              maxLength={6}
+              value={v.pin ?? ""}
               onChange={(e) => setV({ ...v, pin: e.target.value.replace(/\D/g, "").slice(0, 6) })}
-              placeholder="e.g. 123456" />
+              placeholder="e.g. 123456"
+            />
           </Field>
           <div className="sm:col-span-2 lg:col-span-3">
-            <Label className="mb-1 block text-xs font-medium text-muted-foreground">Branches (none = all branches)</Label>
-            <BranchChecklist branches={branches} value={v.branch_ids ?? []} onChange={(ids) => setV({ ...v, branch_ids: ids })} />
+            <Label className="mb-1 block text-xs font-medium text-muted-foreground">
+              Branches (none = all branches)
+            </Label>
+            <BranchChecklist
+              branches={branches}
+              value={v.branch_ids ?? []}
+              onChange={(ids) => setV({ ...v, branch_ids: ids })}
+            />
           </div>
-          {error && <div className="sm:col-span-2 lg:col-span-3 text-sm text-destructive">{error}</div>}
+          {error && (
+            <div className="sm:col-span-2 lg:col-span-3 text-sm text-destructive">{error}</div>
+          )}
           <div className="sm:col-span-2 lg:col-span-3">
             <Button type="submit" disabled={create.isPending}>
               <Plus className="mr-1 h-4 w-4" /> {create.isPending ? "Adding…" : "Add user"}
@@ -185,12 +243,16 @@ function AddStaffForm({ branches, isManager }: { branches: BranchOption[]; isMan
 /* -------------------------------- Row ---------------------------------- */
 
 function StaffRow({
-  staff, branches, isSelf, lockedOwner, isManager,
+  staff,
+  branches,
+  isSelf,
+  lockedOwner,
+  isManager,
 }: {
   staff: StaffMember;
   branches: BranchOption[];
   isSelf: boolean;
-  lockedOwner: boolean;   // a manager may not act on an owner row
+  lockedOwner: boolean; // a manager may not act on an owner row
   isManager: boolean;
 }) {
   const toast = useToast();
@@ -210,14 +272,18 @@ function StaffRow({
   async function toggleActive() {
     try {
       await update.mutateAsync({ id: staff.id, is_active: !staff.is_active });
-      toast.show({ message: staff.is_active ? "User deactivated." : "User reactivated.", variant: "success" });
+      toast.show({
+        message: staff.is_active ? "User deactivated." : "User reactivated.",
+        variant: "success",
+      });
     } catch (err) {
       toast.show({ message: extractApiErrorMessage(err), variant: "destructive" });
     }
   }
 
   async function remove() {
-    if (!confirm(`Remove ${staff.full_name} from this business? They can be re-added later.`)) return;
+    if (!confirm(`Remove ${staff.full_name} from this business? They can be re-added later.`))
+      return;
     try {
       await del.mutateAsync(staff.id);
       toast.show({ message: `${staff.full_name} removed.`, variant: "info" });
@@ -235,13 +301,21 @@ function StaffRow({
           <div className="font-medium">{staff.full_name}</div>
           <div className="text-xs text-muted-foreground">{staff.email}</div>
         </TableCell>
-        <TableCell><Badge variant="secondary">{ROLE_LABELS[staff.role]}</Badge></TableCell>
-        <TableCell className="max-w-[220px] truncate text-sm" title={branchLabel}>{branchLabel}</TableCell>
         <TableCell>
-          <Badge variant={staff.has_pin ? "default" : "outline"}>{staff.has_pin ? "Set" : "None"}</Badge>
+          <Badge variant="secondary">{ROLE_LABELS[staff.role]}</Badge>
+        </TableCell>
+        <TableCell className="max-w-[220px] truncate text-sm" title={branchLabel}>
+          {branchLabel}
         </TableCell>
         <TableCell>
-          <Badge variant={staff.is_active ? "default" : "outline"}>{staff.is_active ? "Active" : "Inactive"}</Badge>
+          <Badge variant={staff.has_pin ? "default" : "outline"}>
+            {staff.has_pin ? "Set" : "None"}
+          </Badge>
+        </TableCell>
+        <TableCell>
+          <Badge variant={staff.is_active ? "default" : "outline"}>
+            {staff.is_active ? "Active" : "Inactive"}
+          </Badge>
         </TableCell>
         <TableCell className="text-sm text-muted-foreground">
           {staff.last_login ? new Date(staff.last_login).toLocaleDateString() : "—"}
@@ -249,22 +323,44 @@ function StaffRow({
         <TableCell className="text-right">
           <div className="flex justify-end gap-1">
             {canAct && (
-              <Button size="icon" variant="ghost" title="Edit" onClick={() => setMode(mode === "edit" ? "view" : "edit")}>
+              <Button
+                size="icon"
+                variant="ghost"
+                title="Edit"
+                onClick={() => setMode(mode === "edit" ? "view" : "edit")}
+              >
                 <Pencil className="h-4 w-4" />
               </Button>
             )}
             {canAct && (
-              <Button size="icon" variant="ghost" title="Set PIN" onClick={() => setMode(mode === "pin" ? "view" : "pin")}>
+              <Button
+                size="icon"
+                variant="ghost"
+                title="Set PIN"
+                onClick={() => setMode(mode === "pin" ? "view" : "pin")}
+              >
                 <KeyRound className="h-4 w-4" />
               </Button>
             )}
             {canAct && !isSelf && (
-              <Button size="icon" variant="ghost" title={staff.is_active ? "Deactivate" : "Reactivate"} onClick={toggleActive} disabled={update.isPending}>
+              <Button
+                size="icon"
+                variant="ghost"
+                title={staff.is_active ? "Deactivate" : "Reactivate"}
+                onClick={toggleActive}
+                disabled={update.isPending}
+              >
                 <UserX className="h-4 w-4" />
               </Button>
             )}
             {canAct && !isSelf && (
-              <Button size="icon" variant="ghost" title="Remove" onClick={remove} disabled={del.isPending}>
+              <Button
+                size="icon"
+                variant="ghost"
+                title="Remove"
+                onClick={remove}
+                disabled={del.isPending}
+              >
                 <Trash2 className="h-4 w-4 text-destructive" />
               </Button>
             )}
@@ -275,7 +371,12 @@ function StaffRow({
       {mode === "edit" && (
         <TableRow>
           <TableCell colSpan={7} className="bg-muted/40">
-            <EditStaff staff={staff} branches={branches} isManager={isManager} onDone={() => setMode("view")} />
+            <EditStaff
+              staff={staff}
+              branches={branches}
+              isManager={isManager}
+              onDone={() => setMode("view")}
+            />
           </TableCell>
         </TableRow>
       )}
@@ -305,8 +406,16 @@ function StaffRow({
 /* ------------------------------ Editors -------------------------------- */
 
 function EditStaff({
-  staff, branches, isManager, onDone,
-}: { staff: StaffMember; branches: BranchOption[]; isManager: boolean; onDone: () => void }) {
+  staff,
+  branches,
+  isManager,
+  onDone,
+}: {
+  staff: StaffMember;
+  branches: BranchOption[];
+  isManager: boolean;
+  onDone: () => void;
+}) {
   const toast = useToast();
   const update = useUpdateStaff();
   const [full_name, setName] = useState(staff.full_name);
@@ -316,8 +425,8 @@ function EditStaff({
   const [error, setError] = useState<string | null>(null);
 
   const roles: Role[] = isManager
-    ? ["cashier", "manager", "accountant", "auditor"]
-    : ["cashier", "manager", "owner", "accountant", "auditor"];
+    ? ["cashier", "waiter", "manager", "accountant", "auditor"]
+    : ["cashier", "waiter", "manager", "owner", "accountant", "auditor"];
 
   async function save() {
     setError(null);
@@ -332,10 +441,16 @@ function EditStaff({
 
   return (
     <div className="grid gap-3 p-2 sm:grid-cols-2 lg:grid-cols-3">
-      <Field label="Full name"><Input value={full_name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Full name">
+        <Input value={full_name} onChange={(e) => setName(e.target.value)} />
+      </Field>
       <Field label="Role">
         <Select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-          {roles.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          {roles.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABELS[r]}
+            </option>
+          ))}
         </Select>
       </Field>
       <Field label="Language">
@@ -345,30 +460,53 @@ function EditStaff({
         </Select>
       </Field>
       <div className="sm:col-span-2 lg:col-span-3">
-        <Label className="mb-1 block text-xs font-medium text-muted-foreground">Branches (none = all)</Label>
+        <Label className="mb-1 block text-xs font-medium text-muted-foreground">
+          Branches (none = all)
+        </Label>
         <BranchChecklist branches={branches} value={branch_ids} onChange={setBranchIds} />
       </div>
       {error && <div className="sm:col-span-2 lg:col-span-3 text-sm text-destructive">{error}</div>}
       <div className="sm:col-span-2 lg:col-span-3 flex gap-2">
-        <Button size="sm" onClick={save} disabled={update.isPending}>{update.isPending ? "Saving…" : "Save changes"}</Button>
-        <Button size="sm" variant="outline" onClick={onDone}><X className="mr-1 h-4 w-4" /> Cancel</Button>
+        <Button size="sm" onClick={save} disabled={update.isPending}>
+          {update.isPending ? "Saving…" : "Save changes"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onDone}>
+          <X className="mr-1 h-4 w-4" /> Cancel
+        </Button>
       </div>
     </div>
   );
 }
 
-function SetPinInline({ onSave, onCancel, busy }: { onSave: (pin: string) => void; onCancel: () => void; busy: boolean }) {
+function SetPinInline({
+  onSave,
+  onCancel,
+  busy,
+}: {
+  onSave: (pin: string) => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
   const [pin, setPin] = useState("");
   const valid = /^\d{6}$/.test(pin);
   return (
     <div className="flex flex-wrap items-end gap-2 p-2">
       <Field label="New 6-digit PIN">
-        <Input inputMode="numeric" maxLength={6} value={pin}
+        <Input
+          inputMode="numeric"
+          maxLength={6}
+          value={pin}
           onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
-          placeholder="123456" className="w-40" />
+          placeholder="123456"
+          className="w-40"
+        />
       </Field>
-      <Button size="sm" onClick={() => onSave(pin)} disabled={!valid || busy}>{busy ? "Saving…" : "Set PIN"}</Button>
-      <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
+      <Button size="sm" onClick={() => onSave(pin)} disabled={!valid || busy}>
+        {busy ? "Saving…" : "Set PIN"}
+      </Button>
+      <Button size="sm" variant="outline" onClick={onCancel}>
+        Cancel
+      </Button>
     </div>
   );
 }
@@ -376,10 +514,20 @@ function SetPinInline({ onSave, onCancel, busy }: { onSave: (pin: string) => voi
 /* ------------------------- Branch multi-select ------------------------- */
 
 function BranchChecklist({
-  branches, value, onChange,
-}: { branches: BranchOption[]; value: string[]; onChange: (ids: string[]) => void }) {
+  branches,
+  value,
+  onChange,
+}: {
+  branches: BranchOption[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+}) {
   if (branches.length === 0) {
-    return <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">No branches yet.</div>;
+    return (
+      <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
+        No branches yet.
+      </div>
+    );
   }
   function toggle(id: string) {
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
@@ -395,7 +543,8 @@ function BranchChecklist({
             onClick={() => toggle(b.id)}
             className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"}`}
           >
-            {on ? "✓ " : ""}{b.name}
+            {on ? "✓ " : ""}
+            {b.name}
           </button>
         );
       })}

@@ -41,7 +41,12 @@ export function UpdateBanner() {
     if (!api) return;
     let alive = true;
     const poll = () =>
-      api.info().then((i) => { if (alive) setInfo(i); }).catch(() => {});
+      api
+        .info()
+        .then((i) => {
+          if (alive) setInfo(i);
+        })
+        .catch(() => {});
     void poll();
     const t = setInterval(poll, 5000); // reflect updater state live
     const off = api.onReady(() => void poll());
@@ -77,7 +82,10 @@ export function UpdateBanner() {
       await api!.checkNow();
       // Give the updater a moment, then refresh the status line.
       setTimeout(() => {
-        void api!.info().then(setInfo).catch(() => {});
+        void api!
+          .info()
+          .then(setInfo)
+          .catch(() => {});
         setChecking(false);
       }, 2500);
     } catch {
@@ -123,7 +131,9 @@ export function UpdateBanner() {
       : "border-border bg-background text-muted-foreground";
 
   return (
-    <div className={`fixed bottom-2 right-2 z-40 flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs shadow-sm print:hidden ${tone}`}>
+    <div
+      className={`fixed bottom-2 right-2 z-40 flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs shadow-sm print:hidden ${tone}`}
+    >
       <span title={isError ? status : undefined}>{label}</span>
       {!isDownloading && !isChecking && (
         <button

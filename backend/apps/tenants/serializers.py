@@ -38,6 +38,11 @@ class TerminalSerializer(serializers.ModelSerializer):
             "os_version", "app_version",
             "printer_config", "scanner_config", "drawer_config",
             "customer_display_enabled",
+            # True marks this terminal as a shared "waiter tablet" that only takes
+            # orders (never charges). Writable so the owner can designate one at
+            # create time; the tablet PWA pairs to it, and the KOT relay + cashier
+            # handoff key off this flag.
+            "is_order_taking_only",
             "pairing_code", "pairing_code_expires_at", "paired_at", "is_paired",
             "is_active", "last_seen_at", "last_synced_at",
             "created_at", "updated_at",

@@ -261,6 +261,11 @@ pakistan-pos/
 ├── customer-display/               ← HTML page for second monitor
 │   └── (very small static React app)
 │
+├── tablet-web/                     ← Vite + React waiter order-taking PWA
+│   └── (online-only; pairs to a shared "waiter tablet" terminal, fires
+│        orders to the same backend; branch POS relays the KOT to the
+│        kitchen printer — the tablet has no printer of its own)
+│
 └── shared/                         ← types shared across all 3 apps
     ├── types/
     │   ├── invoice.ts

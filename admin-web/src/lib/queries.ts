@@ -1,9 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
-  Branch, BranchOption, Category, HsCode, PosProduct, Product, ProductBatch,
-  Role, SaleTypeOption, StaffMember, StockAudit, StockLevel, StockMovement,
-  StockTransfer, TaxRate, UnitOfMeasure, Warehouse,
+  Branch,
+  BranchOption,
+  Category,
+  HsCode,
+  PosProduct,
+  Product,
+  ProductBatch,
+  Role,
+  SaleTypeOption,
+  StaffMember,
+  StockAudit,
+  StockLevel,
+  StockMovement,
+  StockTransfer,
+  TaxRate,
+  UnitOfMeasure,
+  Warehouse,
 } from "@pos/shared/types";
 
 import { useModules, type ModuleKey } from "@/features/modules/hooks";
@@ -189,8 +203,7 @@ export function useDeleteBranch() {
   return useMutation({
     // Server soft-deletes (sets deleted_at) — a branch is referenced by
     // immutable audit tables, so it's hidden, not hard-removed.
-    mutationFn: (id: string) =>
-      api<void>(`/branches/${id}/`, { method: "DELETE" }),
+    mutationFn: (id: string) => api<void>(`/branches/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["branches"] });
       // Warehouse forms list branches via this endpoint too.
@@ -272,7 +285,7 @@ export function useSetStaffPin() {
 export function useCreateTerminal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { branch: string; name: string }) =>
+    mutationFn: (body: { branch: string; name: string; is_order_taking_only?: boolean }) =>
       api<{ id: string }>("/terminals/", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["terminals"] }),
   });
@@ -283,7 +296,8 @@ export function useIssuePairingCode() {
   return useMutation({
     mutationFn: (id: string) =>
       api<{ pairing_code: string; pairing_code_expires_at: string }>(
-        `/terminals/${id}/issue-code/`, { method: "POST" },
+        `/terminals/${id}/issue-code/`,
+        { method: "POST" },
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["terminals"] }),
   });
@@ -292,8 +306,7 @@ export function useIssuePairingCode() {
 export function useDeactivateTerminal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      api<void>(`/terminals/${id}/`, { method: "DELETE" }),
+    mutationFn: (id: string) => api<void>(`/terminals/${id}/`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["terminals"] }),
   });
 }
@@ -312,8 +325,7 @@ export function useDeleteStockLevel() {
   return useMutation({
     // Backend only allows deleting a stock row whose on-hand is 0 (the movement
     // ledger keeps the history). Removes the now-empty line from the list.
-    mutationFn: (id: string) =>
-      api<void>(`/inventory/stock-levels/${id}/`, { method: "DELETE" }),
+    mutationFn: (id: string) => api<void>(`/inventory/stock-levels/${id}/`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["stock-levels"] }),
   });
 }
@@ -433,9 +445,10 @@ export function useStockCard(
   params: { product?: string; warehouse?: string; branch?: string },
   enabled = true,
 ) {
-  const clean = Object.fromEntries(
-    Object.entries(params).filter(([, v]) => v),
-  ) as Record<string, string>;
+  const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v)) as Record<
+    string,
+    string
+  >;
   const query = new URLSearchParams(clean).toString();
   return useQuery({
     queryKey: ["stock-card", clean],
@@ -456,8 +469,12 @@ export function usePostAdjustment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: {
-      branch: string; warehouse?: string | null; product: string;
-      variant?: string | null; quantity: string; movement_type: string;
+      branch: string;
+      warehouse?: string | null;
+      product: string;
+      variant?: string | null;
+      quantity: string;
+      movement_type: string;
       reason: string;
     }) =>
       api<StockMovement>("/inventory/adjustments/", {
@@ -518,7 +535,10 @@ export function useUpdateWarehouse() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: Partial<Warehouse> & { id: string }) =>
-      api<Warehouse>(`/inventory/warehouses/${id}/`, { method: "PATCH", body: JSON.stringify(body) }),
+      api<Warehouse>(`/inventory/warehouses/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["warehouses"] }),
   });
 }
@@ -526,8 +546,7 @@ export function useUpdateWarehouse() {
 export function useDeleteWarehouse() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      api<void>(`/inventory/warehouses/${id}/`, { method: "DELETE" }),
+    mutationFn: (id: string) => api<void>(`/inventory/warehouses/${id}/`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["warehouses"] });
       qc.invalidateQueries({ queryKey: ["stock-levels"] });
@@ -542,8 +561,7 @@ export function useProductBatches(productId: string | undefined) {
   const enabled = useModuleEnabled("inventory");
   return useQuery({
     queryKey: ["product-batches", productId],
-    queryFn: () =>
-      api<Page<ProductBatch>>(`/catalog/batches/?product=${productId}`),
+    queryFn: () => api<Page<ProductBatch>>(`/catalog/batches/?product=${productId}`),
     enabled: enabled && Boolean(productId),
   });
 }
@@ -820,7 +838,7 @@ export function useFloor(params: Record<string, string> = {}) {
     queryKey: ["rest-floor", params],
     queryFn: () => api<{ tables: FloorTable[] }>(`/restaurant/floor/${query ? `?${query}` : ""}`),
     enabled,
-    refetchInterval: 10_000,   // live-ish floor
+    refetchInterval: 10_000, // live-ish floor
   });
 }
 
@@ -831,7 +849,7 @@ export function useKds(params: Record<string, string> = {}) {
     queryKey: ["rest-kds", params],
     queryFn: () => api<{ orders: OrderView[] }>(`/restaurant/kds/${query ? `?${query}` : ""}`),
     enabled,
-    refetchInterval: 5_000,    // kitchen needs near-realtime
+    refetchInterval: 5_000, // kitchen needs near-realtime
   });
 }
 
@@ -864,7 +882,8 @@ export function useProductModifierGroups(productId: string | undefined) {
   const enabled = useModuleEnabled("restaurant");
   return useQuery({
     queryKey: ["product-modifier-groups", productId],
-    queryFn: () => api<{ group_ids: string[] }>(`/restaurant/products/${productId}/modifier-groups/`),
+    queryFn: () =>
+      api<{ group_ids: string[] }>(`/restaurant/products/${productId}/modifier-groups/`),
     enabled: enabled && Boolean(productId),
   });
 }
@@ -877,7 +896,8 @@ export function useSaveProductModifierGroups() {
         method: "PUT",
         body: JSON.stringify({ group_ids: groupIds }),
       }),
-    onSuccess: (_d, v) => qc.invalidateQueries({ queryKey: ["product-modifier-groups", v.productId] }),
+    onSuccess: (_d, v) =>
+      qc.invalidateQueries({ queryKey: ["product-modifier-groups", v.productId] }),
   });
 }
 
@@ -1022,7 +1042,8 @@ export function useInvoiceTimeseries(
   filters: Pick<InvoiceFilters, "branch" | "from" | "to"> = {},
 ) {
   const cleaned: Record<string, string> = {
-    interval, invoice_type: invoiceType,
+    interval,
+    invoice_type: invoiceType,
   };
   for (const k of ["branch", "from", "to"] as const) {
     if (filters[k]) cleaned[k] = filters[k]!;
@@ -1030,8 +1051,7 @@ export function useInvoiceTimeseries(
   const query = new URLSearchParams(cleaned).toString();
   return useQuery({
     queryKey: ["invoices-timeseries", cleaned],
-    queryFn: () =>
-      api<InvoiceTimeseries>(`/sales/invoices/timeseries/?${query}`),
+    queryFn: () => api<InvoiceTimeseries>(`/sales/invoices/timeseries/?${query}`),
   });
 }
 
@@ -1045,10 +1065,7 @@ export function useInvoiceSummary(filters: InvoiceFilters = {}) {
   const query = new URLSearchParams(cleaned).toString();
   return useQuery({
     queryKey: ["invoices-summary", cleaned],
-    queryFn: () =>
-      api<InvoiceSummary>(
-        `/sales/invoices/summary/${query ? `?${query}` : ""}`,
-      ),
+    queryFn: () => api<InvoiceSummary>(`/sales/invoices/summary/${query ? `?${query}` : ""}`),
   });
 }
 
@@ -1057,6 +1074,20 @@ export function useInvoice(id: string | undefined) {
     queryKey: ["invoice", id],
     queryFn: () => api<AdminInvoice>(`/sales/invoices/${id}/`),
     enabled: !!id,
+    // Self-refresh while the invoice is mid-flight to the tax authority: after
+    // submit, the FBR/PRA number arrives asynchronously (a worker posts to the
+    // cloud). Poll every 3s so THIS page shows the fiscal number + QR the moment
+    // it lands — no manual reload. Polling stops automatically once the number
+    // is present, or the invoice reaches a terminal state (failed/cancelled), so
+    // a settled invoice never keeps hitting the server.
+    refetchInterval: (query) => {
+      const inv = query.state.data as AdminInvoice | undefined;
+      if (!inv) return false;
+      if (inv.fbr_invoice_number) return false; // number landed — done
+      const waiting = inv.status === "submitted" || inv.status === "pending_sync";
+      return waiting ? 3000 : false;
+    },
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -1074,10 +1105,10 @@ export function useCancelInvoice() {
   // tenant admin's standard cancel flow.
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      api<{ id: string; status: string }>(
-        `/fbr/invoices/${id}/cancel/`,
-        { method: "POST", body: JSON.stringify({ reason }) },
-      ),
+      api<{ id: string; status: string }>(`/fbr/invoices/${id}/cancel/`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["invoices-summary"] });
@@ -1097,9 +1128,9 @@ export function useMarkCancelledOnFbr() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      api<{ id: string; status: string }>(
-        `/sales/invoices/${id}/mark-cancelled-on-fbr/`, { method: "POST" },
-      ),
+      api<{ id: string; status: string }>(`/sales/invoices/${id}/mark-cancelled-on-fbr/`, {
+        method: "POST",
+      }),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["invoices-summary"] });
@@ -1115,9 +1146,9 @@ export function useDeleteDraftInvoice() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      api<{ deleted: boolean; local_invoice_number: string }>(
-        `/sales/invoices/${id}/draft/`, { method: "DELETE" },
-      ),
+      api<{ deleted: boolean; local_invoice_number: string }>(`/sales/invoices/${id}/draft/`, {
+        method: "DELETE",
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["invoices-summary"] });
@@ -1139,10 +1170,10 @@ export function useEditInvoiceItem() {
   return useMutation({
     mutationFn: (input: EditItemInput) => {
       const { invoice_id, item_id, ...body } = input;
-      return api<AdminInvoice>(
-        `/sales/invoices/${invoice_id}/items/${item_id}/edit/`,
-        { method: "POST", body: JSON.stringify(body) },
-      );
+      return api<AdminInvoice>(`/sales/invoices/${invoice_id}/items/${item_id}/edit/`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
@@ -1182,9 +1213,7 @@ export function useValidateInvoice() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      api<ValidateInvoiceResult>(
-        `/sales/invoices/${id}/validate/`, { method: "POST" },
-      ),
+      api<ValidateInvoiceResult>(`/sales/invoices/${id}/validate/`, { method: "POST" }),
     onSuccess: (_data, id) => {
       // Validate creates an FbrSubmission row; refresh the log panel.
       qc.invalidateQueries({ queryKey: ["fbr-submissions"] });
@@ -1207,16 +1236,21 @@ export interface PrecheckResult {
 /** Local pre-submit check for a POS invoice (no FBR call). GET, run on demand. */
 export function usePrecheckInvoice() {
   return useMutation({
-    mutationFn: (id: string) =>
-      api<PrecheckResult>(`/sales/invoices/${id}/precheck/`),
+    mutationFn: (id: string) => api<PrecheckResult>(`/sales/invoices/${id}/precheck/`),
   });
 }
 
 export function useCancelInvoiceItem() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ invoice_id, item_id, reason }: {
-      invoice_id: string; item_id: string; reason: string;
+    mutationFn: ({
+      invoice_id,
+      item_id,
+      reason,
+    }: {
+      invoice_id: string;
+      item_id: string;
+      reason: string;
     }) =>
       api<AdminInvoice>(`/sales/invoices/${invoice_id}/items/${item_id}/cancel/`, {
         method: "POST",
@@ -1278,11 +1312,11 @@ export function useSyncLog(filters: { terminal_id?: string; status?: string } = 
   return useQuery({
     queryKey: ["sync-log", filters],
     queryFn: () =>
-      api<{ count: number; results: SyncLogEntry[] }>(
-        `/sync/log/${query ? `?${query}` : ""}`,
-      ),
+      api<{ count: number; results: SyncLogEntry[] }>(`/sync/log/${query ? `?${query}` : ""}`),
     enabled,
-    initialData: enabled ? undefined : ({ count: 0, results: [] } as { count: number; results: SyncLogEntry[] }),
+    initialData: enabled
+      ? undefined
+      : ({ count: 0, results: [] } as { count: number; results: SyncLogEntry[] }),
     refetchInterval: enabled ? 5000 : false,
   });
 }
@@ -1290,8 +1324,7 @@ export function useSyncLog(filters: { terminal_id?: string; status?: string } = 
 export function useRetrySyncRow() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      api(`/sync/log/${id}/retry/`, { method: "POST" }),
+    mutationFn: (id: string) => api(`/sync/log/${id}/retry/`, { method: "POST" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["sync-log"] });
       qc.invalidateQueries({ queryKey: ["sync-status"] });
@@ -1313,6 +1346,10 @@ export interface AdminTerminal {
   last_seen_at: string | null;
   last_synced_at: string | null;
   customer_display_enabled: boolean;
+  // True = a shared "waiter tablet" that only TAKES orders (never charges). The
+  // tablet PWA pairs to it; its fired orders relay to the kitchen printer and
+  // are charged on a cashier till.
+  is_order_taking_only: boolean;
   // Device-pairing state (one-time code the cashier enters in invoiceSolution.exe).
   pairing_code: string | null;
   pairing_code_expires_at: string | null;
@@ -1465,8 +1502,7 @@ export interface FbrScenarioRow {
 export function useFbrScenarios() {
   return useQuery({
     queryKey: ["fbr-scenarios"],
-    queryFn: () =>
-      api<{ count: number; results: FbrScenarioRow[] }>("/fbr/scenarios/"),
+    queryFn: () => api<{ count: number; results: FbrScenarioRow[] }>("/fbr/scenarios/"),
     refetchInterval: 5_000,
   });
 }
@@ -1499,15 +1535,10 @@ export function useRunSingleScenario() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { code: string; payload?: unknown }) =>
-      api<{ status: string; scenario: FbrScenarioRow | null }>(
-        `/fbr/scenarios/${args.code}/run/`,
-        {
-          method: "POST",
-          body: args.payload != null
-            ? JSON.stringify({ payload: args.payload })
-            : undefined,
-        },
-      ),
+      api<{ status: string; scenario: FbrScenarioRow | null }>(`/fbr/scenarios/${args.code}/run/`, {
+        method: "POST",
+        body: args.payload != null ? JSON.stringify({ payload: args.payload }) : undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["fbr-scenarios"] });
       qc.invalidateQueries({ queryKey: ["fbr-status"] });
@@ -1533,10 +1564,7 @@ export function useFbrScenarioTemplates(scenarioCode?: string) {
   const qs = scenarioCode ? `?scenario_code=${scenarioCode}` : "";
   return useQuery({
     queryKey: ["fbr-scenario-templates", scenarioCode ?? "all"],
-    queryFn: () =>
-      api<{ results: FbrScenarioTemplate[] }>(
-        `/fbr/scenarios/templates/${qs}`,
-      ),
+    queryFn: () => api<{ results: FbrScenarioTemplate[] }>(`/fbr/scenarios/templates/${qs}`),
   });
 }
 
@@ -1546,12 +1574,7 @@ export function useFbrScenarioTemplates(scenarioCode?: string) {
 export function useSaveScenarioTemplate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: {
-      code: string;
-      name: string;
-      payload: unknown;
-      notes?: string;
-    }) =>
+    mutationFn: (args: { code: string; name: string; payload: unknown; notes?: string }) =>
       api<{ id: string; name: string; scenario_code: string }>(
         `/fbr/scenarios/${args.code}/save-template/`,
         {
@@ -1585,7 +1608,6 @@ export function useApplyScenarioTemplate() {
     },
   });
 }
-
 
 export interface FbrSubmissionRow {
   id: string;
@@ -1658,7 +1680,8 @@ export function useSubmitSandboxToken() {
   return useMutation({
     mutationFn: (body: { token: string; api_endpoint?: string }) =>
       api("/fbr/tokens/sandbox/", {
-        method: "POST", body: JSON.stringify(body),
+        method: "POST",
+        body: JSON.stringify(body),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fbr-status"] }),
   });
@@ -1676,7 +1699,8 @@ export function useActivateProductionToken() {
       scenarios_cleared_externally?: boolean;
     }) =>
       api("/fbr/tokens/production/", {
-        method: "POST", body: JSON.stringify(body),
+        method: "POST",
+        body: JSON.stringify(body),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["fbr-status"] }),
   });
@@ -1695,7 +1719,8 @@ export function useTestFbrToken() {
   return useMutation({
     mutationFn: (body: { token: string; api_endpoint: string }) =>
       api<TestTokenResult>("/fbr/tokens/test/", {
-        method: "POST", body: JSON.stringify(body),
+        method: "POST",
+        body: JSON.stringify(body),
       }),
   });
 }
@@ -1728,7 +1753,8 @@ export function useUpdatePaymentSettings() {
   return useMutation({
     mutationFn: (body: Partial<PaymentSettings>) =>
       api<PaymentSettings>("/payments/settings/", {
-        method: "PATCH", body: JSON.stringify(body),
+        method: "PATCH",
+        body: JSON.stringify(body),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["payment-settings"] }),
   });
@@ -1752,16 +1778,14 @@ export function useCheques(statusFilter?: string) {
   const query = statusFilter ? `?status=${statusFilter}` : "";
   return useQuery({
     queryKey: ["cheques", statusFilter],
-    queryFn: () =>
-      api<{ count: number; results: ChequeRow[] }>(`/payments/cheques/${query}`),
+    queryFn: () => api<{ count: number; results: ChequeRow[] }>(`/payments/cheques/${query}`),
   });
 }
 
 export function useClearCheque() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      api(`/payments/cheques/${id}/clear/`, { method: "POST" }),
+    mutationFn: (id: string) => api(`/payments/cheques/${id}/clear/`, { method: "POST" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cheques"] }),
   });
 }
@@ -1771,7 +1795,8 @@ export function useBounceCheque() {
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       api(`/payments/cheques/${id}/bounce/`, {
-        method: "POST", body: JSON.stringify({ reason }),
+        method: "POST",
+        body: JSON.stringify({ reason }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["cheques"] }),
   });
@@ -1812,18 +1837,21 @@ export interface AdminReturn {
   updated_at: string;
 }
 
-export function useReturns(filters: {
-  branch?: string; refund_method?: string; from?: string; to?: string;
-} = {}) {
+export function useReturns(
+  filters: {
+    branch?: string;
+    refund_method?: string;
+    from?: string;
+    to?: string;
+  } = {},
+) {
   const cleaned: Record<string, string> = {};
   for (const [k, v] of Object.entries(filters)) if (v) cleaned[k] = v;
   const query = new URLSearchParams(cleaned).toString();
   return useQuery({
     queryKey: ["returns", filters],
     queryFn: () =>
-      api<{ count: number; results: AdminReturn[] }>(
-        `/returns/${query ? `?${query}` : ""}`,
-      ),
+      api<{ count: number; results: AdminReturn[] }>(`/returns/${query ? `?${query}` : ""}`),
   });
 }
 
@@ -1850,9 +1878,15 @@ export interface ManualInvoiceLine {
 
 export interface ManualInvoicePayment {
   payment_method:
-    | "cash" | "card_credit" | "card_debit"
-    | "easypaisa" | "jazzcash" | "raast"
-    | "cheque" | "bank_transfer" | "store_credit";
+    | "cash"
+    | "card_credit"
+    | "card_debit"
+    | "easypaisa"
+    | "jazzcash"
+    | "raast"
+    | "cheque"
+    | "bank_transfer"
+    | "store_credit";
   amount: string;
   // Card (card_credit / card_debit) — last4 + auth_code required, rrn optional
   card_last4?: string;
@@ -1961,9 +1995,7 @@ export function useCustomers(filters: { search?: string; page?: number } = {}) {
   return useQuery({
     queryKey: ["customers", filters],
     queryFn: () =>
-      api<{ count: number; results: AdminCustomer[] }>(
-        `/customers/${query ? `?${query}` : ""}`,
-      ),
+      api<{ count: number; results: AdminCustomer[] }>(`/customers/${query ? `?${query}` : ""}`),
     enabled,
     initialData: enabled
       ? undefined
@@ -2017,7 +2049,10 @@ export function useUpsertCustomer() {
 // ----- Reports (Phase 7) -----
 
 export interface ReportColumn {
-  key: string; label: string; kind: string; align?: string;
+  key: string;
+  label: string;
+  kind: string;
+  align?: string;
 }
 
 export interface ReportListEntry {
@@ -2057,16 +2092,27 @@ export interface DashboardData {
   };
   sparkline: { date: string; gross: string }[];
   recent_invoices: Array<{
-    id: string; local_invoice_number: string; branch: string;
-    cashier: string; grand_total: string; status: string; created_at: string;
+    id: string;
+    local_invoice_number: string;
+    branch: string;
+    cashier: string;
+    grand_total: string;
+    status: string;
+    created_at: string;
   }>;
   low_stock: Array<{
-    sku: string; name: string; branch: string;
-    quantity: string; reorder_level: string;
+    sku: string;
+    name: string;
+    branch: string;
+    quantity: string;
+    reorder_level: string;
   }>;
   failed_fbr: Array<{
-    id: string; invoice_number: string; status_code: string;
-    error: string; submitted_at: string;
+    id: string;
+    invoice_number: string;
+    status_code: string;
+    error: string;
+    submitted_at: string;
   }>;
   payment_breakdown: Array<{ method: string; total: string; count: number }>;
   freshness: { last_built_at: string | null };
@@ -2109,15 +2155,18 @@ export function useReportPreview() {
 export function useReportFavorites() {
   return useQuery({
     queryKey: ["reports", "favorites"],
-    queryFn: () =>
-      api<{ count: number; results: ReportFavorite[] }>("/reports/favorites/"),
+    queryFn: () => api<{ count: number; results: ReportFavorite[] }>("/reports/favorites/"),
   });
 }
 
 export function useSaveFavorite() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { report_name: string; label: string; filters_json: Record<string, unknown> }) =>
+    mutationFn: (body: {
+      report_name: string;
+      label: string;
+      filters_json: Record<string, unknown>;
+    }) =>
       api<ReportFavorite>("/reports/favorites/", {
         method: "POST",
         body: JSON.stringify(body),
@@ -2129,12 +2178,10 @@ export function useSaveFavorite() {
 export function useDeleteFavorite() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      api(`/reports/favorites/${id}/`, { method: "DELETE" }),
+    mutationFn: (id: string) => api(`/reports/favorites/${id}/`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["reports", "favorites"] }),
   });
 }
-
 
 // ---------------------------------------------------------------------------
 // Tenant self-serve setup (business mode + FBR nature + sector).
@@ -2289,7 +2336,10 @@ export function useAddStayRoom() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, room }: { id: string; room: string }) =>
-      api<FolioBill>(`/hotel/folios/${id}/rooms/`, { method: "POST", body: JSON.stringify({ room }) }),
+      api<FolioBill>(`/hotel/folios/${id}/rooms/`, {
+        method: "POST",
+        body: JSON.stringify({ room }),
+      }),
     onSuccess: (_d, v) => invalidateFolio(qc, v.id),
   });
 }

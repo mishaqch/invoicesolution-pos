@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-09-04T05:36:18.202Z",
+        "reason": "print-only: Arial/Helvetica system stack in the printed A4 folio-bill HTML (window.print), not a UI surface — system font is the correct, offline-safe choice for a financial print document"
+      }
+    ]
+  }
+}

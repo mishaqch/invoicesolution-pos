@@ -8,7 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/components/feedback/Toast";
 import { extractApiErrorMessage } from "@/lib/api";
 import {
@@ -31,7 +38,7 @@ export default function TerminalsList() {
   const toast = useToast();
 
   const branches = branchData?.results ?? [];
-  const [v, setV] = useState({ branch: "", name: "" });
+  const [v, setV] = useState({ branch: "", name: "", is_order_taking_only: false });
   const [error, setError] = useState<string | null>(null);
 
   const terminals = data?.results ?? [];
@@ -45,9 +52,16 @@ export default function TerminalsList() {
       return;
     }
     try {
-      await create.mutateAsync({ branch: v.branch, name: v.name });
-      setV({ branch: v.branch, name: "" });
-      toast.show({ message: "Terminal created — share the pairing code below.", variant: "success" });
+      await create.mutateAsync({
+        branch: v.branch,
+        name: v.name,
+        is_order_taking_only: v.is_order_taking_only,
+      });
+      setV({ branch: v.branch, name: "", is_order_taking_only: false });
+      toast.show({
+        message: "Terminal created — share the pairing code below.",
+        variant: "success",
+      });
     } catch (err) {
       setError(extractApiErrorMessage(err));
     }
@@ -71,27 +85,68 @@ export default function TerminalsList() {
           <CardTitle className="text-sm">How to set up a counter</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-1">
-          <p>1. Click <strong>Download Terminal App</strong> and install <span className="font-mono">invoiceSolution.exe</span> on the Windows counter PC (Windows 10 or newer).</p>
-          <p>2. Add a terminal below for the branch — you'll get a one-time <strong>pairing code</strong>.</p>
-          <p>3. Launch the app on the counter and enter the code. It binds to that branch and is ready to ring FBR-fiscalized sales.</p>
+          <p>
+            1. Click <strong>Download Terminal App</strong> and install{" "}
+            <span className="font-mono">invoiceSolution.exe</span> on the Windows counter PC
+            (Windows 10 or newer).
+          </p>
+          <p>
+            2. Add a terminal below for the branch — you'll get a one-time{" "}
+            <strong>pairing code</strong>.
+          </p>
+          <p>
+            3. Launch the app on the counter and enter the code. It binds to that branch and is
+            ready to ring FBR-fiscalized sales.
+          </p>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Add terminal</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Add terminal</CardTitle>
+        </CardHeader>
         <CardContent>
           <form onSubmit={add} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Branch *</Label>
-              <Select value={v.branch} onChange={(e) => setV({ ...v, branch: e.target.value })} required>
+              <Select
+                value={v.branch}
+                onChange={(e) => setV({ ...v, branch: e.target.value })}
+                required
+              >
                 <option value="">Select branch…</option>
-                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
               </Select>
             </div>
             <div className="space-y-1">
               <Label>Name *</Label>
-              <Input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} placeholder="Counter 1" required />
+              <Input
+                value={v.name}
+                onChange={(e) => setV({ ...v, name: e.target.value })}
+                placeholder="Counter 1"
+                required
+              />
             </div>
+            <label className="flex items-start gap-2 sm:col-span-2 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={v.is_order_taking_only}
+                onChange={(e) => setV({ ...v, is_order_taking_only: e.target.checked })}
+              />
+              <span className="text-sm">
+                <span className="font-medium">Waiter tablet (order-taking only)</span>
+                <span className="block text-muted-foreground">
+                  A shared tablet waiters use to take restaurant orders. It fires orders to the
+                  kitchen but never charges — a cashier till closes the bill. Pair it in the browser
+                  (waiter app), not the .exe.
+                </span>
+              </span>
+            </label>
             <div className="flex items-center gap-3 sm:col-span-2">
               <Button type="submit" loading={create.isPending}>
                 {!create.isPending && <Plus className="mr-2 h-4 w-4" />}
@@ -104,10 +159,14 @@ export default function TerminalsList() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Terminals</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>Terminals</CardTitle>
+        </CardHeader>
         <CardContent>
           {isLoading ? (
-            <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
           ) : terminals.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
               <Monitor className="h-8 w-8" />
@@ -158,6 +217,11 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
         {t.terminal_index != null && (
           <span className="ml-1 text-xs text-muted-foreground">· T{t.terminal_index}</span>
         )}
+        {t.is_order_taking_only && (
+          <Badge variant="outline" className="ml-2 text-[10px] font-normal">
+            Waiter tablet
+          </Badge>
+        )}
         <span className="block text-[11px] text-muted-foreground md:hidden">{branchName}</span>
       </TableCell>
       <TableCell className="hidden md:table-cell">{branchName}</TableCell>
@@ -192,7 +256,8 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
         <div className="flex items-center justify-end gap-2">
           {!t.is_paired && t.is_active && (
             <Button
-              variant="outline" size="sm"
+              variant="outline"
+              size="sm"
               onClick={() => issue.mutate(t.id)}
               loading={issue.isPending}
               title="Generate a fresh pairing code"
@@ -203,7 +268,8 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
           )}
           {t.is_active && (
             <Button
-              variant="ghost" size="sm"
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 if (window.confirm(`Deactivate ${t.name}? It will stop being usable for sales.`)) {
                   deactivate.mutate(t.id);

@@ -4,7 +4,14 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   useAddStayRoom,
   useCancelStay,
@@ -25,10 +32,20 @@ function rows<T>(d: { results: T[] } | T[] | undefined): T[] {
   return Array.isArray(d) ? d : d.results;
 }
 
+// Always render folio timestamps in Pakistan Standard Time (Asia/Karachi),
+// NOT the admin machine's local timezone. Datetimes arrive UTC-aware from the
+// server; the office PC / remote browser may be in any zone, so pin the zone
+// explicitly — this is the printed slip's time, and it must match the resort's
+// wall clock (and the terminal's ESC/POS receipt, which already pins PKT).
+const PK_TZ = "Asia/Karachi";
 function fmt(s: string | null): string {
   if (!s) return "—";
   const d = new Date(s);
-  return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    d.toLocaleDateString("en-GB", { timeZone: PK_TZ }) +
+    " " +
+    d.toLocaleTimeString("en-GB", { timeZone: PK_TZ, hour: "2-digit", minute: "2-digit" })
+  );
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -80,7 +97,11 @@ export default function StaysAdmin() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  Loading…
+                </TableCell>
+              </TableRow>
             ) : folioRows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
@@ -93,13 +114,21 @@ export default function StaysAdmin() {
                 <TableRow key={f.id}>
                   <TableCell className="font-mono text-xs">{f.folio_number}</TableCell>
                   <TableCell className="font-medium">{f.guest_name}</TableCell>
-                  <TableCell className="hidden text-muted-foreground md:table-cell">{f.guest_phone}</TableCell>
+                  <TableCell className="hidden text-muted-foreground md:table-cell">
+                    {f.guest_phone}
+                  </TableCell>
                   <TableCell>{f.room_number ?? "—"}</TableCell>
-                  <TableCell className="hidden text-muted-foreground lg:table-cell">{fmt(f.check_in)}</TableCell>
+                  <TableCell className="hidden text-muted-foreground lg:table-cell">
+                    {fmt(f.check_in)}
+                  </TableCell>
                   <TableCell className="text-right">{f.nights}</TableCell>
-                  <TableCell><Badge className={STATUS_STYLES[f.status] ?? ""}>{f.status}</Badge></TableCell>
+                  <TableCell>
+                    <Badge className={STATUS_STYLES[f.status] ?? ""}>{f.status}</Badge>
+                  </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => setOpenId(f.id)}>View bill</Button>
+                    <Button size="sm" variant="outline" onClick={() => setOpenId(f.id)}>
+                      View bill
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))
@@ -228,6 +257,7 @@ function printFolioBill(bill: FolioBill, tenant: Tenant | null): void {
     </div>
 
     <div class="foot">Thank you for staying with us.</div>
+    <div class="foot">Bill printed: ${esc(fmt(new Date().toISOString()))}</div>
   </div>
   <script>window.onload = function () { window.print(); };</script>
 </body>
@@ -260,11 +290,22 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
   const removeStayRoom = useRemoveStayRoom();
   const cancelStay = useCancelStay();
   const busy =
-    updateStay.isPending || addStayRoom.isPending || removeStayRoom.isPending || cancelStay.isPending;
+    updateStay.isPending ||
+    addStayRoom.isPending ||
+    removeStayRoom.isPending ||
+    cancelStay.isPending;
 
   // Available rooms for the "add room" picker (only fetched while editing).
-  const { data: roomsData } = useRooms(editing ? { status: "available" } : {});
-  const availRooms: Room[] = editing ? rows<Room>(roomsData) : [];
+  // Load ALL rooms (not just available) so booked rooms are visible-but-disabled
+  // in the add-room picker — the front desk sees a room is already booked.
+  const { data: roomsData } = useRooms(editing ? {} : {});
+  const availRooms: Room[] = editing
+    ? [...rows<Room>(roomsData)].sort(
+        (a, b) =>
+          (a.status === "available" ? 0 : 1) - (b.status === "available" ? 0 : 1) ||
+          a.room_number.localeCompare(b.room_number),
+      )
+    : [];
 
   function startEdit() {
     if (!bill) return;
@@ -275,7 +316,9 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
       guest_email: bill.guest.email || "",
       guest_address: bill.guest.address || "",
       check_in: bill.check_in ? toLocalInput(bill.check_in) : undefined,
-      expected_check_out: bill.expected_check_out ? toLocalInput(bill.expected_check_out) : undefined,
+      expected_check_out: bill.expected_check_out
+        ? toLocalInput(bill.expected_check_out)
+        : undefined,
     });
     setEditing(true);
   }
@@ -284,7 +327,8 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
     if (!bill) return;
     const body: UpdateStayBody = { ...form };
     if (body.check_in) body.check_in = new Date(body.check_in).toISOString();
-    if (body.expected_check_out) body.expected_check_out = new Date(body.expected_check_out).toISOString();
+    if (body.expected_check_out)
+      body.expected_check_out = new Date(body.expected_check_out).toISOString();
     try {
       await updateStay.mutateAsync({ id: bill.id, ...body });
       setEditing(false);
@@ -295,6 +339,12 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
 
   async function doAddRoom() {
     if (!bill || !addRoomId) return;
+    // Guard: a booked room can't be added — tell the operator up front.
+    const picked = availRooms.find((r) => r.id === addRoomId);
+    if (picked && picked.status !== "available") {
+      alert(`Room ${picked.room_number} is already booked — select another room.`);
+      return;
+    }
     try {
       await addStayRoom.mutateAsync({ id: bill.id, room: addRoomId });
       setAddRoomId("");
@@ -329,7 +379,10 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
-      <div className="flex h-full w-full max-w-lg flex-col bg-background shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="flex h-full w-full max-w-lg flex-col bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
             <h2 className="text-base font-semibold">{bill?.guest.name ?? "Loading…"}</h2>
@@ -337,7 +390,11 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
           </div>
           <div className="flex items-center gap-2">
             {isOpen && (
-              <Button variant="outline" size="sm" onClick={editing ? () => setEditing(false) : startEdit}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={editing ? () => setEditing(false) : startEdit}
+              >
                 <Pencil className="mr-1 h-4 w-4" /> {editing ? "Done" : "Edit"}
               </Button>
             )}
@@ -360,7 +417,9 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
             >
               <Printer className="mr-1 h-4 w-4" /> Print bill
             </Button>
-            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close"><X className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+              <X className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
@@ -399,19 +458,53 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
                 <div className="mb-4 rounded-lg border border-primary/40 bg-primary/5 p-4">
                   <div className="mb-3 text-sm font-semibold">Edit stay</div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <EditField label="Guest name" value={form.guest_name ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_name: v }))} />
-                    <EditField label="CNIC" value={form.guest_cnic ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_cnic: v }))} />
-                    <EditField label="Phone" value={form.guest_phone ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_phone: v }))} />
-                    <EditField label="Email" value={form.guest_email ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_email: v }))} />
+                    <EditField
+                      label="Guest name"
+                      value={form.guest_name ?? ""}
+                      onChange={(v) => setForm((f) => ({ ...f, guest_name: v }))}
+                    />
+                    <EditField
+                      label="CNIC"
+                      value={form.guest_cnic ?? ""}
+                      onChange={(v) => setForm((f) => ({ ...f, guest_cnic: v }))}
+                    />
+                    <EditField
+                      label="Phone"
+                      value={form.guest_phone ?? ""}
+                      onChange={(v) => setForm((f) => ({ ...f, guest_phone: v }))}
+                    />
+                    <EditField
+                      label="Email"
+                      value={form.guest_email ?? ""}
+                      onChange={(v) => setForm((f) => ({ ...f, guest_email: v }))}
+                    />
                     <div className="sm:col-span-2">
-                      <EditField label="Address" value={form.guest_address ?? ""} onChange={(v) => setForm((f) => ({ ...f, guest_address: v }))} />
+                      <EditField
+                        label="Address"
+                        value={form.guest_address ?? ""}
+                        onChange={(v) => setForm((f) => ({ ...f, guest_address: v }))}
+                      />
                     </div>
-                    <EditField label="Check-in" type="datetime-local" value={form.check_in ?? ""} onChange={(v) => setForm((f) => ({ ...f, check_in: v }))} />
-                    <EditField label="Expected check-out" type="datetime-local" value={form.expected_check_out ?? ""} onChange={(v) => setForm((f) => ({ ...f, expected_check_out: v }))} />
+                    <EditField
+                      label="Check-in"
+                      type="datetime-local"
+                      value={form.check_in ?? ""}
+                      onChange={(v) => setForm((f) => ({ ...f, check_in: v }))}
+                    />
+                    <EditField
+                      label="Expected check-out"
+                      type="datetime-local"
+                      value={form.expected_check_out ?? ""}
+                      onChange={(v) => setForm((f) => ({ ...f, expected_check_out: v }))}
+                    />
                   </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">Changing dates re-prices each room's nights.</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Changing dates re-prices each room's nights.
+                  </p>
                   <div className="mt-3 flex justify-end">
-                    <Button size="sm" onClick={saveEdit} disabled={busy}>{updateStay.isPending ? "Saving…" : "Save changes"}</Button>
+                    <Button size="sm" onClick={saveEdit} disabled={busy}>
+                      {updateStay.isPending ? "Saving…" : "Save changes"}
+                    </Button>
                   </div>
 
                   {/* Rooms on this stay — add / remove */}
@@ -421,8 +514,16 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
                     </div>
                     <div className="space-y-1">
                       {bill.rooms.map((r) => (
-                        <div key={r.id} className="flex items-center justify-between rounded border px-2 py-1 text-sm">
-                          <span>Room {r.number} <span className="text-muted-foreground">({r.type}) · {r.nights}n</span></span>
+                        <div
+                          key={r.id}
+                          className="flex items-center justify-between rounded border px-2 py-1 text-sm"
+                        >
+                          <span>
+                            Room {r.number}{" "}
+                            <span className="text-muted-foreground">
+                              ({r.type}) · {r.nights}n
+                            </span>
+                          </span>
                           {canCancel && bill.rooms.length > 1 && (
                             <button
                               type="button"
@@ -443,11 +544,26 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
                         className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs"
                       >
                         <option value="">Add a room…</option>
-                        {availRooms.map((r) => (
-                          <option key={r.id} value={r.id}>Room {r.room_number} ({r.room_type}) — Rs {money(r.nightly_total)}/night</option>
-                        ))}
+                        {availRooms
+                          // Hide rooms already on this stay; disable booked ones.
+                          .filter((r) => !bill.rooms.some((br) => br.id === r.id))
+                          .map((r) => {
+                            const booked = r.status !== "available";
+                            return (
+                              <option key={r.id} value={r.id} disabled={booked}>
+                                Room {r.room_number} ({r.room_type}) — Rs {money(r.nightly_total)}
+                                /night
+                                {booked ? " — booked" : ""}
+                              </option>
+                            );
+                          })}
                       </select>
-                      <Button size="sm" variant="outline" onClick={doAddRoom} disabled={busy || !addRoomId}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={doAddRoom}
+                        disabled={busy || !addRoomId}
+                      >
                         <Plus className="mr-1 h-4 w-4" /> Add
                       </Button>
                     </div>
@@ -457,19 +573,26 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
 
               {bill.days.map((day) => (
                 <div key={day.date} className="mb-3">
-                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{day.date}</div>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {day.date}
+                  </div>
                   <div className="rounded-lg border">
                     {day.charges.map((ch, ci) => (
                       <div key={ci} className="border-b p-3 last:border-0">
                         <div className="mb-1 flex justify-between text-xs text-muted-foreground">
                           <span className="capitalize">
-                            {ch.kind}{ch.room_number ? ` · Room ${ch.room_number}` : ""} · {ch.invoice_number}
+                            {ch.kind}
+                            {ch.room_number ? ` · Room ${ch.room_number}` : ""} ·{" "}
+                            {ch.invoice_number}
                           </span>
                           <span className="font-mono">Rs {money(ch.total)}</span>
                         </div>
                         {ch.items.map((it, ii) => (
                           <div key={ii} className="flex justify-between text-sm">
-                            <span>{it.quantity} × {it.name}{it.note ? ` (${it.note})` : ""}</span>
+                            <span>
+                              {it.quantity} × {it.name}
+                              {it.note ? ` (${it.note})` : ""}
+                            </span>
                             <span className="font-mono">Rs {money(it.line_total)}</span>
                           </div>
                         ))}
@@ -483,7 +606,8 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
                 <Row label="Subtotal" value={money(bill.subtotal)} />
                 <Row label="Tax" value={money(bill.tax_total)} />
                 <div className="mt-1 flex justify-between border-t pt-2 text-base font-bold">
-                  <span>Grand total</span><span className="font-mono">Rs {money(bill.grand_total)}</span>
+                  <span>Grand total</span>
+                  <span className="font-mono">Rs {money(bill.grand_total)}</span>
                 </div>
                 {Number(bill.paid_total) > 0 && <Row label="Paid" value={money(bill.paid_total)} />}
                 {Number(bill.balance) !== 0 && <Row label="Balance" value={money(bill.balance)} />}
@@ -497,9 +621,15 @@ function FolioBillDrawer({ folioId, onClose }: { folioId: string; onClose: () =>
 }
 
 function EditField({
-  label, value, onChange, type = "text",
+  label,
+  value,
+  onChange,
+  type = "text",
 }: {
-  label: string; value: string; onChange: (v: string) => void; type?: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
 }) {
   return (
     <div>
@@ -533,7 +663,8 @@ function errText(e: unknown): string {
         if (typeof v === "string") return v;
       }
     }
-    if (typeof (e as { message?: unknown }).message === "string") return (e as { message: string }).message;
+    if (typeof (e as { message?: unknown }).message === "string")
+      return (e as { message: string }).message;
   }
   return "Something went wrong. Please try again.";
 }

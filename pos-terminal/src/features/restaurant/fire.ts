@@ -15,18 +15,23 @@
  */
 
 import { useSaleStore, type CartLine } from "@/stores/sale";
-import { pkTimeHHMM } from "@/lib/pk-time";
+import { pkDate, pkTimeHHMM } from "@/lib/pk-time";
 import { fireOpenOrder, voidOpenOrder } from "./api";
 
 /**
- * Return this order's TEMPORARY ORDER TAG (e.g. "KK-T3-045"), NOT a real invoice
- * number. A held/open order must not consume an invoice number — the invoice
- * number is minted only at CHARGE (server-side), so voided/abandoned orders
- * leave no gaps in the invoice sequence. The tag is a short daily counter
- * (001, 002…) scoped to the branch+terminal, used on the KOT + the Open-orders
- * card so cook and cashier can call it out. Cached on the sale store so re-fires
- * and the eventual charge all reference the SAME order. Falls back to the
- * client_uuid prefix only if pairing/numbering is unavailable.
+ * Return this order's INVOICE NUMBER (e.g. "KK-T3-2026-0000123"), minted once
+ * at the FIRST fire and kept stable for re-fires and the eventual charge.
+ *
+ * The kitchen slip (KOT), the Open-orders card and the final bill therefore all
+ * show the SAME number — the traceability the resort asked for. The server
+ * preserves this number when it finalizes the held order at charge (it no
+ * longer mints a fresh one), so KOT # == bill #. Tradeoff: a voided/abandoned
+ * order skips a number, so the daily sequence can have small gaps — the
+ * accepted restaurant-POS behaviour.
+ *
+ * Cached on the sale store so re-fires and the eventual charge all reference the
+ * SAME number. Falls back to the client_uuid prefix only if pairing/numbering
+ * is unavailable (offline-safe).
  */
 async function ensureOrderNumber(): Promise<string> {
   const st = useSaleStore.getState();
@@ -34,15 +39,15 @@ async function ensureOrderNumber(): Promise<string> {
   try {
     const s = await window.api.pairing.status();
     const id = s.identity;
-    const daily = await window.api.numbering.nextKitchenOrder();
-    if (id && daily) {
-      const tag = `${id.branchCode}-T${id.terminalIndex}-${daily}`;
-      useSaleStore.getState().setOrderNumber(tag);
-      return tag;
-    }
-    if (daily) {
-      useSaleStore.getState().setOrderNumber(daily);
-      return daily;
+    if (id) {
+      const number = await window.api.numbering.next({
+        branchCode: id.branchCode,
+        terminalIndex: id.terminalIndex,
+      });
+      if (number) {
+        useSaleStore.getState().setOrderNumber(number);
+        return number;
+      }
     }
   } catch {
     /* fall through to the uuid prefix */
@@ -125,6 +130,7 @@ export async function fireUnsentToKitchen(opts: {
       order_type: st.orderType ?? "dine_in",
       table_name: st.tableName,
       covers: st.covers,
+      date: pkDate(),
       time,
       // Human reference for the ticket when there's no table (label or walk-in
       // name), so the kitchen sees a meaningful name, not just a hex order id.
@@ -250,6 +256,57 @@ export interface VoidResult {
  * (No branch/terminal args needed: the void is keyed on the order's client_uuid
  * and the cancellation KOT resolves the kitchen printer in the main process.)
  */
+/**
+ * Cancel a SINGLE line that was already fired to the kitchen. Prints a
+ * one-item cancellation KOT (reverse-video "** CANCELLED ** / DO NOT PREPARE")
+ * so the cook stops preparing exactly that dish, then soft-cancels the line in
+ * the cart (kept struck-through on screen + on the final bill). For a line that
+ * was never fired, the caller should just hard-remove it (nothing to un-cook).
+ *
+ * Returns true if the line was soft-cancelled (i.e. it had been fired).
+ */
+export async function cancelFiredItemAndNotifyKitchen(lineId: string): Promise<boolean> {
+  const st = useSaleStore.getState();
+  const line = st.lines.find((l) => l.id === lineId);
+  if (!line) return false;
+  if (!line.sent_to_kitchen || line.cancelled) {
+    // Never fired (or already cancelled) — no kitchen ticket needed. Let the
+    // store handle it (hard-remove for un-fired, no-op for already cancelled).
+    st.removeLine(lineId);
+    return false;
+  }
+
+  try {
+    const time = pkTimeHHMM();
+    await window.api.printer.printKOT({
+      order_number: st.orderNumber ?? st.clientUuid.slice(0, 8),
+      order_type: st.orderType ?? "dine_in",
+      table_name: st.tableName,
+      covers: st.covers,
+      date: pkDate(),
+      time,
+      reference: st.heldLabel ?? st.customer?.name ?? null,
+      is_void: true, // header reads CANCELLED so the cook can't miss it
+      items: [
+        {
+          product_name: line.product_name,
+          quantity: line.quantity,
+          modifiers: (line.modifiers ?? []).map((m) => ({ name: m.name })),
+          item_note: line.item_note ?? null,
+          cancelled: true,
+        },
+      ],
+      width: 48,
+    });
+  } catch {
+    /* printer error — cancellation KOT goes to disk via the main-process fallback */
+  }
+
+  // Soft-cancel in the cart (removeLine keeps a fired line, flagged cancelled).
+  st.removeLine(lineId);
+  return true;
+}
+
 export async function voidOrderAndNotifyKitchen(): Promise<VoidResult> {
   const st = useSaleStore.getState();
   const openUuid = st.resumedOpenOrderUuid;

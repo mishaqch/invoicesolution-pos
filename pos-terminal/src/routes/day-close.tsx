@@ -15,6 +15,7 @@ export default function DayCloseRoute() {
   const navigate = useNavigate();
   const ctx = usePosContext();
   const logout = useSessionStore((s) => s.logout);
+  const tenant = useSessionStore((s) => s.tenant);
 
   const [step, setStep] = useState<Step>("summary");
   const [declared, setDeclared] = useState("");
@@ -22,10 +23,16 @@ export default function DayCloseRoute() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totals, setTotals] = useState<{ total_sales: string }>({ total_sales: "0" });
+  // Full daily summary from the server (card/online + cancelled counts). Null
+  // while loading or if offline — the cash figures below still work regardless.
+  const [summary, setSummary] = useState<
+    import("../../electron/preload").DailySummary | null
+  >(null);
 
   useEffect(() => {
     if (!ctx.session) return;
     void window.api.session.totals(ctx.session.id).then(setTotals);
+    void window.api.session.summary(ctx.session.id).then(setSummary);
   }, [ctx.session]);
 
   if (ctx.loading || !ctx.terminal) return <Splash msg="Loading…" />;
@@ -58,6 +65,8 @@ export default function DayCloseRoute() {
         variance: variance.toStorageString(),
         variance_reason: reason,
       });
+      // Print + save the end-of-day daily summary (Z-report) before logging out.
+      await printDailyReport(declaredM.toStorageString(), variance.toStorageString());
       // Lock the terminal: log out the cashier.
       logout();
       navigate("/login", { replace: true });
@@ -65,6 +74,32 @@ export default function DayCloseRoute() {
       setError(err instanceof ApiError ? `API ${err.status}` : "Close failed.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Print (and save to disk) the end-of-day daily summary. Best-effort — a
+  // printer error never blocks the close; a copy is always written to disk.
+  async function printDailyReport(declaredCash?: string, varianceStr?: string) {
+    if (!summary) return;
+    try {
+      await window.api.printer.printDailyReport({
+        business_name: tenant?.business_name ?? "POS",
+        branch_name: ctx.branch?.name ?? "",
+        date: summary.date ?? new Date().toISOString().slice(0, 10),
+        opening_cash: ctx.session?.opened_with_amount ?? null,
+        declared_cash: declaredCash ?? null,
+        variance: varianceStr ?? null,
+        total_sales: summary.total_sales,
+        total_tax: summary.total_tax,
+        total_discount: summary.total_discount,
+        total_orders: summary.total_orders,
+        cancelled_orders: summary.cancelled_orders,
+        cancelled_items: summary.cancelled_items,
+        payment_breakup: summary.payment_breakup,
+        width: 48,
+      });
+    } catch {
+      /* printer/disk error — non-fatal; the on-screen summary still stands */
     }
   }
 
@@ -81,10 +116,58 @@ export default function DayCloseRoute() {
 
       <div className="mt-4 grid w-full max-w-md gap-3">
         <div className="rounded-md border bg-background p-4">
-          <div className="text-sm font-semibold">Summary</div>
+          <div className="text-sm font-semibold">Cash drawer</div>
           <Row label="Opening cash" value={`Rs ${opened.display()}`} />
           <Row label="Cash sales" value={`Rs ${cashSales.display()}`} />
           <Row label="Expected" value={`Rs ${expected.display()}`} />
+        </div>
+
+        {/* Daily summary — the end-of-day figures the manager asked for. Shown
+            from the server (all payment methods + cancellations). Falls back to
+            a "couldn't load" note if offline, without blocking the close. */}
+        <div className="rounded-md border bg-background p-4">
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-sm font-semibold">Daily summary</div>
+            {summary?.date && (
+              <span className="text-xs text-muted-foreground">{summary.date}</span>
+            )}
+          </div>
+          {summary ? (
+            <>
+              <Row label="Total sales" value={`Rs ${money(summary.total_sales)}`} />
+              <Row label="Total orders" value={String(summary.total_orders)} />
+              <Row label="Total discount" value={`Rs ${money(summary.total_discount)}`} />
+              <Row label="Total tax" value={`Rs ${money(summary.total_tax)}`} />
+              <Row
+                label="Cancelled orders"
+                value={String(summary.cancelled_orders)}
+                muted={summary.cancelled_orders > 0}
+              />
+              <Row
+                label="Cancelled items"
+                value={String(summary.cancelled_items)}
+                muted={summary.cancelled_items > 0}
+              />
+              <div className="mt-2 border-t pt-2 text-xs font-semibold text-muted-foreground">
+                Payment breakup
+              </div>
+              {Object.keys(summary.payment_breakup).length === 0 ? (
+                <div className="mt-1 text-xs text-muted-foreground">No payments recorded.</div>
+              ) : (
+                Object.entries(summary.payment_breakup).map(([method, v]) => (
+                  <Row
+                    key={method}
+                    label={`${cap(method)} (${v.count})`}
+                    value={`Rs ${money(v.total)}`}
+                  />
+                ))
+              )}
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground">
+              Couldn’t load the daily summary (offline?). Cash figures above are still accurate.
+            </div>
+          )}
         </div>
 
         {step !== "summary" && (
@@ -131,7 +214,16 @@ export default function DayCloseRoute() {
             producing duplicate "Close day" buttons. */}
         <div className="flex justify-end gap-2">
           {step === "summary" && (
-            <Button onClick={() => setStep("count")}>Count cash</Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => void printDailyReport()}
+                disabled={!summary}
+              >
+                Print report
+              </Button>
+              <Button onClick={() => setStep("count")}>Count cash</Button>
+            </>
           )}
           {step === "count" && variance.isZero() && (
             <Button onClick={close} disabled={busy || !declared}>
@@ -154,6 +246,15 @@ export default function DayCloseRoute() {
       </div>
     </div>
   );
+}
+
+// Format a server money string (e.g. "81000.0000") to "81,000.00".
+function money(s: string | undefined): string {
+  return Money.fromStr(s ?? "0").display();
+}
+
+function cap(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
 function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {

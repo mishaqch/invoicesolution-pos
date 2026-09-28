@@ -14,6 +14,10 @@ export interface OpenOrderSummary {
   table_id: string | null;
   covers: number | null;
   grand_total: string;
+  // True when this order was fired from a shared waiter tablet (not this or
+  // another cashier till) — the UI badges it so the cashier can tell a
+  // floor-fired order apart from their own parked ticket.
+  from_waiter_tablet?: boolean;
   items: { name: string; quantity: string }[];
 }
 
@@ -83,8 +87,11 @@ export function fireOpenOrder(payload: FireOrderPayload): Promise<OpenOrderDetai
 }
 
 /** List the open orders (the table/order book) for resuming. Terminal-scoped:
- * each till gets ONLY its own open orders, so one terminal never sees another
- * terminal's unpaid orders. (Admin/KDS views can still list a whole branch.) */
+ * a till sees its OWN open orders PLUS every order fired from a shared "waiter
+ * tablet" (is_order_taking_only) terminal — those have no till of their own and
+ * must be chargeable on any cashier till in the branch (the handoff). Ordinary
+ * tills still never see each other's parked orders. (Admin/KDS omit `terminal`
+ * to list the whole branch.) */
 export function listOpenOrders(
   branchId?: string | null,
   terminalId?: string | null,

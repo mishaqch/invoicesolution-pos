@@ -118,7 +118,9 @@ export default function StaysRoute() {
                   <div className="flex flex-wrap justify-end gap-1">
                     {(f.rooms && f.rooms.length > 0
                       ? f.rooms
-                      : (f.room_number ? [{ number: f.room_number, type: f.room_type ?? "" }] : [])
+                      : f.room_number
+                        ? [{ number: f.room_number, type: f.room_type ?? "" }]
+                        : []
                     ).map((r, i) => (
                       <span
                         key={`${r.number}-${i}`}
@@ -129,7 +131,9 @@ export default function StaysRoute() {
                       </span>
                     ))}
                     {(!f.rooms || f.rooms.length === 0) && !f.room_number && (
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">—</span>
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        —
+                      </span>
                     )}
                   </div>
                 </div>
@@ -152,10 +156,18 @@ export default function StaysRoute() {
   );
 }
 
+// Pin to Pakistan Standard Time so the on-screen check-in/out matches the
+// printed ESC/POS receipt (which already uses Asia/Karachi) even if the
+// terminal PC's OS clock is set to another zone (a common on-site misconfig).
+const PK_TZ = "Asia/Karachi";
 function fmtDate(s: string | null): string {
   if (!s) return "—";
   const d = new Date(s);
-  return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    d.toLocaleDateString("en-GB", { timeZone: PK_TZ }) +
+    " " +
+    d.toLocaleTimeString("en-GB", { timeZone: PK_TZ, hour: "2-digit", minute: "2-digit" })
+  );
 }
 
 export function errMsg(e: unknown): string {

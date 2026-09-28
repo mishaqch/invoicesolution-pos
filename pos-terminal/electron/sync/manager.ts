@@ -78,25 +78,9 @@ export function startSyncWorker(opts: { dbPath: string; apiBase: string }) {
       // eslint-disable-next-line no-console
       console.log(`[sync ${m.level}] ${m.message}`);
     } else if (m.type === "tokens_refreshed") {
-      // Persist the new tokens locally so the renderer's next reload sees them.
-      const access = m.accessToken as string | null;
-      const refresh = m.refreshToken as string | null;
-      if (access) {
-        getDb()
-          .prepare(
-            `INSERT INTO kv_meta(key, value, updated_at) VALUES('access_token', ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
-          )
-          .run(access);
-      }
-      if (refresh) {
-        getDb()
-          .prepare(
-            `INSERT INTO kv_meta(key, value, updated_at) VALUES('refresh_token', ?, CURRENT_TIMESTAMP)
-             ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
-          )
-          .run(refresh);
-      }
+      // Persist the refreshed tokens locally so the renderer's next reload — and
+      // main-process readers (fiscalize, kot-relay) — see them.
+      persistTokens(m.accessToken as string | null, m.refreshToken as string | null);
     }
   });
 
@@ -108,7 +92,36 @@ export function startSyncWorker(opts: { dbPath: string; apiBase: string }) {
   });
 }
 
+/**
+ * Persist the auth tokens into kv_meta so main-process readers (fiscalize,
+ * kot-relay) and the renderer's next reload can pick them up. Shared by the
+ * login path (setAuthTokens) and the worker's token-refresh handler.
+ */
+function persistTokens(accessToken: string | null, refreshToken: string | null): void {
+  if (accessToken) {
+    getDb()
+      .prepare(
+        `INSERT INTO kv_meta(key, value, updated_at) VALUES('access_token', ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
+      )
+      .run(accessToken);
+  }
+  if (refreshToken) {
+    getDb()
+      .prepare(
+        `INSERT INTO kv_meta(key, value, updated_at) VALUES('refresh_token', ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
+      )
+      .run(refreshToken);
+  }
+}
+
 export function setAuthTokens(accessToken: string | null, refreshToken: string | null) {
+  // Persist IMMEDIATELY (at login) — don't wait for the worker's first token
+  // refresh. Without this, kot-relay/fiscalize would find no access_token in
+  // kv_meta until a refresh happened, so a freshly-signed-in terminal wouldn't
+  // relay KOTs for a while after launch.
+  persistTokens(accessToken, refreshToken);
   if (!worker) return;
   worker.postMessage({ type: "auth", accessToken, refreshToken });
 }

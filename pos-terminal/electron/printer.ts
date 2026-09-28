@@ -66,14 +66,20 @@ export function pkDateTime(d: Date = new Date()): string {
 }
 export function pkTimeHHMM(d: Date = new Date()): string {
   return d.toLocaleTimeString("en-GB", {
-    timeZone: PK_TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+    timeZone: PK_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 }
 export function pkDate(d: Date = new Date()): string {
   // YYYY-MM-DD in Karachi (so the printed date matches the invoice_date the
   // server assigns, which is Asia/Karachi too). en-CA yields YYYY-MM-DD.
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: PK_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: PK_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).format(d);
 }
 
@@ -346,12 +352,17 @@ interface KotItem {
   quantity: string | number;
   modifiers?: { name: string }[];
   item_note?: string | null;
+  // True for a line that was cancelled after being fired. On a KOT it prints in
+  // reverse-video with a "** CANCELLED **" marker so the cook sees exactly which
+  // item to stop preparing (the rest of the ticket is unaffected).
+  cancelled?: boolean;
 }
 interface KotInput {
   order_number: string; // local invoice / order #
   order_type: string; // dine_in / takeaway / delivery
   table_name?: string | null;
   covers?: number | null;
+  date?: string; // "28 Sep 2026" — PKT date the ticket was fired
   time: string; // "19:32"
   items: KotItem[]; // ONLY the newly-fired items
   width: 48 | 32;
@@ -464,13 +475,33 @@ async function realPrintKOT(input: KotInput, printerUrl: string): Promise<PrintR
   printer.bold(false);
   // Keep the order id on the ticket (small) so the SAME reference ties the
   // follow-up ticket back to the original — but it's no longer the headline.
-  printer.println(`Order ${input.order_number}   ${input.time}`);
+  // This is the REAL invoice number (KOT # == final bill #).
+  printer.println(`Order ${input.order_number}`);
+  // Date + time the ticket was fired (PKT), so the kitchen has a full timestamp.
+  printer.println(`${input.date ? input.date + "  " : ""}${input.time}`);
   if (input.reference && input.table_name) printer.println(`Ref: ${input.reference}`);
   if (input.covers) printer.println(`Covers: ${input.covers}`);
   printer.drawLine();
   printer.alignLeft();
 
   for (const it of input.items) {
+    if (it.cancelled) {
+      // Reverse-video + explicit CANCELLED marker so the cook cannot miss which
+      // line to stop. (Thermal heads are single-colour; node-thermal-printer
+      // exposes invert() but no red/strike, so reverse-video is the loudest
+      // attention cue available.)
+      printer.bold(true);
+      printer.setTextSize(1, 1);
+      printer.invert(true);
+      printer.println(`** CANCELLED **`);
+      printer.println(`${qtyFmt(it.quantity)} x ${it.product_name}`);
+      printer.invert(false);
+      printer.setTextNormal();
+      printer.bold(false);
+      printer.println(`   >> DO NOT PREPARE <<`);
+      printer.newLine();
+      continue;
+    }
     printer.bold(true);
     printer.setTextSize(1, 1);
     printer.println(`${qtyFmt(it.quantity)} x ${it.product_name}`);
@@ -762,6 +793,10 @@ function renderFolioText(input: FolioBillInput): string {
   } else {
     L.push(center("Thank you!"));
   }
+  // When the bill was actually printed (Asia/Karachi), separate from the stay's
+  // own check-in/out timestamps above.
+  L.push("");
+  L.push(center(`Bill printed: ${pkDateTime(new Date())}`));
   L.push("");
   return L.join("\n");
 }
@@ -778,11 +813,17 @@ function renderKotText(input: KotInput): string {
     ? `TABLE ${input.table_name}`
     : input.reference?.trim() || input.order_type.toUpperCase();
   lines.push(center(dest));
-  lines.push(`Order ${input.order_number}   ${input.time}`);
+  lines.push(`Order ${input.order_number}`);
+  lines.push(`${input.date ? input.date + "  " : ""}${input.time}`);
   if (input.reference && input.table_name) lines.push(`Ref: ${input.reference}`);
   if (input.covers) lines.push(`Covers: ${input.covers}`);
   lines.push(rule);
   for (const it of input.items) {
+    if (it.cancelled) {
+      lines.push(`** CANCELLED ** ${qtyFmt(it.quantity)} x ${it.product_name}`);
+      lines.push(`   >> DO NOT PREPARE <<`);
+      continue;
+    }
     lines.push(`${qtyFmt(it.quantity)} x ${it.product_name}`);
     for (const m of it.modifiers ?? []) lines.push(`   - ${m.name}`);
     if (it.item_note) lines.push(`   ** ${it.item_note} **`);
@@ -1174,6 +1215,18 @@ function renderBodyText(input: ReceiptInput): string {
   lines.push(rule);
 
   for (const it of input.items) {
+    if (it.cancelled) {
+      // A cancelled line stays on the bill for transparency (the customer sees
+      // it was voided, not silently dropped) but at Rs 0. Plain-text thermal has
+      // no true strike, so we bracket the name and add a CANCELLED tag; the
+      // styled receipt path prints this same text.
+      lines.push(`${it.product_name.slice(0, W - 12)} [CANCELLED]`);
+      const left = `  ${qtyFmt(it.quantity)} x ${money2(it.unit_price)}`;
+      const right = "CANCELLED";
+      const pad = Math.max(1, W - left.length - right.length);
+      lines.push(left + " ".repeat(pad) + right);
+      continue;
+    }
     lines.push(it.product_name.slice(0, W));
     const left = `  ${qtyFmt(it.quantity)} x ${money2(it.unit_price)}`;
     // Show the PRE-TAX line amount (line_total − tax) so tax appears only once,
@@ -1241,5 +1294,157 @@ function writeFallback(invoiceId: string, text: string): string {
   return file;
 }
 
+// ---------------------------------------------------------------------------
+// Daily summary / Z-report (end-of-day, printed on Day-close / logout)
+// ---------------------------------------------------------------------------
+
+export interface DailyReportInput {
+  business_name: string;
+  branch_name: string;
+  cashier_name?: string | null;
+  date: string; // "2026-09-26"
+  opening_cash?: string | null;
+  declared_cash?: string | null;
+  variance?: string | null;
+  total_sales: string;
+  total_tax: string;
+  total_discount: string;
+  total_orders: number;
+  cancelled_orders: number;
+  cancelled_items: number;
+  payment_breakup: Record<string, { count: number; total: string }>;
+  width?: 48 | 32;
+}
+
+function renderDailyReportText(input: DailyReportInput): string {
+  const W = input.width ?? 48;
+  const center = (s: string) =>
+    s.length >= W ? s : " ".repeat(Math.floor((W - s.length) / 2)) + s;
+  const rule = "-".repeat(W);
+  const row = (k: string, v: string) => {
+    const pad = Math.max(1, W - k.length - v.length);
+    return k + " ".repeat(pad) + v;
+  };
+  const money = (s: string | null | undefined) => {
+    const n = Number(s ?? 0);
+    return n.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const L: string[] = [];
+  L.push(center(input.business_name.toUpperCase()));
+  L.push(center(input.branch_name));
+  L.push(center("DAILY SUMMARY (Z-REPORT)"));
+  L.push(rule);
+  L.push(row("Date", input.date));
+  if (input.cashier_name) L.push(row("Cashier", input.cashier_name));
+  L.push(row("Printed", pkDateTime(new Date())));
+  L.push(rule);
+  L.push(row("Total sales", "Rs " + money(input.total_sales)));
+  L.push(row("Total orders", String(input.total_orders)));
+  L.push(row("Total discount", "Rs " + money(input.total_discount)));
+  L.push(row("Total tax", "Rs " + money(input.total_tax)));
+  L.push(rule);
+  L.push(row("Cancelled orders", String(input.cancelled_orders)));
+  L.push(row("Cancelled items", String(input.cancelled_items)));
+  L.push(rule);
+  L.push("PAYMENTS");
+  const methods = Object.entries(input.payment_breakup);
+  if (methods.length === 0) {
+    L.push("  (no payments recorded)");
+  } else {
+    for (const [method, v] of methods) {
+      const label = method.charAt(0).toUpperCase() + method.slice(1);
+      L.push(row(`  ${label} (${v.count})`, "Rs " + money(v.total)));
+    }
+  }
+  if (input.opening_cash != null || input.declared_cash != null) {
+    L.push(rule);
+    L.push("CASH DRAWER");
+    if (input.opening_cash != null) L.push(row("  Opening cash", "Rs " + money(input.opening_cash)));
+    if (input.declared_cash != null) L.push(row("  Declared cash", "Rs " + money(input.declared_cash)));
+    if (input.variance != null) L.push(row("  Variance", "Rs " + money(input.variance)));
+  }
+  L.push(rule);
+  L.push(center("*** END OF DAY ***"));
+  L.push("");
+  return L.join("\n");
+}
+
+async function realPrintDailyReport(
+  text: string,
+  input: DailyReportInput,
+  printerUrl: string,
+): Promise<PrintResult> {
+  let mod: any;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    mod = require("node-thermal-printer");
+  } catch {
+    return { success: false, reason: "printer driver not installed" };
+  }
+  const transport = resolveTransport(printerUrl);
+  const ThermalPrinter = mod.printer;
+  const PrinterTypes = mod.types;
+  const printer = new ThermalPrinter({
+    type: resolveDialect() === "star" ? PrinterTypes.STAR : PrinterTypes.EPSON,
+    interface: transport.ctorInterface,
+    characterSet: PrinterTypes.CharacterSet?.[resolveCharset()] ?? undefined,
+    width: input.width ?? 48,
+    options: { timeout: TIMEOUT_MS },
+  });
+  if (transport.kind === "direct") {
+    const ok = await printer.isPrinterConnected();
+    if (!ok) return { success: false, reason: `printer unreachable at ${printerUrl}` };
+  }
+  printer.alignLeft();
+  for (const line of text.split("\n")) printer.println(line);
+  printer.cut();
+  if (transport.kind !== "direct") {
+    return flushBuffer(transport, printer.getBuffer());
+  }
+  try {
+    await printer.execute();
+    return { success: true };
+  } catch (e) {
+    return {
+      success: false,
+      reason: `daily report execute failed: ${e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+}
+
+/**
+ * Print the end-of-day summary (Z-report) to the counter printer. Always also
+ * writes it to disk (writeFallback) so the manager has a saved copy they can
+ * open even when no printer is attached — the "downloadable" copy the daily
+ * report is meant to leave behind.
+ */
+export async function printDailyReport(input: DailyReportInput): Promise<PrintResult> {
+  const text = renderDailyReportText(input);
+  const fileKey = `daily-summary-${input.date}`;
+  // Always drop a saved copy to disk (openable / shareable), then try to print.
+  const savedPath = writeFallback(fileKey, text);
+  const printerUrl = resolvePrinterInterface();
+  if (!printerUrl) {
+    return { success: false, reason: "no printer configured", fallbackPath: savedPath };
+  }
+  const timeout = printerUrl.startsWith("cups://") ? 30_000 : TIMEOUT_MS;
+  try {
+    const res = await withTimeout(
+      realPrintDailyReport(text, input, printerUrl),
+      timeout,
+      () => ({ success: false, reason: `daily report timeout (${timeout / 1000}s)`, fallbackPath: savedPath }),
+    );
+    // Even on a successful print, surface the saved path so the UI can offer it.
+    return { ...res, fallbackPath: res.fallbackPath ?? savedPath };
+  } catch (e) {
+    return {
+      success: false,
+      reason: `daily report print error: ${e instanceof Error ? e.message : String(e)}`,
+      fallbackPath: savedPath,
+    };
+  }
+}
+
 // Unit-test entry — exposed for the renderer formatter test.
-export const __testing = { renderReceiptText };
+export const __testing = { renderReceiptText, renderDailyReportText };

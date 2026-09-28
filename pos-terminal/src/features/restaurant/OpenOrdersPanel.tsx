@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/feedback/Toast";
+import { ApiError } from "@/lib/api";
 import { useSaleStore, type CartLine, type OrderType } from "@/stores/sale";
 import { getOpenOrder, listOpenOrders, type OpenOrderSummary } from "./api";
 
@@ -93,8 +94,17 @@ export function OpenOrdersPanel({
         variant: "success",
       });
       onClose();
-    } catch {
-      toast.show({ message: "Could not load that order (offline?).", variant: "destructive" });
+    } catch (err) {
+      // A 404 here means the order belongs to another cashier till (only
+      // waiter-tablet orders are cross-till resumable) — say so, don't blame the
+      // network. Anything else is most likely an offline/connectivity issue.
+      const notFound = err instanceof ApiError && err.status === 404;
+      toast.show({
+        message: notFound
+          ? "That order is open on another till — resume it there."
+          : "Could not load that order (offline?).",
+        variant: "destructive",
+      });
     } finally {
       setLoadingId(null);
     }
@@ -154,6 +164,11 @@ export function OpenOrdersPanel({
                   <span className={statusBadgeClass(o.order_status)}>
                     {statusLabel(o.order_status)}
                   </span>
+                  {o.from_waiter_tablet && (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                      Waiter
+                    </span>
+                  )}
                   <span className="text-xs text-muted-foreground">{o.items.length} item(s)</span>
                 </div>
                 <div className="mt-1 font-mono text-sm">Rs. {trim(o.grand_total)}</div>

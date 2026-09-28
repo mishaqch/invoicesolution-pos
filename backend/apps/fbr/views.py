@@ -530,8 +530,11 @@ class ScenarioTestViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.
             )
 
         try:
+            # A deliberate single-scenario click is an explicit re-test, so it
+            # may re-run even a reconciled (FBR-locked) scenario. The batch
+            # "Run all" never forces — it skips locked rows.
             status_value = run_single_scenario(
-                tenant, code, payload_override=payload_override,
+                tenant, code, payload_override=payload_override, force=True,
             )
         except ValidationError as exc:
             raise ValidationError({"detail": str(exc)})
@@ -549,6 +552,59 @@ class ScenarioTestViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.
             "status": status_value,
             "scenario": FbrScenarioTestSerializer(row).data if row else None,
         })
+
+    @action(detail=False, methods=["post"], url_path="reconcile",
+            permission_classes=[HasRolePerm.with_perm("fbr.tokens.manage")])
+    def reconcile(self, request):
+        """Platform-admin only. Mark scenarios as passed-per-FBR/IRIS.
+
+        Body: { "codes": ["SN007","SN016",...], "reconciled": true }
+
+        For clients who completed sandbox testing directly on the FBR/IRIS
+        portal, FBR is the source of truth — they show the scenario as passed
+        even when our builder can't reproduce the exact FBR-valid payload.
+        This marks those rows status="success" AND reconciled=True so the
+        automated "Run all" batch will skip them and never overwrite the
+        FBR-confirmed pass with a builder "failed".
+
+        `reconciled: false` clears the flag (re-run will test our builder).
+        """
+        is_platform = bool(
+            getattr(request.user, "is_superuser", False)
+            or getattr(request.user, "is_platform_staff", False)
+        )
+        if not is_platform:
+            return Response(
+                {"detail": "Only platform staff can reconcile scenarios."},
+                status=403,
+            )
+        codes = request.data.get("codes") if isinstance(request.data, dict) else None
+        if not isinstance(codes, list) or not codes:
+            return Response(
+                {"detail": "`codes` must be a non-empty list of scenario codes."},
+                status=400,
+            )
+        codes = [str(c).upper() for c in codes]
+        mark = request.data.get("reconciled", True)
+
+        from .scenarios import scenario_description
+        updated = []
+        for code in codes:
+            defaults = {"reconciled": bool(mark)}
+            if mark:
+                # Reconciling => FBR confirmed it as passed.
+                defaults.update({
+                    "status": "success",
+                    "error_message": None,
+                    "scenario_description": scenario_description(code),
+                    "last_attempt_at": timezone.now(),
+                })
+            row, _ = FbrScenarioTest.objects.update_or_create(
+                tenant_id=request.tenant_id, scenario_code=code,
+                defaults=defaults,
+            )
+            updated.append(FbrScenarioTestSerializer(row).data)
+        return Response({"updated": updated})
 
     # ----- Template library --------------------------------------------
     #

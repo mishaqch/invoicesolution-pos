@@ -21,13 +21,36 @@ def healthcheck(_request):
 TERMINAL_EXE_NAME = "invoiceSolution.exe"
 
 
+def _dated_exe_name(exe_path: Path) -> str:
+    """The user-facing download filename, stamped with the BUILD date so a
+    shopkeeper can tell which build they saved: "invoiceSolution-4-Sep-2026.exe".
+
+    The build date is the .exe's own modification time (set when publish-update.sh
+    uploads it). The file ON DISK stays "invoiceSolution.exe" — only the
+    Content-Disposition filename the browser saves as is dated, so the symlink,
+    the auto-updater, and every internal reference are untouched.
+    """
+    import datetime as _dt
+
+    try:
+        mtime = _dt.datetime.fromtimestamp(exe_path.stat().st_mtime)
+        # e.g. 4-Sep-2026 (no leading zero on the day, matching the request).
+        stamp = f"{mtime.day}-{mtime.strftime('%b-%Y')}"
+        return f"invoiceSolution-{stamp}.exe"
+    except OSError:
+        return TERMINAL_EXE_NAME
+
+
 def download_terminal_app(_request):
-    """Serve the Electron POS terminal installer (invoiceSolution.exe).
+    """Serve the Electron POS terminal installer.
 
     Public on purpose: the installer carries no secrets — a fresh terminal is
     useless until an owner-issued pairing code binds it to a branch. Hosting it
     unauthenticated lets a shopkeeper download it on the counter PC without
     first logging into admin-web there.
+
+    The saved filename carries the build date (invoiceSolution-<d-Mon-YYYY>.exe);
+    the on-disk file is still invoiceSolution.exe.
     """
     exe_path = Path(settings.MEDIA_ROOT) / "downloads" / TERMINAL_EXE_NAME
     if not exe_path.exists():
@@ -35,7 +58,7 @@ def download_terminal_app(_request):
     return FileResponse(
         open(exe_path, "rb"),
         as_attachment=True,
-        filename=TERMINAL_EXE_NAME,
+        filename=_dated_exe_name(exe_path),
         content_type="application/octet-stream",
     )
 

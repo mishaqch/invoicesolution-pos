@@ -99,3 +99,40 @@ class TestExcludedFromReports:
         make_invoice(deleted_at=tz.now(), grand_total=Decimal("999"))
         res = _run("daily_sales", tenant)
         assert res.row_count == 0
+
+
+class TestDashboardInvoiceCount:
+    """The dashboard 'Invoices' KPI must count only REAL invoices — the same
+    set the invoice list shows — not held/parked orders (tablet ORD-…, folio
+    FOL-…) or soft-deleted drafts. Regression: it filtered only status__in and
+    over-counted (2026-09-04)."""
+
+    def _totals(self, tenant):
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from django.contrib.auth import get_user_model
+        from apps.reports.views import dashboard_view
+
+        user = get_user_model().objects.filter(
+            memberships__tenant=tenant,
+        ).first() or get_user_model().objects.create(email="d@t.pk", full_name="D")
+        req = APIRequestFactory().get("/api/reports/dashboard/")
+        force_authenticate(req, user=user)
+        req.tenant_id = str(tenant.id)
+        resp = dashboard_view(req)
+        assert resp.status_code == 200, resp.data
+        return resp.data["totals"]
+
+    def test_count_excludes_held_and_deleted(self, tenant, make_invoice):
+        make_invoice(status="finalized")                      # real ✓
+        make_invoice(status="valid")                          # real ✓
+        make_invoice(status="pending_sync", is_held=True)     # parked/tablet order ✗
+        make_invoice(status="pending_sync", deleted_at=dt.datetime(2026, 9, 4)) # deleted ✗
+        totals = self._totals(tenant)
+        assert totals["invoices_total"] == 2, totals["invoices_total"]
+
+    def test_month_count_excludes_held(self, tenant, make_invoice):
+        today = dt.date.today()
+        make_invoice(status="finalized", invoice_date=today)                 # ✓
+        make_invoice(status="pending_sync", is_held=True, invoice_date=today) # ✗
+        totals = self._totals(tenant)
+        assert totals["invoices_month_count"] == 1, totals["invoices_month_count"]

@@ -12,16 +12,42 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.sales.services.checkout import create_invoice
-from apps.sales.services.numbering import next_invoice_number
 from apps.tenants.models import Branch, Terminal
 
 from .models import FolioInvoice, GuestFolio, Room
+
+# The resort's standard checkout time — 12:30 PM local (Asia/Karachi). A guest
+# checks out by this time; the printed slip shows it as the checkout time unless
+# a late/early checkout is explicitly recorded.
+STANDARD_CHECKOUT_HOUR = 12
+STANDARD_CHECKOUT_MINUTE = 30
+
+
+def _local_tz() -> ZoneInfo:
+    """The business timezone (Asia/Karachi) — datetimes are stored UTC-aware and
+    must be localised to this before any calendar-day / wall-clock reasoning."""
+    return ZoneInfo(settings.TIME_ZONE)
+
+
+def standard_checkout_at(on_date: dt.date | None = None, *, tz: ZoneInfo | None = None) -> dt.datetime:
+    """The 12:30 PM Asia/Karachi checkout instant for `on_date` (today if None),
+    returned as an aware datetime. This is the DEFAULT checkout time so the bill
+    reflects the resort's standard checkout, not the random moment the cashier
+    happened to click 'Checkout'."""
+    tz = tz or _local_tz()
+    day = on_date or timezone.localdate()
+    return dt.datetime(
+        day.year, day.month, day.day,
+        STANDARD_CHECKOUT_HOUR, STANDARD_CHECKOUT_MINUTE, tzinfo=tz,
+    )
 
 
 def compute_nights(check_in: dt.datetime, check_out: dt.datetime | None) -> int:
@@ -29,22 +55,28 @@ def compute_nights(check_in: dt.datetime, check_out: dt.datetime | None) -> int:
 
     Jun 30 evening → Jul 10 morning = 10 nights. We count the difference in
     DATES (drop the time-of-day) and clamp to at least 1 (same-day = 1 night).
+
+    Datetimes are stored UTC-aware, so we localise BOTH to Asia/Karachi before
+    taking the calendar date — otherwise a late-evening PKT check-in (which is
+    still the previous day in UTC) miscounts the nights by one.
     """
     if not check_out:
         return 1
-    nights = (check_out.date() - check_in.date()).days
+    tz = _local_tz()
+    ci = timezone.localtime(check_in, tz).date() if timezone.is_aware(check_in) else check_in.date()
+    co = timezone.localtime(check_out, tz).date() if timezone.is_aware(check_out) else check_out.date()
+    nights = (co - ci).days
     return max(1, nights)
 
 
-# Punjab Sales Tax the resort charges on rooms — the SAME 16% used on food, so
-# the bill's tax breakdown is consistent and reconciles exactly. The room's
-# advertised nightly_total (e.g. VIP 10,500) is treated as TAX-INCLUSIVE: we
-# back out the net base = total / 1.16 and tax = total - base, so the guest pays
-# the advertised price and the split is clean.
+# DEPRECATED — kept only for reference. Room charges now bill from the room's
+# DECLARED nightly_base + nightly_tax (see _post_room_charge), because TDCP's
+# fixed per-night room tax is NOT 16% of base (it's ~19%). Re-splitting the
+# total at a hardcoded 16% understated the PST line on the printed bill.
 ROOM_TAX_RATE = Decimal("16.00")
 
 
-def _room_inclusive_split(nightly_total: Decimal) -> tuple[Decimal, Decimal]:
+def _room_inclusive_split(nightly_total: Decimal) -> tuple[Decimal, Decimal]:  # noqa: unused — see note above
     """Split a TAX-INCLUSIVE nightly total into (net_base, tax) at ROOM_TAX_RATE.
     e.g. 10500 @ 16% incl → base 9051.7241, tax 1448.2759 (sums back to 10500).
     Rounds to 4dp (the money precision) so net + tax == total exactly."""
@@ -88,6 +120,10 @@ def open_stay(
     consolidated bill can group charges per room.
     """
     default_ci = check_in or timezone.now()
+    # Default expected checkout = the STANDARD 12:30 PM (Asia/Karachi) checkout on
+    # the day AFTER check-in (a one-night stay). The cashier can override it.
+    ci_local_date = timezone.localtime(default_ci, _local_tz()).date()
+    default_co = expected_check_out or standard_checkout_at(ci_local_date + dt.timedelta(days=1))
 
     # Normalise to a list of {room, check_in, expected_check_out}.
     booked: list[dict] = []
@@ -96,10 +132,10 @@ def open_stay(
             booked.append({
                 "room": r["room"],
                 "check_in": r.get("check_in") or default_ci,
-                "expected_check_out": r.get("expected_check_out") or expected_check_out,
+                "expected_check_out": r.get("expected_check_out") or default_co,
             })
     elif room is not None:
-        booked.append({"room": room, "check_in": default_ci, "expected_check_out": expected_check_out})
+        booked.append({"room": room, "check_in": default_ci, "expected_check_out": default_co})
     if not booked:
         raise ValidationError({"rooms": "At least one room is required."})
 
@@ -150,20 +186,39 @@ def open_stay(
     return folio
 
 
+def _folio_charge_tag() -> str:
+    """A UNIQUE temporary number for a HELD folio-charge invoice.
+
+    Folio charges are held sub-invoices (room-night + each day's food) that are
+    settled together at checkout — they must NOT each mint a real sequential
+    invoice number. next_invoice_number() only counts is_held=False invoices, so
+    calling it for several held charges in one transaction returns the SAME
+    number every time and violates uniq_invoice_tenant_localnum. A per-charge
+    tag (like the restaurant 'ORD-' tag) keeps every held charge unique; the
+    consolidated bill is the guest-facing document, and TDCP is non-fiscal.
+    """
+    return f"FOL-{uuid4().hex[:10].upper()}"
+
+
 def _post_room_charge(*, folio, room, nights, terminal, cashier, cash_session):
     """Create the room-night charge-invoice (held, no payment yet), tagged to
     the room so multi-room bills group correctly."""
-    # Room tariff is TAX-INCLUSIVE: split the advertised nightly total into a
-    # net base + 16% PST so the pricing engine (tax-exclusive) reproduces the
-    # exact advertised total and a clean, reconciling breakdown. The unit price
-    # billed is the NET base per night; tax is added back at ROOM_TAX_RATE.
-    net_base, _tax = _room_inclusive_split(room.nightly_total)
-    taxable = room.nightly_total > 0 and net_base < room.nightly_total
+    # Bill the room from its DECLARED split: unit price = nightly_base, tax =
+    # nightly_tax (a FIXED per-night amount, e.g. TDCP VIP 8820 + 1680). The
+    # pricing engine is tax-exclusive (%-based), so we feed it the exact
+    # EFFECTIVE rate (nightly_tax / nightly_base × 100) — that reproduces the
+    # declared tax amount on the bill. (Rooms don't all use 16%: TDCP's fixed
+    # room tax works out to ~19%, so re-splitting the total at a hardcoded 16%
+    # would UNDERSTATE the PST line on the printed bill.)
+    base = room.nightly_base or Decimal("0")
+    fixed_tax = room.nightly_tax or Decimal("0")
+    taxable = base > 0 and fixed_tax > 0
+    eff_rate = (fixed_tax / base * Decimal("100")) if taxable else Decimal("0")
     line = {
         "product": str(room.product_id),
         "quantity": str(nights),
-        "unit_price": str(net_base),
-        "tax_rate": str(ROOM_TAX_RATE) if taxable else "0",
+        "unit_price": str(base),
+        "tax_rate": str(eff_rate) if taxable else "0",
         "is_taxable": taxable,
         "discount_amount": "0",
         "item_note": f"Room {room.room_number} · {nights} night(s)",
@@ -178,7 +233,7 @@ def _post_room_charge(*, folio, room, nights, terminal, cashier, cash_session):
         cart_lines=[line],
         payments=[],                 # unpaid — settled at checkout
         client_uuid=uuid4(),
-        local_invoice_number=next_invoice_number(terminal=terminal),
+        local_invoice_number=_folio_charge_tag(),  # held sub-invoice; unique tag
         notes=f"Folio {folio.folio_number} — room charge ({room.room_number})",
     )
     _hold_and_link(invoice=invoice, folio=folio, kind="room", room=room)
@@ -219,7 +274,7 @@ def add_charge(
         cart_lines=cart_lines,
         payments=[],                 # unpaid — settled at checkout
         client_uuid=client_uuid or uuid4(),
-        local_invoice_number=next_invoice_number(terminal=terminal),
+        local_invoice_number=_folio_charge_tag(),  # held sub-invoice; unique tag
         notes=f"Folio {folio.folio_number} — {kind} charge",
     )
     link = _hold_and_link(
@@ -567,6 +622,44 @@ def remove_room_from_stay(*, folio: GuestFolio, room: Room, user=None) -> GuestF
 
 
 @transaction.atomic
+def release_room(*, room: Room, user=None) -> Room:
+    """Manager safety-valve: force a STUCK room back to available.
+
+    Normal check-in/checkout keeps Room.status in sync inside atomic
+    transactions, so a room should never be stuck. But a room CAN drift to a
+    permanent "occupied" if its folio was closed outside the service layer (e.g.
+    edited directly in Django admin) or a crash left it inconsistent — and then
+    it can never be re-booked. This releases it, but REFUSES if the room still
+    has a genuinely OPEN folio (so it can't be used to double-book an occupied
+    room). Manager-gated at the view.
+    """
+    room = Room.objects.select_for_update().get(pk=room.pk)
+    active = (
+        GuestFolio.objects.filter(tenant_id=room.tenant_id, status="open")
+        .filter(models.Q(room=room) | models.Q(rooms_booked__room=room))
+        .exists()
+    )
+    if active:
+        raise ValidationError({
+            "room": (
+                f"Room {room.room_number} has an OPEN stay — check out or cancel "
+                f"that stay instead of force-releasing the room."
+            )
+        })
+    before = room.status
+    room.status = "available"
+    room.save(update_fields=["status", "updated_at"])
+
+    from apps.audit.services import log as audit_log
+    audit_log(
+        tenant_id=room.tenant_id, user=user,
+        entity_type="room", entity_id=room.id, action="update",
+        before={"status": before}, after={"status": "available", "reason": "force_release"},
+    )
+    return room
+
+
+@transaction.atomic
 def cancel_stay(*, folio: GuestFolio, reason: str = "", user=None) -> GuestFolio:
     """Cancel an OPEN stay (customer changed their mind, etc.).
 
@@ -633,7 +726,10 @@ def checkout_stay(
         raise ValidationError({"folio": "This folio is already closed."})
 
     folio = GuestFolio.objects.select_for_update().get(pk=folio.pk)
-    check_out = check_out or timezone.now()
+    # Default to the resort's STANDARD 12:30 PM (Asia/Karachi) checkout on today's
+    # date — NOT the arbitrary moment the cashier clicked Checkout. A late/early
+    # checkout can still be recorded by passing an explicit check_out.
+    check_out = check_out or standard_checkout_at()
 
     charges = list(folio.charges.select_related("invoice").all())
     if not charges:

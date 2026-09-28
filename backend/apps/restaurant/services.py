@@ -53,6 +53,29 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
 
     table_id = payload.get("table")
     invoice = Invoice.objects.filter(tenant_id=tenant_id, client_uuid=client_uuid).first()
+
+    # A held-order upsert must NEVER touch an already-CHARGED sale. A late or
+    # duplicate re-fire (stale tablet UI, network replay) would otherwise flip
+    # is_held back on and delete/recreate the paid invoice's line items,
+    # corrupting a finalized (possibly fiscalized) sale. Refuse it.
+    if invoice is not None and not invoice.is_held:
+        from rest_framework.exceptions import ValidationError as _VErr
+        raise _VErr({"detail": "This order has already been charged and cannot be reopened."})
+
+    # Optimistic concurrency: if the caller says which version it last saw and the
+    # row has moved on since, refuse instead of silently clobbering another
+    # waiter's edits. Optional — existing callers that omit it are unaffected.
+    if invoice is not None and payload.get("expected_updated_at"):
+        from django.utils.dateparse import parse_datetime
+        from rest_framework.exceptions import APIException
+        expected = parse_datetime(payload["expected_updated_at"])
+        if expected is not None and invoice.updated_at.replace(microsecond=0) > expected.replace(microsecond=0):
+            class _Conflict(APIException):
+                status_code = 409
+                default_detail = "This order was changed by someone else. Reload and try again."
+                default_code = "conflict"
+            raise _Conflict()
+
     is_new = invoice is None
     if is_new:
         invoice = Invoice(
@@ -66,7 +89,7 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
             local_invoice_number=(
                 payload.get("local_invoice_number") or f"ORD-{str(client_uuid)[:8]}"
             ),
-            invoice_date=dt.date.today(), status="pending_sync",
+            invoice_date=timezone.localdate(), status="pending_sync",
         )
 
     # Restaurant fields + buyer snapshot.
@@ -107,10 +130,53 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
     invoice.grand_total = quote.grand_total.amount
     invoice.save()
 
-    # Replace the item snapshot (re-fire may add/remove lines).
+    # The item snapshot is REPLACED on every upsert (a re-fire may add/remove
+    # lines), but two per-line facts MUST survive the delete+recreate or the KOT
+    # relay breaks:
+    #   - sent_to_kitchen: which lines are on the kitchen queue.
+    #   - kot_printed_at:  which lines a terminal has already PRINTED — this is
+    #     what makes an incremental "course 2" fire print only the NEW lines and
+    #     never reprint course 1.
+    # A recreated row has no stable client id to match on, so we key on a stable
+    # content SIGNATURE (product + modifiers + course) and carry the printed
+    # timestamp across. Without this, delete+recreate resets every line to
+    # "unprinted" and the relay reprints the whole order on each re-fire.
+    def _sig(product_id, modifiers, course) -> tuple:
+        mod_names = tuple(sorted((m or {}).get("name", "") for m in (modifiers or [])))
+        return (str(product_id), mod_names, course or "")
+
+    # signature -> list of printed timestamps (a MULTISET: two lines of the same
+    # dish can both have been printed on different courses).
+    printed_before: dict[tuple, list] = {}
+    for old in invoice.items.all():
+        if old.kot_printed_at is not None:
+            printed_before.setdefault(
+                _sig(old.product_id, old.modifiers, old.course), []
+            ).append(old.kot_printed_at)
+
     invoice.items.all().delete()
     for line_no, (line_input, lq) in enumerate(zip(cart_lines, quote.lines), start=1):
         product = Product.objects.for_tenant(tenant_id).get(pk=line_input["product"])
+        line_modifiers = line_input.get("modifiers") or []
+        line_course = line_input.get("course")
+        client_sent = bool(line_input.get("sent_to_kitchen", False))
+        # Per-line fired flag. Firing (fire=True) sends EVERY line to the kitchen
+        # — that's what "Send to kitchen" means, so a client that echoes
+        # sent_to_kitchen=false on a fired line does NOT keep it off the queue
+        # (the relay reads sent_to_kitchen, so honouring a false here would make
+        # the KOT never print). On a Save (fire=False) a line is fired only if it
+        # already was, which the client preserves by echoing the flag back.
+        sent = True if fire else client_sent
+        # Carry a printed timestamp across the recreate ONLY onto a line the client
+        # says was ALREADY sent (client_sent) — a genuinely NEW line of the same
+        # dish (course 2, echoed sent=false) must stay unprinted so it reprints.
+        # Consume each printed stamp once (multiset) so N printed lines of a dish
+        # restore onto exactly N previously-sent recreated lines.
+        kot_printed = None
+        if client_sent:
+            bucket = printed_before.get(_sig(product.id, line_modifiers, line_course))
+            if bucket:
+                kot_printed = bucket.pop()
         SaleItem.objects.create(
             invoice=invoice, line_number=line_no, product=product,
             product_name=product.name, product_sku=product.sku,
@@ -120,15 +186,11 @@ def upsert_open_order(*, tenant_id, branch, terminal, cashier, payload, request=
             discount_pct=lq.discount_pct, discount_amount=lq.line_discount.amount,
             tax_rate=lq.tax_rate, tax_amount=lq.tax_amount.amount,
             line_total=lq.line_total.amount,
-            modifiers=line_input.get("modifiers") or [],
-            course=line_input.get("course"),
+            modifiers=line_modifiers,
+            course=line_course,
             item_note=line_input.get("item_note"),
-            # Per-line fired flag: honour what the client sends (it tracks this
-            # per cart line), else derive from the action. On a "Send to
-            # kitchen" (fire) every line is fired; on a "Save order" a line is
-            # fired only if it already was (preserved across the delete+recreate
-            # by the client echoing sent_to_kitchen back).
-            sent_to_kitchen=bool(line_input.get("sent_to_kitchen", fire)),
+            sent_to_kitchen=sent,
+            kot_printed_at=kot_printed,
         )
 
     # Audit action reflects fire vs save so the log tells them apart.
@@ -246,12 +308,19 @@ def open_orders_qs(tenant_id, *, branch_id=None, terminal_id=None):
         Invoice.objects.for_tenant(tenant_id)
         .filter(is_held=True, deleted_at__isnull=True)
         .filter(Q(order_status__isnull=False) | Q(order_type__isnull=False))
-        .select_related("table", "customer")
+        .select_related("table", "customer", "terminal")
         .prefetch_related("items")
         .order_by("kitchen_sent_at", "-id")
     )
     if branch_id:
         qs = qs.filter(branch_id=branch_id)
     if terminal_id:
-        qs = qs.filter(terminal_id=terminal_id)
+        # A till owns its own open orders — PLUS every order fired from a shared
+        # "waiter tablet" terminal (is_order_taking_only). Those tablets never
+        # charge, so their orders must surface on the branch's cashier tills to be
+        # picked up and charged. Without this, a waiter-fired order would be
+        # invisible on every till and could never be closed.
+        qs = qs.filter(
+            Q(terminal_id=terminal_id) | Q(terminal__is_order_taking_only=True)
+        )
     return qs

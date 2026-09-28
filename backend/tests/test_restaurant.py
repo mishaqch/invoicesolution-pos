@@ -331,7 +331,12 @@ def test_charge_finalizes_held_open_order_in_place(db, tenant, branch, terminal,
         client_uuid=cu, order_type="dine_in",
     )
 
-    # Same row reused (same pk + number), now finalized + paid + not held.
+    # Same row reused (same pk), now finalized + paid + not held. The invoice
+    # NUMBER is KEPT from the held order — the terminal assigns the real invoice
+    # number when the order is fired to the kitchen, and finalizing preserves it,
+    # so the kitchen slip (KOT), the open-order card and the final bill all show
+    # the SAME number. (Tradeoff: a voided/abandoned order skips a number — the
+    # accepted restaurant-POS behaviour: KOT # == bill #.)
     assert final.pk == held_pk
     assert final.local_invoice_number == held_number
     assert final.is_held is False
@@ -339,3 +344,35 @@ def test_charge_finalizes_held_open_order_in_place(db, tenant, branch, terminal,
     assert final.paid_total == Decimal("900.0000")
     # Exactly ONE invoice for this client_uuid — no duplicate.
     assert Invoice.objects.filter(client_uuid=cu).count() == 1
+
+
+def test_kot_number_matches_final_invoice_number(db, tenant, branch, terminal, owner_user, burger):
+    """The kitchen slip number == the final bill number.
+
+    The terminal assigns the REAL invoice number when the order is fired to the
+    kitchen (sent as local_invoice_number). Finalizing the held order at charge
+    must KEEP that exact number, so KOT # == bill #.
+    """
+    from apps.restaurant.services import upsert_open_order
+
+    cu = uuid.uuid4()
+    kot_number = "KK-T1-2026-0000777"  # what the terminal minted at fire time
+    upsert_open_order(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=owner_user,
+        payload={
+            "client_uuid": str(cu),
+            "order_type": "dine_in",
+            "local_invoice_number": kot_number,
+            "cart_lines": [{"product": str(burger.id), "quantity": "1", "unit_price": "450",
+                            "tax_rate": "0", "is_taxable": False}],
+        },
+    )
+    final = checkout.create_invoice(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=owner_user,
+        cash_session=None, customer=None,
+        cart_lines=[{"product": str(burger.id), "quantity": "1", "unit_price": "450",
+                     "tax_rate": "0", "is_taxable": False}],
+        payments=[{"payment_method": "cash", "amount": "450"}],
+        client_uuid=cu, order_type="dine_in",
+    )
+    assert final.local_invoice_number == kot_number

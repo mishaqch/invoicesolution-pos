@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import datetime as _dt
 
+from django.utils import timezone
+
 from apps.tenants.models import Tenant
 
 from .daily_sales import rebuild_daily_sales
@@ -26,7 +28,7 @@ _DEFAULT_SPAN_DAYS = 365
 
 
 def _resolve_window(filters) -> tuple[_dt.date, _dt.date]:
-    today = _dt.date.today()
+    today = timezone.localdate()  # Asia/Karachi day, not host/UTC day
     date_from = filters.date_from or (today - _dt.timedelta(days=_DEFAULT_SPAN_DAYS))
     date_to = filters.date_to or today
     if isinstance(date_from, str):

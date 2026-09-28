@@ -24,7 +24,6 @@ import { useInitialCatalogSync } from "@/features/catalog/useInitialSync";
 import { usePosContext } from "@/features/sale/usePosContext";
 import { SyncStatusDot } from "@/features/sync/SyncStatusDot";
 import { newClientUuid } from "@/lib/uuid";
-import { terminalIndexFromName } from "@/lib/terminal";
 import { quoteCart, useSaleStore } from "@/stores/sale";
 import { useSessionStore } from "@/stores/session";
 import { useToast } from "@/components/feedback/Toast";
@@ -190,30 +189,38 @@ export default function SaleRoute() {
     const totals = quoteCart(useSaleStore.getState());
     const invoiceId = newClientUuid();
     try {
-      // A HELD sale carries only a temporary order tag (KK-T1-045), NOT an
-      // invoice number — the number is minted at charge, so parking a sale
-      // never burns an invoice number (no gaps in the completed sequence).
-      const tIdx = terminalIndexFromName(ctx.terminal.name);
-      const daily = await window.api.numbering.nextKitchenOrder();
-      const localNumber = `${ctx.branch.code}-T${tIdx}-${daily}`;
-      const items = totals.lines.map((q, i) => ({
-        id: newClientUuid(),
-        invoice_id: invoiceId,
-        line_number: i + 1,
-        product_id: q.product_id,
-        product_name: q.product_name,
-        product_sku: q.product_sku,
-        uom_code: q.uom_code,
-        hs_code: q.hs_code,
-        quantity: q.quantity,
-        unit_price: q.unit_price,
-        discount_pct: q.discount_pct,
-        discount_amount: q.discount_amount,
-        tax_rate: q.tax_rate,
-        tax_amount: q.tax_amount.toStorageString(),
-        line_total: q.line_total.toStorageString(),
-        notes: null,
-      }));
+      // A HELD sale is given its REAL invoice number now, at hold time, and the
+      // server keeps it when the sale is later charged. So the parked-order card,
+      // the kitchen slip (if fired) and the final bill all show the SAME number.
+      // Tradeoff: a parked sale that's abandoned skips a number (small gaps) —
+      // the accepted restaurant-POS behaviour the resort asked for.
+      const localNumber = await window.api.numbering.next({
+        branchCode: ctx.branch.code,
+        terminalIndex: ctx.terminal.index,
+      });
+      // Cancelled lines are not sold — keep them off the persisted/synced sale.
+      // The kitchen was already told to stop via the CANCELLED KOT at cancel
+      // time, and the bill renders CANCELLED rows from the live order state.
+      const items = totals.lines
+        .filter((q) => !q.cancelled)
+        .map((q, i) => ({
+          id: newClientUuid(),
+          invoice_id: invoiceId,
+          line_number: i + 1,
+          product_id: q.product_id,
+          product_name: q.product_name,
+          product_sku: q.product_sku,
+          uom_code: q.uom_code,
+          hs_code: q.hs_code,
+          quantity: q.quantity,
+          unit_price: q.unit_price,
+          discount_pct: q.discount_pct,
+          discount_amount: q.discount_amount,
+          tax_rate: q.tax_rate,
+          tax_amount: q.tax_amount.toStorageString(),
+          line_total: q.line_total.toStorageString(),
+          notes: null,
+        }));
       const invoiceDate = pkDate(); // Pakistan-local date, not UTC
       await window.api.sales.persistInvoice({
         invoice: {

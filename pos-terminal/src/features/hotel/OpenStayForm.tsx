@@ -8,7 +8,12 @@ import { rs } from "@/lib/money";
 
 import { listRooms, mirrorFolioInvoices, openStay, type Room } from "@/features/hotel/api";
 import {
-  cnicMask, phoneMask, formatCnic, formatPkMobile, isValidCnic, isValidPkMobile,
+  cnicMask,
+  phoneMask,
+  formatCnic,
+  formatPkMobile,
+  isValidCnic,
+  isValidPkMobile,
 } from "@/features/hotel/validation";
 
 function errMsg(e: unknown): string {
@@ -32,14 +37,27 @@ function localNow(plusDays = 0): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function nightsBetween(checkIn: string, checkOut: string): number {
-  if (!checkIn || !checkOut) return 1;
-  const a = new Date(checkIn), b = new Date(checkOut);
-  const days = Math.floor((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) -
-    Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
-  return Math.max(1, days);
+/** The resort's STANDARD checkout: 12:30 PM, `plusDays` from today (default
+ *  next day). The backend also defaults to 12:30 PM PKT if this is unchanged;
+ *  seeding the input keeps the form and the bill consistent. */
+function standardCheckout(plusDays = 1): string {
+  const d = new Date();
+  d.setDate(d.getDate() + plusDays);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T12:30`;
 }
 
+function nightsBetween(checkIn: string, checkOut: string): number {
+  if (!checkIn || !checkOut) return 1;
+  const a = new Date(checkIn),
+    b = new Date(checkOut);
+  const days = Math.floor(
+    (Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) -
+      Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) /
+      86400000,
+  );
+  return Math.max(1, days);
+}
 
 export function OpenStayForm({
   onCancel,
@@ -60,21 +78,38 @@ export function OpenStayForm({
     partner_name: "",
     partner_cnic: "",
     check_in: localNow(),
-    expected_check_out: localNow(1),
+    expected_check_out: standardCheckout(1), // standard 12:30 PM next day
   });
   const [roomIds, setRoomIds] = useState<string[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void listRooms({ status: "available" })
-      .then(setRooms)
+    // Load ALL rooms (not just available) so the cashier can SEE that a room is
+    // already booked — occupied/maintenance rooms render disabled with a
+    // "Booked" badge rather than silently vanishing. Available rooms first.
+    void listRooms()
+      .then((all) => {
+        const rank = (r: Room) => (r.status === "available" ? 0 : 1);
+        setRooms(
+          [...all].sort((a, b) => rank(a) - rank(b) || a.room_number.localeCompare(b.room_number)),
+        );
+      })
       .catch(() => toast.show({ message: "Could not load rooms.", variant: "destructive" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
   function toggleRoom(id: string) {
+    const room = rooms.find((r) => r.id === id);
+    if (room && room.status !== "available") {
+      // Guard: a booked/unavailable room can't be selected — tell the cashier.
+      toast.show({
+        message: `Room ${room.room_number} is already booked — pick another room.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setRoomIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
   }
   const selectedRooms = rooms.filter((r) => roomIds.includes(r.id));
@@ -90,10 +125,12 @@ export function OpenStayForm({
     if (!form.guest_name.trim()) e.guest_name = "Guest name is required";
 
     if (!form.guest_cnic.trim()) e.guest_cnic = "CNIC is required";
-    else if (!isValidCnic(form.guest_cnic)) e.guest_cnic = "CNIC must be 13 digits (e.g. 35201-1234567-1)";
+    else if (!isValidCnic(form.guest_cnic))
+      e.guest_cnic = "CNIC must be 13 digits (e.g. 35201-1234567-1)";
 
     if (!form.guest_phone.trim()) e.guest_phone = "Phone is required";
-    else if (!isValidPkMobile(form.guest_phone)) e.guest_phone = "Enter a valid PK mobile (e.g. 0300-1234567)";
+    else if (!isValidPkMobile(form.guest_phone))
+      e.guest_phone = "Enter a valid PK mobile (e.g. 0300-1234567)";
 
     // Partner is optional, but if a CNIC is typed it must be valid.
     if (form.partner_cnic.trim() && !isValidCnic(form.partner_cnic))
@@ -137,7 +174,11 @@ export function OpenStayForm({
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
-        <button type="button" onClick={onCancel} className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted"
+        >
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
         <div className="text-sm font-semibold">Open new stay</div>
@@ -145,26 +186,55 @@ export function OpenStayForm({
 
       <div className="flex-1 overflow-auto p-4">
         <div className="mx-auto grid max-w-5xl items-start gap-4 lg:grid-cols-2">
-
           {/* ============ LEFT: guest + partner details ============ */}
           <div className="space-y-4">
             <Section title="Guest details" subtitle="Primary guest for this stay">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Guest name *" error={errors.guest_name}>
-                  <input className={inp(errors.guest_name)} value={form.guest_name} onChange={(e) => set("guest_name", e.target.value)} placeholder="e.g. Ahmed Khan" />
+                  <input
+                    className={inp(errors.guest_name)}
+                    value={form.guest_name}
+                    onChange={(e) => set("guest_name", e.target.value)}
+                    placeholder="e.g. Ahmed Khan"
+                  />
                 </Field>
                 <Field label="CNIC *" error={errors.guest_cnic}>
-                  <input className={inp(errors.guest_cnic)} value={form.guest_cnic} onChange={(e) => set("guest_cnic", cnicMask(e.target.value))} placeholder="35201-1234567-1" inputMode="numeric" maxLength={15} />
+                  <input
+                    className={inp(errors.guest_cnic)}
+                    value={form.guest_cnic}
+                    onChange={(e) => set("guest_cnic", cnicMask(e.target.value))}
+                    placeholder="35201-1234567-1"
+                    inputMode="numeric"
+                    maxLength={15}
+                  />
                 </Field>
                 <Field label="Phone *" error={errors.guest_phone}>
-                  <input className={inp(errors.guest_phone)} value={form.guest_phone} onChange={(e) => set("guest_phone", phoneMask(e.target.value))} placeholder="0300-1234567" inputMode="tel" maxLength={12} />
+                  <input
+                    className={inp(errors.guest_phone)}
+                    value={form.guest_phone}
+                    onChange={(e) => set("guest_phone", phoneMask(e.target.value))}
+                    placeholder="0300-1234567"
+                    inputMode="tel"
+                    maxLength={12}
+                  />
                 </Field>
                 <Field label="Email (optional)">
-                  <input className={inp()} value={form.guest_email} onChange={(e) => set("guest_email", e.target.value)} placeholder="guest@email.com" inputMode="email" />
+                  <input
+                    className={inp()}
+                    value={form.guest_email}
+                    onChange={(e) => set("guest_email", e.target.value)}
+                    placeholder="guest@email.com"
+                    inputMode="email"
+                  />
                 </Field>
                 <div className="sm:col-span-2">
                   <Field label="Address (optional)">
-                    <input className={inp()} value={form.guest_address} onChange={(e) => set("guest_address", e.target.value)} placeholder="City / address" />
+                    <input
+                      className={inp()}
+                      value={form.guest_address}
+                      onChange={(e) => set("guest_address", e.target.value)}
+                      placeholder="City / address"
+                    />
                   </Field>
                 </div>
               </div>
@@ -173,13 +243,28 @@ export function OpenStayForm({
             {/* Accompanying partner (e.g. a couple). Optional — record a second
                 person's name + CNIC when they share the stay. Not billed
                 separately; the folio stays one guest bill. */}
-            <Section title="Accompanying partner" subtitle="Optional — e.g. spouse. Not billed separately.">
+            <Section
+              title="Accompanying partner"
+              subtitle="Optional — e.g. spouse. Not billed separately."
+            >
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Partner full name">
-                  <input className={inp()} value={form.partner_name} onChange={(e) => set("partner_name", e.target.value)} placeholder="e.g. Fatima Khan" />
+                  <input
+                    className={inp()}
+                    value={form.partner_name}
+                    onChange={(e) => set("partner_name", e.target.value)}
+                    placeholder="e.g. Fatima Khan"
+                  />
                 </Field>
                 <Field label="Partner CNIC" error={errors.partner_cnic}>
-                  <input className={inp(errors.partner_cnic)} value={form.partner_cnic} onChange={(e) => set("partner_cnic", cnicMask(e.target.value))} placeholder="35201-1234567-2" inputMode="numeric" maxLength={15} />
+                  <input
+                    className={inp(errors.partner_cnic)}
+                    value={form.partner_cnic}
+                    onChange={(e) => set("partner_cnic", cnicMask(e.target.value))}
+                    placeholder="35201-1234567-2"
+                    inputMode="numeric"
+                    maxLength={15}
+                  />
                 </Field>
               </div>
             </Section>
@@ -190,31 +275,73 @@ export function OpenStayForm({
             <Section
               title="Rooms"
               subtitle="Tap to select — one guest can book several rooms."
-              titleRight={roomIds.length > 0
-                ? <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">{roomIds.length} selected</span>
-                : undefined}
+              titleRight={
+                roomIds.length > 0 ? (
+                  <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                    {roomIds.length} selected
+                  </span>
+                ) : undefined
+              }
             >
-              <div className={`max-h-72 space-y-1 overflow-auto rounded-md border p-1 ${errors.room ? "border-destructive" : "border-input"}`}>
+              <div
+                className={`max-h-72 space-y-1 overflow-auto rounded-md border p-1 ${errors.room ? "border-destructive" : "border-input"}`}
+              >
                 {rooms.length === 0 ? (
-                  <div className="p-3 text-sm text-muted-foreground">No available rooms.</div>
+                  <div className="p-3 text-sm text-muted-foreground">No rooms configured.</div>
                 ) : (
                   rooms.map((r) => {
                     const on = roomIds.includes(r.id);
+                    // A booked/maintenance room can't be selected — show it
+                    // disabled with a clear "Booked" / "Unavailable" badge so the
+                    // cashier knows why and picks another.
+                    const unavailable = r.status !== "available";
+                    const badge =
+                      r.status === "occupied"
+                        ? "Booked"
+                        : r.status === "maintenance"
+                          ? "Unavailable"
+                          : "";
                     return (
                       <button
                         key={r.id}
                         type="button"
+                        disabled={unavailable}
+                        aria-disabled={unavailable}
                         onClick={() => toggleRoom(r.id)}
-                        className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm transition-colors ${on ? "bg-primary text-primary-foreground" : "border border-transparent hover:border-input hover:bg-muted"}`}
+                        title={unavailable ? `Room ${r.room_number} is already booked` : undefined}
+                        className={`flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
+                          unavailable
+                            ? "cursor-not-allowed border border-transparent opacity-55"
+                            : on
+                              ? "bg-primary text-primary-foreground"
+                              : "border border-transparent hover:border-input hover:bg-muted"
+                        }`}
                       >
                         <span className="flex min-w-0 items-center gap-2">
-                          <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${on ? "border-primary-foreground bg-primary-foreground text-primary" : "border-muted-foreground/40"}`}>{on ? "✓" : ""}</span>
+                          <span
+                            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] ${on ? "border-primary-foreground bg-primary-foreground text-primary" : "border-muted-foreground/40"}`}
+                          >
+                            {on ? "✓" : ""}
+                          </span>
                           {/* Room TYPE badge — clear indicator of VIP / Deluxe /
                               Standard, not just the number. */}
-                          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${on ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"}`}>{r.room_type}</span>
+                          <span
+                            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${on ? "bg-primary-foreground/20 text-primary-foreground" : "bg-primary/10 text-primary"}`}
+                          >
+                            {r.room_type}
+                          </span>
                           <span className="font-medium">Room {r.room_number}</span>
+                          {badge && (
+                            <span className="shrink-0 rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-destructive">
+                              {badge}
+                            </span>
+                          )}
                         </span>
-                        <span className={`shrink-0 font-mono text-xs ${on ? "text-primary-foreground/90" : "text-muted-foreground"}`}>Rs {rs(r.nightly_total)}/night</span>
+                        <span
+                          className={`shrink-0 font-mono text-xs ${on ? "text-primary-foreground/90" : "text-muted-foreground"}`}
+                        >
+                          Rs {rs(r.nightly_total)}/night
+                        </span>
                       </button>
                     );
                   })
@@ -226,10 +353,20 @@ export function OpenStayForm({
             <Section title="Stay dates">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Check-in">
-                  <input type="datetime-local" className={inp()} value={form.check_in} onChange={(e) => set("check_in", e.target.value)} />
+                  <input
+                    type="datetime-local"
+                    className={inp()}
+                    value={form.check_in}
+                    onChange={(e) => set("check_in", e.target.value)}
+                  />
                 </Field>
                 <Field label="Expected check-out">
-                  <input type="datetime-local" className={inp()} value={form.expected_check_out} onChange={(e) => set("expected_check_out", e.target.value)} />
+                  <input
+                    type="datetime-local"
+                    className={inp()}
+                    value={form.expected_check_out}
+                    onChange={(e) => set("expected_check_out", e.target.value)}
+                  />
                 </Field>
               </div>
             </Section>
@@ -239,27 +376,43 @@ export function OpenStayForm({
               <div className="rounded-lg border bg-muted/40 p-4 text-sm">
                 <div className="mb-2 flex items-center justify-between font-semibold">
                   <span>Booking summary</span>
-                  <span className="rounded bg-background px-2 py-0.5 text-xs">{nights} night{nights === 1 ? "" : "s"}</span>
+                  <span className="rounded bg-background px-2 py-0.5 text-xs">
+                    {nights} night{nights === 1 ? "" : "s"}
+                  </span>
                 </div>
                 {selectedRooms.map((r) => (
                   <div key={r.id} className="flex items-center justify-between gap-2 py-0.5">
                     <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                      <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">{r.room_type}</span>
-                      <span>Room {r.room_number} × {nights}</span>
+                      <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                        {r.room_type}
+                      </span>
+                      <span>
+                        Room {r.room_number} × {nights}
+                      </span>
                     </span>
                     <span className="font-mono">Rs {rs(Number(r.nightly_total) * nights)}</span>
                   </div>
                 ))}
                 <div className="mt-2 flex justify-between border-t pt-2 text-base font-semibold">
-                  <span>Room charges on open</span><span className="font-mono">Rs {rs(roomsTotal)}</span>
+                  <span>Room charges on open</span>
+                  <span className="font-mono">Rs {rs(roomsTotal)}</span>
                 </div>
-                <p className="mt-2 text-xs text-muted-foreground">Food &amp; other charges are added during the stay; everything settles in one bill at checkout.</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Food &amp; other charges are added during the stay; everything settles in one bill
+                  at checkout.
+                </p>
               </div>
             )}
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={onCancel}>Cancel</Button>
-              <Button onClick={submit} disabled={saving}>{saving ? "Opening…" : `Open stay & charge ${roomIds.length > 1 ? `${roomIds.length} rooms` : "room"}`}</Button>
+              <Button variant="outline" onClick={onCancel}>
+                Cancel
+              </Button>
+              <Button onClick={submit} disabled={saving}>
+                {saving
+                  ? "Opening…"
+                  : `Open stay & charge ${roomIds.length > 1 ? `${roomIds.length} rooms` : "room"}`}
+              </Button>
             </div>
           </div>
         </div>
@@ -269,7 +422,10 @@ export function OpenStayForm({
 }
 
 function Section({
-  title, subtitle, titleRight, children,
+  title,
+  subtitle,
+  titleRight,
+  children,
 }: {
   title: string;
   subtitle?: string;
@@ -290,7 +446,15 @@ function Section({
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-medium text-muted-foreground">{label}</span>

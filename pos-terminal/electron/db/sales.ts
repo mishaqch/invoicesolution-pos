@@ -71,6 +71,13 @@ export interface PosSaleItemInput {
   /** Restaurant: chosen modifiers (array, stored as JSON) + kitchen note. */
   modifiers?: { name: string; price: string }[];
   item_note?: string | null;
+  /**
+   * Display-only: a line cancelled after being fired. Cancelled lines are NOT
+   * persisted or synced as sale items (they carry no money and were removed
+   * from the checkout payload), but they ARE passed to the bill printer so the
+   * customer receipt shows them struck-through with a CANCELLED marker.
+   */
+  cancelled?: boolean;
 }
 
 export interface PosPaymentInput {

@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "fraunces",
+        "createdAt": "2026-09-03T05:03:03.106Z",
+        "reason": "user confirmed: chosen as the tablet's display face across many visual-refinement rounds ('elegant and soft font family'); PWA ports the approved TDCP artifact 1:1"
+      },
+      {
+        "rule": "overused-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-09-03T05:03:03.137Z",
+        "reason": "user confirmed: chosen as the tablet's body face ('elegant and soft font family'); PWA ports the approved TDCP artifact 1:1"
+      },
+      {
+        "rule": "bounce-easing",
+        "value": "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "createdAt": "2026-09-04T03:55:49.246Z",
+        "reason": "intentional: subtle cart-count badge pop on item add (0.4s), part of the approved TDCP tablet micro-interactions the user requested; not a dated full-element bounce"
+      },
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "tablet-web/src/index.css"
+        ],
+        "createdAt": "2026-09-04T04:15:01.538Z",
+        "reason": "intentional: search bar expand-on-focus (max-width 260->340) is a user-requested micro-interaction on a single isolated element; scaleX would distort the pill's radius/contents. Reduced-motion respected."
+      }
+    ]
+  }
+}

@@ -67,6 +67,10 @@ ROLES = (
     ("owner", "Owner"),
     ("manager", "Manager"),
     ("cashier", "Cashier"),
+    # Order-taking only (waiter tablets): fires/edits kitchen orders + floor view;
+    # cannot charge, cancel, adjust stock, manage catalog, or see reports. That is
+    # enforced by omission from DEFAULT_ROLE_PERMS (has no sales.create etc.).
+    ("waiter", "Waiter"),
     ("accountant", "Accountant"),
     ("auditor", "Auditor"),
 )
@@ -536,6 +540,12 @@ class Terminal(models.Model):
 
     printer_config = models.JSONField(default=dict, blank=True)
     scanner_config = models.JSONField(default=dict, blank=True)
+    # True for shared "waiter tablet" terminals that only FIRE orders and never
+    # charge/checkout. Lets OpenOrderView relax its resume-ownership check so a
+    # cashier till can pick up (and charge) an order a waiter tablet fired — the
+    # intended handoff, not the "two tills editing one table" race the check
+    # normally prevents.
+    is_order_taking_only = models.BooleanField(default=False)
     drawer_config = models.JSONField(default=dict, blank=True)
     customer_display_enabled = models.BooleanField(default=False)
 

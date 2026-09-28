@@ -77,6 +77,7 @@ class FbrScenarioTestSerializer(serializers.ModelSerializer):
         model = FbrScenarioTest
         fields = (
             "id", "scenario_code", "scenario_description", "status",
+            "reconciled",
             "fbr_invoice_number", "last_attempt_at", "error_message",
             "last_request_payload", "last_response_payload",
             "created_at", "updated_at",

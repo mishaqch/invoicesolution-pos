@@ -83,8 +83,14 @@ export interface Product {
   deleted_at: string | null;
 }
 
-/** What the POS terminal receives from /api/catalog/sync/ — no cost_price. */
-export type PosProduct = Omit<Product, "cost_price" | "description" | "is_serialized" | "is_batch_tracked" | "has_variants" | "reorder_level" | "reorder_quantity" | "created_at">;
+/** What the POS terminal receives from /api/catalog/sync/ — no cost_price.
+ *  ProductPosSerializer also emits `tax_rate_value`: the tax rate RESOLVED to a
+ *  numeric percent string (e.g. "16"), alongside the `tax_rate` FK id. Clients
+ *  doing cart tax math (POS, waiter tablet) read tax_rate_value; the FK id alone
+ *  isn't resolvable client-side without another lookup. */
+export type PosProduct = Omit<Product, "cost_price" | "description" | "is_serialized" | "is_batch_tracked" | "has_variants" | "reorder_level" | "reorder_quantity" | "created_at"> & {
+  tax_rate_value: string | null;
+};
 
 /** An FBR sale-type option for the product/invoice dropdown. `value` is the
  *  exact PRAL string to submit; `label` is friendly display text. */

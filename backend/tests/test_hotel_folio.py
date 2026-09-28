@@ -422,3 +422,84 @@ def test_cannot_cancel_checked_out_stay():
     from django.core.exceptions import ValidationError
     with pytest.raises(ValidationError):
         services.cancel_stay(folio=folio, user=cashier)
+
+
+# --- Standard 12:30 PM PKT checkout + TZ-correct nights (2026-09-04) ----------
+
+def test_checkout_defaults_to_1230pm_pkt():
+    """Checkout with NO explicit time must default to the resort's standard
+    12:30 PM Asia/Karachi checkout — not the arbitrary click moment."""
+    from zoneinfo import ZoneInfo
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+    )
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}],
+    )
+    local = folio.check_out.astimezone(ZoneInfo("Asia/Karachi"))
+    assert (local.hour, local.minute) == (12, 30), local.isoformat()
+
+
+def test_checkout_honours_explicit_time():
+    """An explicit late/early checkout time is respected (override)."""
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+    )
+    explicit = timezone.now() + dt.timedelta(hours=3)
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier, check_out=explicit,
+        payments=[{"payment_method": "cash", "amount": "10500"}],
+    )
+    assert abs((folio.check_out - explicit).total_seconds()) < 2
+
+
+def test_open_stay_defaults_expected_checkout_to_1230_next_day():
+    from zoneinfo import ZoneInfo
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+    )
+    eco = folio.expected_check_out.astimezone(ZoneInfo("Asia/Karachi"))
+    assert (eco.hour, eco.minute) == (12, 30), eco.isoformat()
+
+
+def test_compute_nights_tz_localized_no_off_by_one():
+    """A late-evening PKT check-in (still 'yesterday' in UTC) to next-day 12:30
+    must count as 1 night, not 2."""
+    from zoneinfo import ZoneInfo
+    pk = ZoneInfo("Asia/Karachi")
+    ci = dt.datetime(2026, 6, 30, 23, 0, tzinfo=pk)   # 23:00 PKT = 18:00 UTC
+    co = dt.datetime(2026, 7, 1, 12, 30, tzinfo=pk)   # next day 12:30 PKT
+    assert services.compute_nights(ci, co) == 1
+
+
+def test_release_room_frees_stuck_room():
+    """Manager force-release frees a room stuck 'occupied' with no open folio."""
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    room.status = "occupied"
+    room.save(update_fields=["status"])
+    services.release_room(room=room, user=cashier)
+    room.refresh_from_db()
+    assert room.status == "available"
+
+
+def test_release_room_refuses_when_open_stay():
+    """Force-release must REFUSE a room that genuinely has an open stay."""
+    from django.core.exceptions import ValidationError
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+    )
+    with pytest.raises(ValidationError):
+        services.release_room(room=room, user=cashier)

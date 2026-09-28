@@ -9,12 +9,13 @@ from __future__ import annotations
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotAuthenticated, NotFound, ValidationError
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import HasModule, HasRolePerm, IsTenantMember
-from apps.sales.models import Invoice
+from apps.sales.models import Invoice, SaleItem
 
 from . import services
 from .models import MenuItemModifierGroup, Modifier, ModifierGroup, Table
@@ -150,6 +151,12 @@ def _order_payload(inv: Invoice) -> dict:
         "covers": inv.covers,
         "kitchen_sent_at": inv.kitchen_sent_at.isoformat() if inv.kitchen_sent_at else None,
         "grand_total": str(inv.grand_total),
+        # True when this order was fired from a shared waiter tablet (not a
+        # cashier till) — lets the POS badge it "from waiter" so the cashier can
+        # tell a floor-fired order apart from their own parked ticket.
+        "from_waiter_tablet": bool(
+            inv.terminal_id and inv.terminal.is_order_taking_only
+        ),
         "items": [
             {
                 "name": it.product_name,
@@ -203,6 +210,133 @@ class KdsView(APIView):
             order_status__in=["sent_to_kitchen", "ready"],
         )
         return Response({"orders": [_order_payload(o) for o in orders]})
+
+
+def _kot_relay_payload(inv: Invoice) -> dict:
+    """A KOT ticket for the branch terminal to PRINT — only the fired-but-not-yet-
+    printed food lines (rooms excluded). is_additional flags a follow-up ticket
+    (course 2) when some of this order's lines were already printed."""
+    unprinted = (
+        inv.items.filter(
+            sent_to_kitchen=True, kot_printed_at__isnull=True, is_cancelled=False,
+        )
+        .exclude(product__category__name="Rooms")
+        .order_by("line_number")
+    )
+    already_printed_before = inv.items.filter(kot_printed_at__isnull=False).exists()
+    return {
+        "id": str(inv.id),
+        "order_number": inv.local_invoice_number,
+        "order_type": inv.order_type or "dine_in",
+        "table_name": inv.table.name if inv.table_id else None,
+        "covers": inv.covers,
+        "reference": inv.held_label or (inv.buyer_name or None),
+        "is_additional": already_printed_before,
+        "items": [
+            {
+                "product_name": it.product_name,
+                "quantity": str(it.quantity),
+                "modifiers": [{"name": m.get("name")} for m in (it.modifiers or [])],
+                "item_note": it.item_note,
+            }
+            for it in unprinted
+        ],
+        "item_ids": [str(it.id) for it in unprinted],
+    }
+
+
+def _relay_tenant_id(request):
+    """Resolve the tenant for a KOT-relay call, authenticating EITHER way:
+
+      - a signed-in user (request.tenant_id set by the JWT middleware), OR
+      - a PAIRED DEVICE presenting terminal_id + device_fingerprint (same trust
+        model as /terminals/roster/).
+
+    The device path is what lets a branch print KOTs the moment the till is
+    PAIRED — without waiting for a cashier to log in. Kitchen printing must not
+    depend on someone being signed into the printer terminal. Returns the
+    tenant_id, or raises if neither credential is valid.
+    """
+    tenant_id = getattr(request, "tenant_id", None)
+    if tenant_id is not None:
+        return tenant_id
+    # Device-trust fallback (query for GET, body for POST).
+    src = request.query_params if request.method == "GET" else request.data
+    terminal_id = (src.get("terminal_id") or "").strip()
+    fingerprint = (src.get("device_fingerprint") or "").strip()
+    if not terminal_id or not fingerprint:
+        raise NotAuthenticated(
+            "Sign in, or provide the paired terminal_id + device_fingerprint.",
+        )
+    from apps.tenants.models import Terminal
+    terminal = (
+        Terminal.objects.filter(
+            pk=terminal_id, device_fingerprint=fingerprint, is_active=True,
+        ).first()
+    )
+    if terminal is None:
+        raise NotAuthenticated("This device is not paired.")
+    return terminal.tenant_id
+
+
+class KdsUnprintedView(APIView):
+    """GET /api/restaurant/kds/unprinted/?branch=<id> — orders with fired,
+    not-yet-printed lines. The branch's Electron terminal(s) poll this to RELAY
+    KOTs for orders fired from a waiter tablet (which has no printer).
+
+    Auth: a signed-in cashier OR a paired device (terminal_id + device_fingerprint
+    query params). The device path means kitchen printing works as soon as the
+    till is paired, even before any cashier logs in."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        tenant_id = _relay_tenant_id(request)
+        branch_id = request.query_params.get("branch")
+        if not branch_id:
+            raise ValidationError({"branch": "Required."})
+        orders = (
+            services.open_orders_qs(tenant_id, branch_id=branch_id)
+            .filter(order_status__in=["sent_to_kitchen", "ready"])
+            .filter(
+                items__sent_to_kitchen=True,
+                items__kot_printed_at__isnull=True,
+                items__is_cancelled=False,
+            )
+            .distinct()
+        )
+        payloads = [_kot_relay_payload(o) for o in orders]
+        # A row can match the filter but have all its unprinted lines be rooms —
+        # drop those (nothing to print).
+        payloads = [p for p in payloads if p["items"]]
+        return Response({"orders": payloads})
+
+
+class MarkKotPrintedView(APIView):
+    """POST /api/restaurant/orders/<id>/mark-printed/  body {"item_ids":[...]}.
+    Stamps kot_printed_at on exactly those lines, conditioned on IS NULL — so a
+    retry (lost ack) or two terminals racing both no-op past the first winner.
+    This single atomic conditional UPDATE is the print-exactly-once guard.
+
+    Auth: signed-in cashier OR paired device (terminal_id + device_fingerprint in
+    the body), matching KdsUnprintedView so the relay can ack without a login."""
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, pk):
+        tenant_id = _relay_tenant_id(request)
+        item_ids = request.data.get("item_ids") or []
+        if not item_ids:
+            raise ValidationError({"item_ids": "Required."})
+        now = timezone.now()
+        updated = SaleItem.objects.filter(
+            invoice_id=pk, invoice__tenant_id=tenant_id,
+            id__in=item_ids, kot_printed_at__isnull=True,
+        ).update(kot_printed_at=now)
+        Invoice.objects.filter(pk=pk, tenant_id=tenant_id).update(
+            kitchen_printed_at=now,
+        )
+        return Response({"marked": updated}, status=status.HTTP_200_OK)
 
 
 class OrderActionView(APIView):
@@ -281,7 +415,16 @@ class OpenOrderView(APIView):
             # callers omit `terminal` and can read any order.
             req_terminal = request.query_params.get("terminal")
             if req_terminal and str(inv.terminal_id) != req_terminal:
-                raise NotFound("Order not found.")
+                # HANDOFF EXCEPTION: an order fired from a shared "waiter tablet"
+                # terminal (is_order_taking_only) has no till of its own to charge
+                # it, so any cashier till in the branch MUST be able to resume it.
+                # For those the cross-terminal block is exactly the wrong behaviour
+                # — relax it. All other orders stay till-private.
+                order_taking = bool(
+                    inv.terminal_id and inv.terminal.is_order_taking_only
+                )
+                if not order_taking:
+                    raise NotFound("Order not found.")
             return Response(_order_detail_payload(inv))
         branch_id = request.query_params.get("branch")
         # Terminal-scoped: a till sees only its OWN open orders (each terminal

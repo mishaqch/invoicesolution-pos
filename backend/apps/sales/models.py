@@ -164,6 +164,11 @@ class Invoice(TenantScopedModel):
         ),
     )
     kitchen_sent_at = models.DateTimeField(blank=True, null=True)
+    # Stamped by the branch terminal once it has printed the KOT for whatever was
+    # fired as of that stamp. NULL = there is unprinted, fired content waiting.
+    # A re-fire (course 2) does NOT reset this — the relay tracks "newly fired
+    # since last print" at the SaleItem level (kot_printed_at), not here.
+    kitchen_printed_at = models.DateTimeField(blank=True, null=True)
 
     # Phase 4 — invoices linked to a submitted Annexure-C cannot be edited.
     # Phase 6 returns logic flips this when a credit note's reference invoice
@@ -270,6 +275,10 @@ class SaleItem(models.Model):
     # Set true once this line has been fired to the kitchen, so re-firing only
     # prints newly-added lines.
     sent_to_kitchen = models.BooleanField(default=False)
+    # Stamped when THIS line was included on a printed KOT. NULL + sent_to_kitchen
+    # =True means fired-but-not-yet-printed — exactly what the KOT relay queries.
+    # This is what makes an incremental "course 2" fire print only the new lines.
+    kot_printed_at = models.DateTimeField(blank=True, null=True)
 
     # Edit/cancel tracking — Phase 4 enforces the rules.
     is_edited = models.BooleanField(default=False)

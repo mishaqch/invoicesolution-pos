@@ -44,6 +44,13 @@ export interface CartLine {
   // True once this line has been fired to the kitchen, so re-firing a KOT only
   // prints newly-added lines.
   sent_to_kitchen?: boolean;
+  // Restaurant: a line that was ALREADY fired to the kitchen and then cancelled
+  // is kept in the cart (not deleted) with this flag, so the kitchen KOT and the
+  // customer bill both show it struck-through with a "CANCELLED" marker — the
+  // cook must be told what to stop preparing. A cancelled line contributes
+  // nothing to totals/tax. Lines never fired are hard-removed instead (the
+  // kitchen never knew about them, so there's nothing to un-prepare).
+  cancelled?: boolean;
 }
 
 export type OrderType = "dine_in" | "takeaway" | "delivery";
@@ -93,7 +100,13 @@ interface SaleState {
 
   addLine: (line: Omit<CartLine, "id" | "quantity"> & { quantity?: string }) => void;
   updateLine: (id: string, patch: Partial<CartLine>) => void;
-  removeLine: (id: string) => void;
+  /**
+   * Remove a line. If it was already fired to the kitchen, it is SOFT-cancelled
+   * (kept with cancelled=true) so the KOT/bill can show it struck-through as
+   * CANCELLED; if it was never fired, it is hard-removed. Pass `force` to always
+   * hard-remove (e.g. clearing the whole cart).
+   */
+  removeLine: (id: string, force?: boolean) => void;
   setQuantity: (id: string, qty: string) => void;
 
   setCustomer: (c: SelectedCustomer | null) => void;
@@ -189,12 +202,20 @@ export const useSaleStore = create<SaleState>((set, get) => ({
       lines: state.lines.map((l) => (l.id === id ? { ...l, ...patch } : l)),
     })),
 
-  removeLine: (id) =>
+  removeLine: (id, force) =>
     set((state) => {
-      const lines = state.lines.filter((l) => l.id !== id);
+      const target = state.lines.find((l) => l.id === id);
+      // A line already sent to the kitchen is kept and marked cancelled (so the
+      // KOT + bill can show it struck-through). Everything else is removed. An
+      // already-cancelled line, or a forced remove, is dropped outright.
+      const softCancel = !force && !!target?.sent_to_kitchen && !target?.cancelled;
+      const lines = softCancel
+        ? state.lines.map((l) => (l.id === id ? { ...l, cancelled: true } : l))
+        : state.lines.filter((l) => l.id !== id);
+      const liveCount = lines.filter((l) => !l.cancelled).length;
       return {
         lines,
-        stage: lines.length === 0 ? "empty" : state.stage,
+        stage: liveCount === 0 ? "empty" : state.stage,
       };
     }),
 
@@ -302,6 +323,18 @@ export function applyPaymentServicesRate(
 
 export function quoteCart(state: Pick<SaleState, "lines" | "cartDiscountPct">): CartTotals {
   const quoted: QuotedLine[] = state.lines.map((l) => {
+    // A cancelled line stays in the list (for the struck-through "CANCELLED"
+    // row on the KOT/bill) but contributes nothing to any money total.
+    if (l.cancelled) {
+      return {
+        ...l,
+        gross: Money.zero(),
+        line_discount: Money.zero(),
+        net: Money.zero(),
+        tax_amount: Money.zero(),
+        line_total: Money.zero(),
+      };
+    }
     const gross = Money.fromStr(l.unit_price).mulScalar(l.quantity);
     const pctDisc = gross.applyPct(l.discount_pct || "0");
     const fixedDisc = Money.fromStr(l.discount_amount || "0");

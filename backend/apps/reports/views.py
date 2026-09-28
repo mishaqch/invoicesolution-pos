@@ -81,10 +81,39 @@ def _require_tenant(request) -> str:
     return str(tenant_id)
 
 
+def _coerce_filter_value(field, value):
+    """Coerce a raw JSON value to the dataclass field's declared type.
+
+    The export path reads request.data (JSON), where date_from/date_to arrive as
+    STRINGS. The Filters dataclass declares them as `date`, and the view does
+    `date_to - date_from` — subtracting two strings raised
+    'TypeError: unsupported operand type(s) for -: str and str' on EVERY dated
+    export. Parse ISO date strings into real date objects here (the preview path
+    gets coercion from DRF; the export path did not).
+    """
+    import datetime as _dt
+
+    if value in (None, ""):
+        return None
+    ann = str(field.type)
+    if "date" in ann and "datetime" not in ann and isinstance(value, str):
+        try:
+            return _dt.date.fromisoformat(value)
+        except ValueError:
+            return None
+    return value
+
+
 def _build_filters(report_cls, payload: dict) -> BaseFilters:
-    """Coerce a JSON dict into the report's Filters dataclass."""
-    valid_keys = {f.name for f in fields(report_cls.Filters)}
-    return report_cls.Filters(**{k: v for k, v in (payload or {}).items() if k in valid_keys})
+    """Coerce a JSON dict into the report's Filters dataclass (with type coercion
+    for date fields — see _coerce_filter_value)."""
+    by_name = {f.name: f for f in fields(report_cls.Filters)}
+    kwargs = {
+        k: _coerce_filter_value(by_name[k], v)
+        for k, v in (payload or {}).items()
+        if k in by_name
+    }
+    return report_cls.Filters(**kwargs)
 
 
 def _serialize_result(result: ReportResult) -> dict:
@@ -213,13 +242,22 @@ class ReportExportView(APIView):
             return streaming_csv_response(result, filename=filename)
         if fmt == "xlsx":
             return excel_response(result, filename=filename, sheet_name=name)
-        # pdf
-        tenant = request.tenant
+        # pdf — fetch the tenant by the reliable tenant_id (the same id the whole
+        # view uses). request.tenant is set by the middleware on the Django
+        # request, but the DRF Request wrapper doesn't always proxy it, so
+        # reading request.tenant here raised AttributeError → a 500 on every PDF
+        # export.
+        from django.conf import settings
+
+        from apps.tenants.models import Tenant
+        tenant = Tenant.objects.only("business_name", "ntn").get(pk=tenant_id)
+        logo_path = Path(settings.MEDIA_ROOT) / "tenants" / f"{tenant.id}-logo.png"
         return pdf_response(
             result, filename=filename, title=name.replace("_", " ").title(),
             tenant_business_name=tenant.business_name,
             tenant_ntn=tenant.ntn,
             subtitle=_filter_subtitle(filters),
+            logo_path=str(logo_path) if logo_path.exists() else None,
         )
 
 
@@ -362,10 +400,12 @@ def dashboard_view(request):
             "gross": str(r.get("gross") or Decimal("0")),
         })
 
-    # Recent invoices.
+    # Recent invoices — same is_held=False / deleted_at guard as the count + the
+    # real invoice list, so held tablet/folio orders and soft-deleted drafts
+    # don't show up as "recent invoices".
     recent = (
         Invoice.objects.for_tenant(tenant_id)
-        .filter(status__in=COUNTED_STATUSES)
+        .filter(status__in=COUNTED_STATUSES, is_held=False, deleted_at__isnull=True)
         .select_related("branch", "cashier")
         .order_by("-created_at")[:5]
     )
@@ -469,7 +509,16 @@ def dashboard_view(request):
         Customer.objects.for_tenant(tenant_id).filter(deleted_at__isnull=True).count()
     )
 
-    invoices_qs = Invoice.objects.for_tenant(tenant_id).filter(status__in=COUNTED_STATUSES)
+    # COUNTED_STATUSES alone is NOT enough — it deliberately keeps
+    # pending_sync/submitted in, and relies on the is_held=False / deleted_at
+    # filters to drop OPEN orders and drafts (see rebuild_daily_sales). Without
+    # them this KPI over-counts: held tablet orders (ORD-…), folio charges
+    # (FOL-…), parked sales, and soft-deleted drafts all leak in, so the card
+    # never matches the real invoice list. Mirror the invoice list's filters.
+    invoices_qs = (
+        Invoice.objects.for_tenant(tenant_id)
+        .filter(status__in=COUNTED_STATUSES, is_held=False, deleted_at__isnull=True)
+    )
     invoices_total = invoices_qs.count()
     month_agg = invoices_qs.filter(invoice_date__gte=month_start).aggregate(
         c=Count("id"), gross=Sum("grand_total"),

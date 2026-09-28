@@ -62,7 +62,14 @@ import {
   searchProducts,
   syncCatalog,
 } from "./db/sync";
-import { openCashDrawer, printFolioBill, printKOT, printReceipt, testPrint } from "./printer";
+import {
+  openCashDrawer,
+  printDailyReport,
+  printFolioBill,
+  printKOT,
+  printReceipt,
+  testPrint,
+} from "./printer";
 import { listWindowsPrinters } from "./win-print";
 import { postToCustomerDisplay } from "./customer-display";
 
@@ -263,10 +270,32 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
     },
   );
 
+  // Full end-of-day summary for the daily report shown on Day-close / logout.
+  // Fetched from the server (date-based aggregation across the shift's sales)
+  // so it includes card/online totals + cancelled counts the local cash-only
+  // tally can't compute. Returns null on any failure so the UI can degrade to
+  // the local cash figures.
+  ipcMain.handle("session:summary", async (_e, session_id: string) => {
+    try {
+      const token = getMeta("access_token");
+      if (!token) return null;
+      const base = apiBase.replace(/\/$/, "");
+      const res = await fetch(
+        `${base}/api/sales/cash-sessions/${session_id}/summary/`,
+        { method: "GET", headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  });
+
   // Printer + drawer
   ipcMain.handle("printer:print-receipt", async (_e, payload) => printReceipt(payload));
   ipcMain.handle("printer:print-kot", async (_e, payload) => printKOT(payload));
   ipcMain.handle("printer:print-folio", async (_e, payload) => printFolioBill(payload));
+  ipcMain.handle("printer:print-daily-report", async (_e, payload) => printDailyReport(payload));
   ipcMain.handle("printer:test", async (_e, iface?: string) => testPrint(iface));
   ipcMain.handle("printer:list-windows", async () => listWindowsPrinters());
   // This PC's own LAN IPv4 addresses — shown next to the kitchen-printer field

@@ -63,3 +63,53 @@ def test_unknown_report_still_404s(advanced_tenant, cashier):
 def test_unsupported_format_rejected(advanced_tenant, cashier):
     resp = _export("daily_sales", "docx", cashier, advanced_tenant)
     assert resp.status_code == 400
+
+
+def _export_no_request_tenant(name, fmt, user, tenant):
+    """Like _export but does NOT set request.tenant — reproduces PRODUCTION,
+    where the DRF Request wrapper doesn't proxy the middleware's request.tenant.
+    The view must still work off tenant_id alone."""
+    factory = APIRequestFactory()
+    req = factory.post(f"/api/reports/{name}/export/?format={fmt}", {}, format="json")
+    force_authenticate(req, user=user)
+    req.tenant_id = str(tenant.id)  # tenant_id only — no req.tenant
+    return views.ReportExportView.as_view()(req, name=name)
+
+
+def test_pdf_export_without_request_tenant(advanced_tenant, cashier, make_invoice):
+    """PDF export must not 500 when request.tenant is absent (the prod bug)."""
+    make_invoice(grand_total=Decimal("100"), tax_total=Decimal("16"))
+    resp = _export_no_request_tenant("daily_sales", "pdf", cashier, advanced_tenant)
+    assert resp.status_code == 200, resp.status_code
+
+
+def test_audit_log_xlsx_export_with_tz_datetimes(advanced_tenant, cashier, make_invoice):
+    """Excel export of a report with tz-aware datetimes (audit_log) must not 500 —
+    openpyxl rejects tz-aware datetimes, so they must be localised + made naive."""
+    from apps.audit.services import log as audit_log
+    make_invoice(grand_total=Decimal("100"), tax_total=Decimal("16"))
+    audit_log(
+        tenant_id=str(advanced_tenant.id), user=cashier,
+        entity_type="invoice", entity_id=None, action="create",
+        after={"x": 1},
+    )
+    resp = _export("audit_log", "xlsx", cashier, advanced_tenant)
+    assert resp.status_code == 200, resp.status_code
+
+
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_export_with_date_filter_strings(fmt, advanced_tenant, cashier, make_invoice):
+    """A DATED export (date_from/date_to sent as ISO STRINGS in the JSON body)
+    must parse them into dates — not subtract two strings (the prod 500)."""
+    import datetime as dt
+    make_invoice(grand_total=Decimal("100"), tax_total=Decimal("16"),
+                 invoice_date=dt.date(2026, 9, 3))
+    factory = APIRequestFactory()
+    req = factory.post(
+        f"/api/reports/daily_sales/export/?format={fmt}",
+        {"date_from": "2026-09-03", "date_to": "2026-09-04"}, format="json",
+    )
+    force_authenticate(req, user=cashier)
+    req.tenant_id = str(advanced_tenant.id)
+    resp = views.ReportExportView.as_view()(req, name="daily_sales")
+    assert resp.status_code == 200, f"{fmt} dated export -> {resp.status_code}"

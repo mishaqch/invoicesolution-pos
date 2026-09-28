@@ -58,6 +58,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
     branch_fbr_pos_id = serializers.CharField(
         source="branch.fbr_pos_id", read_only=True, allow_null=True,
     )
+    # Restaurant context (present on dine-in/held orders). Read-only — set via
+    # the open-order flow, not by editing an invoice. Exposed so a restaurant
+    # order-history view (e.g. the waiter tablet's "Today's completed" tab) can
+    # show the table + service type without a second lookup. Non-restaurant
+    # tenants simply get null.
+    table_name = serializers.CharField(
+        source="table.name", read_only=True, allow_null=True,
+    )
 
     class Meta:
         model = Invoice
@@ -75,6 +83,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "paid_total", "change_given",
             "status", "edit_deadline_at",
             "client_uuid", "notes", "is_held", "held_label",
+            "order_type", "table", "table_name", "covers",
             "items", "payments",
             "share_url",
             "created_at", "updated_at",
@@ -85,6 +94,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "fbr_submitted_at", "fbr_validated_at",
             "subtotal", "discount_total", "tax_total", "grand_total",
             "paid_total", "change_given", "edit_deadline_at",
+            "table_name",
             "items", "payments", "share_url", "created_at", "updated_at",
         )
 

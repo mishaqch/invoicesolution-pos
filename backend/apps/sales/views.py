@@ -89,8 +89,14 @@ class InvoiceViewSet(
             qs = qs.filter(invoice_date__gte=start)
         if (end := params.get("to")):
             qs = qs.filter(invoice_date__lte=end)
-        if (held := params.get("held")):
+        # Held = OPEN/parked orders (restaurant tables, tablet ORD-… fires, folio
+        # FOL-… charges) — NOT completed invoices. Exclude them by DEFAULT so the
+        # invoice list + KPI tiles show only real invoices and match the dashboard
+        # count. A caller that wants the open-order book passes ?held=true.
+        if (held := params.get("held")) is not None:
             qs = qs.filter(is_held=held.lower() in ("1", "true"))
+        else:
+            qs = qs.filter(is_held=False)
         if (q := params.get("q")):
             # Free-text search the three fields a tenant typically pastes in:
             # the local invoice number from a printed receipt, the FBR
@@ -992,6 +998,38 @@ class CashSessionViewSet(
             request=request,
         )
         return Response(self.get_serializer(session).data)
+
+    @action(detail=True, methods=["get"], url_path="summary",
+            permission_classes=[HasRolePerm.with_perm("sales.create")])
+    def summary(self, request, pk=None):
+        """GET /api/sales/cash-sessions/<id>/summary/
+
+        Full end-of-day / Z-report figures the cashier sees on Day-close /
+        logout: total sales, total orders, cancelled items/orders, payment
+        breakup (cash/card/online), and total discount.
+
+        We report the DATE-based daily summary for the session's branch +
+        terminal (robust even when invoices aren't linked to a CashSession FK,
+        as happens for the resort's table orders), and merge in the session's
+        own cash-reconciliation figures (opening cash, session id/times).
+        """
+        from django.utils import timezone
+
+        session = self.get_object()
+        day = timezone.localdate(session.opened_at) if session.opened_at else timezone.localdate()
+        daily = sessions.daily_summary(
+            tenant_id=request.tenant_id, date=day,
+            branch=session.branch_id, terminal=session.terminal_id,
+        )
+        # Merge the session's cash-reconciliation context onto the daily figures.
+        sess = sessions.session_summary(session)
+        daily.update({
+            "session_id": sess["session_id"],
+            "opened_at": sess["opened_at"],
+            "closed_at": sess["closed_at"],
+            "opening_cash": sess["opening_cash"],
+        })
+        return Response(daily)
 
 
 # ---------------------------------------------------------------------------

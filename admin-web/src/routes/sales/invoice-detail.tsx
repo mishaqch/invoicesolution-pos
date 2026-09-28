@@ -1,4 +1,19 @@
-import { ArrowLeft, CheckCircle2, Download, FilePlus2, FileText, Lock, Mail, MessageCircle, MoreHorizontal, Pencil, RefreshCw, Send, ShieldCheck, X } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  FilePlus2,
+  FileText,
+  Lock,
+  Mail,
+  MessageCircle,
+  MoreHorizontal,
+  Pencil,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 // See invoices.tsx for why this is a named import, not the default.
@@ -18,7 +33,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   useCancelInvoice,
   useCancelInvoiceItem,
@@ -62,8 +84,9 @@ async function openPdf(invoiceId: string, invoiceNumber: string, download: boole
   setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
 }
 
-
-function timeUntilDeadline(deadline: string | null): { remaining: string; expired: boolean } | null {
+function timeUntilDeadline(
+  deadline: string | null,
+): { remaining: string; expired: boolean } | null {
   if (!deadline) return null;
   const ms = new Date(deadline).getTime() - Date.now();
   if (ms <= 0) return { remaining: "expired", expired: true };
@@ -75,8 +98,12 @@ function timeUntilDeadline(deadline: string | null): { remaining: string; expire
 // Invoice statuses the server accepts as a reference for a debit note.
 // Mirror of the gate in apps/sales/views.py manual_create.
 const DEBIT_NOTE_REFERENCEABLE_STATUSES = new Set([
-  "valid", "finalized", "edited", "partially_edited",
-  "partially_cancelled", "partially_edited_and_cancelled",
+  "valid",
+  "finalized",
+  "edited",
+  "partially_edited",
+  "partially_cancelled",
+  "partially_edited_and_cancelled",
 ]);
 
 export default function InvoiceDetail() {
@@ -112,7 +139,11 @@ export default function InvoiceDetail() {
       await qc.invalidateQueries({ queryKey: ["invoice", invoiceId] });
       const fresh = qc.getQueryData<AdminInvoice>(["invoice", invoiceId]);
       if (fresh?.fbr_invoice_number) {
-        setFiscalMsg({ ok: true, done: true, text: `Fiscalized! ${authority} Invoice #${fresh.fbr_invoice_number} — QR + PDF are ready below.` });
+        setFiscalMsg({
+          ok: true,
+          done: true,
+          text: `Fiscalized! ${authority} Invoice #${fresh.fbr_invoice_number} — QR + PDF are ready below.`,
+        });
         return;
       }
     }
@@ -122,7 +153,9 @@ export default function InvoiceDetail() {
   const [fiscalizing, setFiscalizing] = useState(false);
   // `done` marks a FINAL success (fiscal number issued) — those auto-dismiss;
   // errors and the "waiting…" progress message stay until replaced.
-  const [fiscalMsg, setFiscalMsg] = useState<{ ok: boolean; text: string; done?: boolean } | null>(null);
+  const [fiscalMsg, setFiscalMsg] = useState<{ ok: boolean; text: string; done?: boolean } | null>(
+    null,
+  );
   const [fiscalMsgFading, setFiscalMsgFading] = useState(false);
 
   // Auto-dismiss a final fiscalization-success banner: hold ~5s, fade out over
@@ -132,8 +165,14 @@ export default function InvoiceDetail() {
     if (!fiscalMsg?.ok || !fiscalMsg.done) return;
     setFiscalMsgFading(false);
     const fade = setTimeout(() => setFiscalMsgFading(true), 5000);
-    const clear = setTimeout(() => { setFiscalMsg(null); setFiscalMsgFading(false); }, 5600);
-    return () => { clearTimeout(fade); clearTimeout(clear); };
+    const clear = setTimeout(() => {
+      setFiscalMsg(null);
+      setFiscalMsgFading(false);
+    }, 5600);
+    return () => {
+      clearTimeout(fade);
+      clearTimeout(clear);
+    };
   }, [fiscalMsg]);
   const [showConfirm, setShowConfirm] = useState(false);
   const [reason, setReason] = useState("");
@@ -171,16 +210,14 @@ export default function InvoiceDetail() {
     "partially_cancelled",
     "partially_edited_and_cancelled",
   ]);
-  const isFbrAccepted =
-    FBR_ACCEPTED_STATES.has(invoice.status)
-    && !!invoice.fbr_invoice_number;
+  const isFbrAccepted = FBR_ACCEPTED_STATES.has(invoice.status) && !!invoice.fbr_invoice_number;
 
   // An UNSUBMITTED draft — never reached FBR (no number, pre-validation
   // status). These can be deleted + re-validated freely; a submitted/
   // fiscalized invoice can NEVER be edited or deleted (FBR immutability).
   const isDraft =
-    !invoice.fbr_invoice_number
-    && (invoice.status === "pending_sync" || invoice.status === "failed");
+    !invoice.fbr_invoice_number &&
+    (invoice.status === "pending_sync" || invoice.status === "failed");
 
   // POS registration: the invoice's branch has an FBR POS ID. These fiscalize
   // via the tax authority's CLOUD IMS from our server (FBR gw.fbr.gov.pk/imsp
@@ -190,10 +227,10 @@ export default function InvoiceDetail() {
   const isPosFiscalizationTenant = !!invoice.branch_fbr_pos_id;
 
   const canCancel =
-    isFbrAccepted
-    && invoice.status !== "cancelled"
-    && invoice.status !== "finalized"
-    && !(deadline?.expired ?? false);
+    isFbrAccepted &&
+    invoice.status !== "cancelled" &&
+    invoice.status !== "finalized" &&
+    !(deadline?.expired ?? false);
 
   // An invoice can be cancelled on the FBR portal directly (outside our
   // platform). PRAL has no status-query endpoint, so we can't detect it — this
@@ -201,15 +238,21 @@ export default function InvoiceDetail() {
   // FBR-validated invoice (including finalized/past-72h) that isn't already
   // cancelled here.
   const canMarkCancelledOnFbr =
-    !!invoice.fbr_invoice_number
-    && invoice.status !== "cancelled"
-    && ["valid", "finalized", "partially_cancelled",
-        "partially_edited", "partially_edited_and_cancelled"].includes(invoice.status);
+    !!invoice.fbr_invoice_number &&
+    invoice.status !== "cancelled" &&
+    [
+      "valid",
+      "finalized",
+      "partially_cancelled",
+      "partially_edited",
+      "partially_edited_and_cancelled",
+    ].includes(invoice.status);
 
   // Surface the same friendly reasons rules.py emits, so a hover on
   // the disabled cancel-chip explains the state in plain English.
-  const lockedReason = canCancel ? null : (
-    invoice.status === "pending_sync"
+  const lockedReason = canCancel
+    ? null
+    : invoice.status === "pending_sync"
       ? "Awaiting FBR submission — edits unlock once FBR accepts the invoice."
       : invoice.status === "submitted"
         ? "Awaiting FBR validation — edits unlock once FBR returns a number."
@@ -221,8 +264,7 @@ export default function InvoiceDetail() {
               ? "Already finalized to a return"
               : deadline?.expired
                 ? "72-hour cancel window has passed (use a credit note instead)"
-                : "Not eligible for cancellation"
-  );
+                : "Not eligible for cancellation";
 
   return (
     <div className="space-y-4">
@@ -259,9 +301,7 @@ export default function InvoiceDetail() {
           ============================================================ */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {invoice.local_invoice_number}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{invoice.local_invoice_number}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
             <Badge
               variant={invoiceStatusVariant(invoice.status)}
@@ -302,116 +342,127 @@ export default function InvoiceDetail() {
             SDC/POS tenants (they use the SDC button below; the DI-API path
             would error with "no token") AND for non-fiscal tenants (no authority). */}
         {!isPosFiscalizationTenant && !isNonFiscal && (
-        <Button
-          variant="outline"
-          onClick={async () => {
-            setValidateResult(null);
-            try {
-              const r = await validate.mutateAsync(invoice.id);
-              setValidateResult(r);
-            } catch (e) {
-              // 502 from our /validate/ endpoint means PRAL's gateway
-              // misbehaved (timeout / non-JSON page / 5xx). The
-              // backend returns a JSON body with `kind: "transient"`
-              // + a human-readable `detail`. Pull those through so
-              // the UI shows the right amber "service flaky" strip
-              // instead of the misleading red "rejected" strip.
-              if (e instanceof ApiError && e.data && typeof e.data === "object") {
-                const d = e.data as {
-                  kind?: "transient"; detail?: string; error?: string;
-                };
-                setValidateResult({
-                  valid: false,
-                  kind: d.kind,
-                  error: d.detail ?? d.error ?? `Validate failed (HTTP ${e.status}).`,
-                });
-              } else {
-                setValidateResult({
-                  valid: false,
-                  error: String((e as Error)?.message ?? "Validate failed"),
-                });
+          <Button
+            variant="outline"
+            onClick={async () => {
+              setValidateResult(null);
+              try {
+                const r = await validate.mutateAsync(invoice.id);
+                setValidateResult(r);
+              } catch (e) {
+                // 502 from our /validate/ endpoint means PRAL's gateway
+                // misbehaved (timeout / non-JSON page / 5xx). The
+                // backend returns a JSON body with `kind: "transient"`
+                // + a human-readable `detail`. Pull those through so
+                // the UI shows the right amber "service flaky" strip
+                // instead of the misleading red "rejected" strip.
+                if (e instanceof ApiError && e.data && typeof e.data === "object") {
+                  const d = e.data as {
+                    kind?: "transient";
+                    detail?: string;
+                    error?: string;
+                  };
+                  setValidateResult({
+                    valid: false,
+                    kind: d.kind,
+                    error: d.detail ?? d.error ?? `Validate failed (HTTP ${e.status}).`,
+                  });
+                } else {
+                  setValidateResult({
+                    valid: false,
+                    error: String((e as Error)?.message ?? "Validate failed"),
+                  });
+                }
               }
-            }
-          }}
-          loading={validate.isPending}
-          title={`Dry-run validate this invoice against ${authority}'s PRAL — no submission, just a lint check`}
-        >
-          <CheckCircle2
-            className={`mr-1 h-4 w-4 ${validate.isPending ? "animate-pulse" : ""}`}
-          />
-          {validate.isPending ? "Validating…" : `Validate with ${authority}`}
-        </Button>
+            }}
+            loading={validate.isPending}
+            title={`Dry-run validate this invoice against ${authority}'s PRAL — no submission, just a lint check`}
+          >
+            <CheckCircle2 className={`mr-1 h-4 w-4 ${validate.isPending ? "animate-pulse" : ""}`} />
+            {validate.isPending ? "Validating…" : `Validate with ${authority}`}
+          </Button>
         )}
 
         {/* Check invoice (LOCAL pre-submit): the IMS cloud has no dry-run, so
             this runs every check WE can (POS ID, fields, tax/UoM/HS math, buyer
             id) WITHOUT calling FBR — catches common rejects before committing.
             POS registrations only, until an FBR number exists. */}
-        {isPosFiscalizationTenant && !invoice.fbr_invoice_number && invoice.status !== "cancelled" && (
-          <Button
-            variant="outline"
-            disabled={precheck.isPending}
-            onClick={async () => {
-              setPrecheckResult(null);
-              try {
-                setPrecheckResult(await precheck.mutateAsync(invoice.id));
-              } catch (e) {
-                setFiscalMsg({ ok: false, text: extractApiErrorMessage(e) });
-              }
-            }}
-            title="Run a local validity check (fields, POS ID, tax math) before fiscalizing. Does not call FBR."
-          >
-            <ShieldCheck className={`mr-1 h-4 w-4 ${precheck.isPending ? "animate-pulse" : ""}`} />
-            {precheck.isPending ? "Checking…" : "Check invoice"}
-          </Button>
-        )}
+        {isPosFiscalizationTenant &&
+          !invoice.fbr_invoice_number &&
+          invoice.status !== "cancelled" && (
+            <Button
+              variant="outline"
+              disabled={precheck.isPending}
+              onClick={async () => {
+                setPrecheckResult(null);
+                try {
+                  setPrecheckResult(await precheck.mutateAsync(invoice.id));
+                } catch (e) {
+                  setFiscalMsg({ ok: false, text: extractApiErrorMessage(e) });
+                }
+              }}
+              title="Run a local validity check (fields, POS ID, tax math) before fiscalizing. Does not call FBR."
+            >
+              <ShieldCheck
+                className={`mr-1 h-4 w-4 ${precheck.isPending ? "animate-pulse" : ""}`}
+              />
+              {precheck.isPending ? "Checking…" : "Check invoice"}
+            </Button>
+          )}
 
         {/* Fiscalize a POS registration via the CLOUD (server-side). We no
             longer use a local SDC on the shop machine — the server posts the
             invoice to the tax authority's cloud IMS (FBR gw.fbr.gov.pk/imsp or
             PRA ims.pral.com.pk) with the branch's POS token and stores the
             fiscal number + QR. Shown until the invoice has an FBR number. */}
-        {isPosFiscalizationTenant && !invoice.fbr_invoice_number && invoice.status !== "cancelled" && (
-          <Button
-            variant="default"
-            disabled={fiscalizing}
-            onClick={async () => {
-              setFiscalizing(true);
-              setFiscalMsg(null);
-              setPrecheckResult(null);
-              try {
-                const updated = await resubmit.mutateAsync(invoice.id);
-                if (updated.fbr_invoice_number) {
-                  setFiscalMsg({ ok: true, done: true, text: `Fiscalized! ${authority} Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.` });
-                } else if (updated.status === "failed") {
-                  // The submission already came back REJECTED (no number, status
-                  // failed). Don't show a hopeful "waiting…" — tell the operator
-                  // it failed and point at the log with the exact error.
-                  setFiscalMsg({
-                    ok: false,
-                    text: `${authority} rejected this invoice — no fiscal number issued. See the ${authority} submissions log below for the exact error.`,
-                  });
-                } else {
-                  // Genuinely queued/submitting — the fiscal number lands async
-                  // via the cloud. Poll so the QR + PDF appear without a manual
-                  // refresh.
-                  setFiscalMsg({ ok: true, text: `Sent to ${authority} — waiting for the fiscal number…` });
-                  void pollForFbrNumber(invoice.id);
+        {isPosFiscalizationTenant &&
+          !invoice.fbr_invoice_number &&
+          invoice.status !== "cancelled" && (
+            <Button
+              variant="default"
+              disabled={fiscalizing}
+              onClick={async () => {
+                setFiscalizing(true);
+                setFiscalMsg(null);
+                setPrecheckResult(null);
+                try {
+                  const updated = await resubmit.mutateAsync(invoice.id);
+                  if (updated.fbr_invoice_number) {
+                    setFiscalMsg({
+                      ok: true,
+                      done: true,
+                      text: `Fiscalized! ${authority} Invoice #${updated.fbr_invoice_number} — QR + PDF are ready below.`,
+                    });
+                  } else if (updated.status === "failed") {
+                    // The submission already came back REJECTED (no number, status
+                    // failed). Don't show a hopeful "waiting…" — tell the operator
+                    // it failed and point at the log with the exact error.
+                    setFiscalMsg({
+                      ok: false,
+                      text: `${authority} rejected this invoice — no fiscal number issued. See the ${authority} submissions log below for the exact error.`,
+                    });
+                  } else {
+                    // Genuinely queued/submitting — the fiscal number lands async
+                    // via the cloud. Poll so the QR + PDF appear without a manual
+                    // refresh.
+                    setFiscalMsg({
+                      ok: true,
+                      text: `Sent to ${authority} — waiting for the fiscal number…`,
+                    });
+                    void pollForFbrNumber(invoice.id);
+                  }
+                } catch (e) {
+                  setFiscalMsg({ ok: false, text: extractApiErrorMessage(e) });
+                } finally {
+                  setFiscalizing(false);
                 }
-              } catch (e) {
-                setFiscalMsg({ ok: false, text: extractApiErrorMessage(e) });
-              } finally {
-                setFiscalizing(false);
-              }
-            }}
-            title="Submit this invoice to the tax authority's cloud fiscalization (from our server) to get a fiscal invoice number + QR"
-          >
-            <CheckCircle2
-              className={`mr-1 h-4 w-4 ${fiscalizing ? "animate-pulse" : ""}`}
-            />
-            {fiscalizing ? "Fiscalizing…" : `Fiscalize with ${authority}`}
-          </Button>
-        )}
+              }}
+              title="Submit this invoice to the tax authority's cloud fiscalization (from our server) to get a fiscal invoice number + QR"
+            >
+              <CheckCircle2 className={`mr-1 h-4 w-4 ${fiscalizing ? "animate-pulse" : ""}`} />
+              {fiscalizing ? "Fiscalizing…" : `Fiscalize with ${authority}`}
+            </Button>
+          )}
 
         {/* Submit button: visible while the invoice hasn't yet been
             accepted by PRAL. The manual-invoice flow creates an invoice
@@ -419,30 +470,28 @@ export default function InvoiceDetail() {
             yet sent to FBR). The operator clicks Submit when ready;
             PRAL then issues the FBR Invoice Number on success. Failed
             submissions can be retried via the same button. */}
-        {!isPosFiscalizationTenant
-          && !isNonFiscal
-          && (invoice.status === "failed" || invoice.status === "pending_sync")
-          && !invoice.fbr_invoice_number && (
-          <Button
-            variant="default"
-            onClick={() => void resubmit.mutateAsync(invoice.id)}
-            loading={resubmit.isPending}
-            title={
-              invoice.status === "failed"
-                ? "PRAL rejected this invoice. Fix the issue and click to retry."
-                : "Send this invoice to PRAL to get an FBR Invoice Number"
-            }
-          >
-            <RefreshCw
-              className={`mr-1 h-4 w-4 ${resubmit.isPending ? "animate-spin" : ""}`}
-            />
-            {resubmit.isPending
-              ? "Submitting…"
-              : invoice.status === "failed"
-                ? "Retry submission"
-                : `Submit to ${authority}`}
-          </Button>
-        )}
+        {!isPosFiscalizationTenant &&
+          !isNonFiscal &&
+          (invoice.status === "failed" || invoice.status === "pending_sync") &&
+          !invoice.fbr_invoice_number && (
+            <Button
+              variant="default"
+              onClick={() => void resubmit.mutateAsync(invoice.id)}
+              loading={resubmit.isPending}
+              title={
+                invoice.status === "failed"
+                  ? "PRAL rejected this invoice. Fix the issue and click to retry."
+                  : "Send this invoice to PRAL to get an FBR Invoice Number"
+              }
+            >
+              <RefreshCw className={`mr-1 h-4 w-4 ${resubmit.isPending ? "animate-spin" : ""}`} />
+              {resubmit.isPending
+                ? "Submitting…"
+                : invoice.status === "failed"
+                  ? "Retry submission"
+                  : `Submit to ${authority}`}
+            </Button>
+          )}
 
         <Button
           variant="outline"
@@ -459,26 +508,27 @@ export default function InvoiceDetail() {
             {
               label: "Download PDF",
               icon: <Download className="h-4 w-4" />,
-              onSelect: () =>
-                openPdf(invoice.id, invoice.local_invoice_number, true),
+              onSelect: () => openPdf(invoice.id, invoice.local_invoice_number, true),
             },
             ...(DEBIT_NOTE_REFERENCEABLE_STATUSES.has(invoice.status)
-              ? [{
-                  label: "Add debit note",
-                  icon: <FilePlus2 className="h-4 w-4" />,
-                  onSelect: () =>
-                    navigate("/sales/new", {
-                      state: {
-                        debitNote: {
-                          invoiceType: "debit_note",
-                          referenceInvoiceId: invoice.id,
-                          referenceInvoiceNumber: invoice.local_invoice_number,
-                          buyerName: invoice.buyer_name,
-                          buyerNtnCnic: invoice.buyer_ntn_cnic,
+              ? [
+                  {
+                    label: "Add debit note",
+                    icon: <FilePlus2 className="h-4 w-4" />,
+                    onSelect: () =>
+                      navigate("/sales/new", {
+                        state: {
+                          debitNote: {
+                            invoiceType: "debit_note",
+                            referenceInvoiceId: invoice.id,
+                            referenceInvoiceNumber: invoice.local_invoice_number,
+                            buyerName: invoice.buyer_name,
+                            buyerNtnCnic: invoice.buyer_ntn_cnic,
+                          },
                         },
-                      },
-                    }),
-                }]
+                      }),
+                  },
+                ]
               : []),
           ]}
         />
@@ -498,9 +548,10 @@ export default function InvoiceDetail() {
               // stock deduction. Discarding it here is the way to put that
               // stock back — spell that out so the operator isn't left
               // wondering where the rejected sale's quantity went.
-              const msg = invoice.status === "failed"
-                ? "Discard this rejected invoice? FBR did not accept it. The stock it reserved will be added back to your on-hand."
-                : "Delete this draft invoice? It hasn't been sent to FBR. Stock will be restored.";
+              const msg =
+                invoice.status === "failed"
+                  ? "Discard this rejected invoice? FBR did not accept it. The stock it reserved will be added back to your on-hand."
+                  : "Delete this draft invoice? It hasn't been sent to FBR. Stock will be restored.";
               if (!window.confirm(msg)) return;
               try {
                 await deleteDraft.mutateAsync(id);
@@ -527,9 +578,10 @@ export default function InvoiceDetail() {
               if (
                 !window.confirm(
                   "Mark this invoice as cancelled on FBR?\n\nUse this ONLY if you have already cancelled it on the FBR portal. " +
-                  "It updates the status here to match FBR — it does not send a cancellation to FBR.",
+                    "It updates the status here to match FBR — it does not send a cancellation to FBR.",
                 )
-              ) return;
+              )
+                return;
               markCancelledOnFbr.mutate(invoice.id);
             }}
           >
@@ -542,14 +594,18 @@ export default function InvoiceDetail() {
         <div
           role="status"
           className={
-            "flex items-start gap-2 rounded-md border px-3 py-2 text-sm transition-all duration-500 ease-out "
-            + (fiscalMsg.ok
+            "flex items-start gap-2 rounded-md border px-3 py-2 text-sm transition-all duration-500 ease-out " +
+            (fiscalMsg.ok
               ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-100"
-              : "border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100")
-            + (fiscalMsgFading ? " -translate-y-1 opacity-0" : " opacity-100")
+              : "border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-950 dark:text-red-100") +
+            (fiscalMsgFading ? " -translate-y-1 opacity-0" : " opacity-100")
           }
         >
-          {fiscalMsg.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <X className="mt-0.5 h-4 w-4 shrink-0" />}
+          {fiscalMsg.ok ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <X className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
           <div>{fiscalMsg.text}</div>
         </div>
       )}
@@ -589,8 +645,8 @@ export default function InvoiceDetail() {
             </ul>
           )}
           <div className="mt-1.5 text-xs text-muted-foreground">
-            This is a local check — it does not contact {authority}. {authority} POS
-            has no dry-run; the authority confirms only on the real submission.
+            This is a local check — it does not contact {authority}. {authority} POS has no dry-run;
+            the authority confirms only on the real submission.
           </div>
         </div>
       )}
@@ -618,10 +674,9 @@ export default function InvoiceDetail() {
         >
           <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
           <div>
-            <strong>Queued for submission to {authority}.</strong> A worker is
-            picking it up — refresh in a few seconds to see the {authority}
-            invoice number, or watch the submissions log below for the
-            new roundtrip.
+            <strong>Queued for submission to {authority}.</strong> A worker is picking it up — this
+            page is checking automatically and will show the {authority} invoice number as soon as
+            it lands. No need to refresh.
           </div>
         </div>
       )}
@@ -652,14 +707,12 @@ export default function InvoiceDetail() {
         >
           {validateResult.valid ? (
             <>
-              <strong>✓ FBR PRAL says: Valid.</strong>{" "}
-              Payload passes all of FBR's validation rules. Safe to
-              submit when you're ready.
+              <strong>✓ FBR PRAL says: Valid.</strong> Payload passes all of FBR's validation rules.
+              Safe to submit when you're ready.
             </>
           ) : validateResult.kind === "transient" ? (
             <>
-              <strong>⚠ FBR PRAL service is unreachable.</strong>{" "}
-              {validateResult.error}
+              <strong>⚠ FBR PRAL service is unreachable.</strong> {validateResult.error}
             </>
           ) : (
             <>
@@ -675,18 +728,20 @@ export default function InvoiceDetail() {
 
       <div
         className={
-          invoice.fbr_qr_payload
-            ? "grid gap-4 md:grid-cols-4"
-            : "grid gap-4 md:grid-cols-3"
+          invoice.fbr_qr_payload ? "grid gap-4 md:grid-cols-4" : "grid gap-4 md:grid-cols-3"
         }
       >
         <Card>
-          <CardHeader><CardTitle className="text-sm">Buyer</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm">Buyer</CardTitle>
+          </CardHeader>
           <CardContent className="text-sm">
             {invoice.buyer_name ? (
               <>
                 <div>{invoice.buyer_name}</div>
-                {invoice.buyer_phone && <div className="text-muted-foreground">{invoice.buyer_phone}</div>}
+                {invoice.buyer_phone && (
+                  <div className="text-muted-foreground">{invoice.buyer_phone}</div>
+                )}
               </>
             ) : (
               <span className="text-muted-foreground">Walk-in</span>
@@ -694,7 +749,9 @@ export default function InvoiceDetail() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-sm">Totals</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm">Totals</CardTitle>
+          </CardHeader>
           <CardContent className="text-sm">
             <Row k="Subtotal" v={`Rs ${money(invoice.subtotal)}`} />
             <Row k="Discount" v={`- Rs ${money(invoice.discount_total)}`} muted />
@@ -705,7 +762,9 @@ export default function InvoiceDetail() {
           </CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle className="text-sm">Payments</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm">Payments</CardTitle>
+          </CardHeader>
           <CardContent className="text-sm">
             {invoice.payments.length === 0 ? (
               <span className="text-muted-foreground">None</span>
@@ -758,16 +817,15 @@ export default function InvoiceDetail() {
                         <span className="text-muted-foreground">
                           {invoice.fbr_invoice_number.slice(0, 13)}
                         </span>
-                        <span className="font-bold">
-                          {invoice.fbr_invoice_number.slice(13)}
-                        </span>
+                        <span className="font-bold">{invoice.fbr_invoice_number.slice(13)}</span>
                       </>
                     ) : (
                       <span>{invoice.fbr_invoice_number}</span>
                     )}
                   </div>
                   <p className="text-[10px] text-muted-foreground text-center px-2 leading-snug mt-1">
-                    Seller NTN (grey) + unique invoice ID (bold).<br />
+                    Seller NTN (grey) + unique invoice ID (bold).
+                    <br />
                     Verify at{" "}
                     <a
                       href="https://e.fbr.gov.pk/"
@@ -787,7 +845,9 @@ export default function InvoiceDetail() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-sm">Line items</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-sm">Line items</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -795,7 +855,10 @@ export default function InvoiceDetail() {
                 <TableHead className="hidden sm:table-cell">#</TableHead>
                 <TableHead>Product</TableHead>
                 <TableHead className="hidden lg:table-cell">SKU</TableHead>
-                <TableHead className="hidden xl:table-cell" title="PRAL HS code submitted to FBR for this line">
+                <TableHead
+                  className="hidden xl:table-cell"
+                  title="PRAL HS code submitted to FBR for this line"
+                >
                   HS code
                 </TableHead>
                 <TableHead className="text-right">Qty</TableHead>
@@ -816,8 +879,12 @@ export default function InvoiceDetail() {
                   <TableRow key={it.id} className={it.is_cancelled ? "opacity-50" : ""}>
                     <TableCell className="hidden sm:table-cell">{it.line_number}</TableCell>
                     <TableCell>
-                      {it.is_cancelled && <span className="mr-1 text-xs font-bold text-destructive">C</span>}
-                      {it.is_edited && <span className="mr-1 text-xs font-bold text-amber-600">E</span>}
+                      {it.is_cancelled && (
+                        <span className="mr-1 text-xs font-bold text-destructive">C</span>
+                      )}
+                      {it.is_edited && (
+                        <span className="mr-1 text-xs font-bold text-amber-600">E</span>
+                      )}
                       <span className={it.is_cancelled ? "line-through" : ""}>
                         {it.product_name}
                       </span>
@@ -826,28 +893,36 @@ export default function InvoiceDetail() {
                         {it.product_sku}
                       </span>
                     </TableCell>
-                    <TableCell className="hidden font-mono text-xs lg:table-cell">{it.product_sku}</TableCell>
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">
+                      {it.product_sku}
+                    </TableCell>
                     <TableCell className="hidden font-mono text-xs xl:table-cell">
-                      {it.hs_code || (
-                        <span className="text-muted-foreground italic">—</span>
-                      )}
+                      {it.hs_code || <span className="text-muted-foreground italic">—</span>}
                     </TableCell>
                     <TableCell className="text-right font-mono">{qty(it.quantity)}</TableCell>
-                    <TableCell className="hidden text-right font-mono md:table-cell">Rs {money(it.unit_price)}</TableCell>
-                    <TableCell className="hidden text-right font-mono md:table-cell">Rs {money(it.tax_amount)}</TableCell>
-                    <TableCell className="text-right font-mono">Rs {money(it.line_total)}</TableCell>
+                    <TableCell className="hidden text-right font-mono md:table-cell">
+                      Rs {money(it.unit_price)}
+                    </TableCell>
+                    <TableCell className="hidden text-right font-mono md:table-cell">
+                      Rs {money(it.tax_amount)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      Rs {money(it.line_total)}
+                    </TableCell>
                     <TableCell className="text-right">
                       {!lineGated && (
                         <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
-                            onClick={() => setEditPrompt({
-                              id: it.id,
-                              quantity: it.quantity,
-                              unit_price: it.unit_price,
-                              tax_rate: it.tax_rate,
-                              reason: "",
-                            })}
+                            onClick={() =>
+                              setEditPrompt({
+                                id: it.id,
+                                quantity: it.quantity,
+                                unit_price: it.unit_price,
+                                tax_rate: it.tax_rate,
+                                reason: "",
+                              })
+                            }
                             className="rounded-md p-1 text-muted-foreground hover:bg-primary hover:text-primary-foreground"
                             aria-label="Edit this line"
                             title="Edit qty / price / tax (within 72h)"
@@ -881,9 +956,8 @@ export default function InvoiceDetail() {
           <div className="w-full max-w-sm rounded-md border bg-background p-6 shadow-lg">
             <h2 className="text-base font-semibold">Cancel sale</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              This reverses the stock movements and marks the invoice
-              cancelled. The 72-hour edit window and 10% monthly cap are
-              enforced server-side; if they fail you'll see an error.
+              This reverses the stock movements and marks the invoice cancelled. The 72-hour edit
+              window and 10% monthly cap are enforced server-side; if they fail you'll see an error.
             </p>
             <textarea
               rows={3}
@@ -893,7 +967,9 @@ export default function InvoiceDetail() {
               className="mt-3 w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowConfirm(false)}>Back</Button>
+              <Button variant="outline" onClick={() => setShowConfirm(false)}>
+                Back
+              </Button>
               <Button
                 variant="destructive"
                 disabled={cancel.isPending || reason.trim().length < 2}
@@ -914,8 +990,8 @@ export default function InvoiceDetail() {
           <div className="w-full max-w-md rounded-md border bg-background p-6 shadow-lg">
             <h2 className="text-base font-semibold">Edit line item</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Patch the quantity, unit price, or tax rate. Totals
-              recompute automatically. The change is sent to PRAL via
+              Patch the quantity, unit price, or tax rate. Totals recompute automatically. The
+              change is sent to PRAL via
               <span className="mx-1 font-mono text-xs">editinvoice</span>
               and counts against this month's 10% amendment cap.
             </p>
@@ -977,9 +1053,12 @@ export default function InvoiceDetail() {
                   const original = invoice.items.find((x) => x.id === editPrompt.id);
                   if (!original) return;
                   const patch: { quantity?: string; unit_price?: string; tax_rate?: string } = {};
-                  if (editPrompt.quantity !== original.quantity) patch.quantity = editPrompt.quantity;
-                  if (editPrompt.unit_price !== original.unit_price) patch.unit_price = editPrompt.unit_price;
-                  if (editPrompt.tax_rate !== original.tax_rate) patch.tax_rate = editPrompt.tax_rate;
+                  if (editPrompt.quantity !== original.quantity)
+                    patch.quantity = editPrompt.quantity;
+                  if (editPrompt.unit_price !== original.unit_price)
+                    patch.unit_price = editPrompt.unit_price;
+                  if (editPrompt.tax_rate !== original.tax_rate)
+                    patch.tax_rate = editPrompt.tax_rate;
                   if (Object.keys(patch).length === 0) {
                     setEditPrompt({ ...editPrompt, error: "Nothing changed." });
                     return;
@@ -1013,21 +1092,20 @@ export default function InvoiceDetail() {
           <div className="w-full max-w-sm rounded-md border bg-background p-6 shadow-lg">
             <h2 className="text-base font-semibold">Cancel this line</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              The line is removed from the invoice total and stock for it
-              is returned. Other lines stay valid; the invoice flips to
-              partially cancelled.
+              The line is removed from the invoice total and stock for it is returned. Other lines
+              stay valid; the invoice flips to partially cancelled.
             </p>
             <textarea
               rows={3}
               value={itemPrompt.reason}
-              onChange={(e) =>
-                setItemPrompt({ ...itemPrompt, reason: e.target.value })
-              }
+              onChange={(e) => setItemPrompt({ ...itemPrompt, reason: e.target.value })}
               placeholder="Reason"
               className="mt-3 w-full rounded-md border bg-background px-3 py-2 text-sm"
             />
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setItemPrompt(null)}>Back</Button>
+              <Button variant="outline" onClick={() => setItemPrompt(null)}>
+                Back
+              </Button>
               <Button
                 variant="destructive"
                 disabled={cancelItem.isPending || itemPrompt.reason.trim().length < 2}
@@ -1052,7 +1130,9 @@ export default function InvoiceDetail() {
 
 function Row({ k, v, muted, bold }: { k: string; v: string; muted?: boolean; bold?: boolean }) {
   return (
-    <div className={`flex justify-between ${muted ? "text-muted-foreground" : ""} ${bold ? "font-semibold" : ""}`}>
+    <div
+      className={`flex justify-between ${muted ? "text-muted-foreground" : ""} ${bold ? "font-semibold" : ""}`}
+    >
       <span>{k}</span>
       <span className="font-mono">{v}</span>
     </div>
@@ -1062,7 +1142,6 @@ function Row({ k, v, muted, bold }: { k: string; v: string; muted?: boolean; bol
 // statusVariant moved to features/invoices/status.ts as
 // invoiceStatusVariant — single source of truth across all invoice
 // surfaces.
-
 
 /**
  * Send-to-buyer popover.
@@ -1105,20 +1184,19 @@ function SendToBuyer({ invoice }: { invoice: AdminInvoice }) {
   // When share_url is missing (invoice not yet FBR-validated), the
   // menu shows a hint instead — there's no point sharing a draft.
   const shareUrl = invoice.share_url ?? null;
-  const fbrLine = invoice.fbr_invoice_number
-    ? `\nFBR No: ${invoice.fbr_invoice_number}`
-    : "";
+  const fbrLine = invoice.fbr_invoice_number ? `\nFBR No: ${invoice.fbr_invoice_number}` : "";
   const total = `Rs. ${Number(invoice.grand_total).toLocaleString("en-PK", {
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })}`;
   const downloadLine = shareUrl ? `\n\nDownload your invoice:\n${shareUrl}` : "";
   const body =
-    `Dear ${invoice.buyer_name},\n\n`
-    + `Your invoice from ${tenant?.business_name ?? "us"}:\n\n`
-    + `Invoice No: ${invoice.local_invoice_number}${fbrLine}\n`
-    + `Total: ${total}`
-    + downloadLine
-    + `\n\nThank you for your business.`;
+    `Dear ${invoice.buyer_name},\n\n` +
+    `Your invoice from ${tenant?.business_name ?? "us"}:\n\n` +
+    `Invoice No: ${invoice.local_invoice_number}${fbrLine}\n` +
+    `Total: ${total}` +
+    downloadLine +
+    `\n\nThank you for your business.`;
   const subject = `Invoice ${invoice.local_invoice_number} from ${tenant?.business_name ?? ""}`;
 
   // Pakistani mobile numbers are typically 03XX-XXXXXXX. wa.me requires
@@ -1126,9 +1204,7 @@ function SendToBuyer({ invoice }: { invoice: AdminInvoice }) {
   // formatting + replace leading 0 with 92.
   const rawPhone = invoice.buyer_phone ?? "";
   const phoneDigits = rawPhone.replace(/\D/g, "");
-  const whatsappPhone = phoneDigits.startsWith("0")
-    ? "92" + phoneDigits.slice(1)
-    : phoneDigits;
+  const whatsappPhone = phoneDigits.startsWith("0") ? "92" + phoneDigits.slice(1) : phoneDigits;
   const waUrl = whatsappPhone
     ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(body)}`
     : `https://wa.me/?text=${encodeURIComponent(body)}`;
@@ -1157,10 +1233,7 @@ function SendToBuyer({ invoice }: { invoice: AdminInvoice }) {
       {open && (
         <>
           {/* Click-outside backdrop */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setOpen(false)}
-          />
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div
             className="absolute right-0 z-20 mt-1 w-72 rounded-md border bg-background p-2 shadow-md"
             role="menu"
@@ -1195,16 +1268,14 @@ function SendToBuyer({ invoice }: { invoice: AdminInvoice }) {
                   {copied ? "Copied!" : "Copy download link"}
                 </button>
                 <p className="mt-1 border-t px-2 pt-2 text-[10px] text-muted-foreground leading-snug">
-                  Message includes a secure 7-day download link to the
-                  FBR-validated PDF. The recipient clicks the link to
-                  open the invoice in their browser.
+                  Message includes a secure 7-day download link to the FBR-validated PDF. The
+                  recipient clicks the link to open the invoice in their browser.
                 </p>
               </>
             ) : (
               <p className="px-2 py-2 text-xs text-muted-foreground leading-snug">
-                Send-to-buyer is only available once the invoice is
-                validated by FBR. Validate or Submit the invoice
-                first.
+                Send-to-buyer is only available once the invoice is validated by FBR. Validate or
+                Submit the invoice first.
               </p>
             )}
           </div>
@@ -1213,7 +1284,6 @@ function SendToBuyer({ invoice }: { invoice: AdminInvoice }) {
     </div>
   );
 }
-
 
 /**
  * "More" overflow menu — collects rarely-clicked actions so the main
@@ -1297,7 +1367,6 @@ function MoreActionsMenu({ items }: { items: MoreActionsItem[] }) {
   );
 }
 
-
 /**
  * FBR Submissions Log — shows every PRAL roundtrip for this invoice in
  * chronological order. The client sees exactly what we sent and what
@@ -1311,7 +1380,13 @@ function MoreActionsMenu({ items }: { items: MoreActionsItem[] }) {
  * (REVOKE UPDATE/DELETE in apps/fbr/0002), so this is also our
  * legal-retention audit log.
  */
-function FbrSubmissionsPanel({ invoiceId, authority = "FBR" }: { invoiceId: string; authority?: string }) {
+function FbrSubmissionsPanel({
+  invoiceId,
+  authority = "FBR",
+}: {
+  invoiceId: string;
+  authority?: string;
+}) {
   const { data, isLoading } = useFbrSubmissions({ invoice: invoiceId });
   const rows = data?.results ?? [];
 
@@ -1335,8 +1410,8 @@ function FbrSubmissionsPanel({ invoiceId, authority = "FBR" }: { invoiceId: stri
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            No {authority} roundtrips recorded yet. This invoice hasn't been
-            submitted to {authority}.
+            No {authority} roundtrips recorded yet. This invoice hasn't been submitted to{" "}
+            {authority}.
           </p>
         </CardContent>
       </Card>
@@ -1385,16 +1460,11 @@ function SubmissionRow({ row }: { row: FbrSubmissionRow }) {
   const ok = row.status_code === "00";
   return (
     <>
-      <TableRow
-        className="cursor-pointer hover:bg-muted/40"
-        onClick={() => setOpen((v) => !v)}
-      >
+      <TableRow className="cursor-pointer hover:bg-muted/40" onClick={() => setOpen((v) => !v)}>
         <TableCell className="font-mono text-xs">
           {new Date(row.submitted_at).toLocaleString()}
           {/* Endpoint surfaced inline where its column is hidden. */}
-          <span className="block text-[11px] text-muted-foreground lg:hidden">
-            {row.endpoint}
-          </span>
+          <span className="block text-[11px] text-muted-foreground lg:hidden">{row.endpoint}</span>
         </TableCell>
         <TableCell className="hidden font-mono text-xs lg:table-cell">{row.endpoint}</TableCell>
         <TableCell className="hidden text-xs xl:table-cell">
@@ -1406,9 +1476,7 @@ function SubmissionRow({ row }: { row: FbrSubmissionRow }) {
           {row.http_status}
         </TableCell>
         <TableCell className="text-right font-mono text-xs">
-          <Badge variant={ok ? "success" : "destructive"}>
-            {row.status_code || "—"}
-          </Badge>
+          <Badge variant={ok ? "success" : "destructive"}>{row.status_code || "—"}</Badge>
         </TableCell>
         <TableCell className="hidden text-right font-mono text-xs xl:table-cell">
           {row.duration_ms ?? "—"}

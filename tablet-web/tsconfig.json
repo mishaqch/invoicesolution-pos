@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    // Vite does the bundling — tsc is type-check only. Without noEmit, `tsc -b`
+    // (the build script) emits .js next to every .tsx in src/, and those stale
+    // artifacts then SHADOW the real source in the dev server (an edit to a .tsx
+    // silently does nothing because Vite serves the old .js). Emit nothing.
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "useDefineForClassFields": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@pos/shared/*": ["../shared/*"]
+    }
+  },
+  "include": ["src", "../shared/types"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

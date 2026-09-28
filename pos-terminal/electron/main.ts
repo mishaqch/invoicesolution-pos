@@ -13,6 +13,7 @@ import { initAutoUpdate } from "./auto-update";
 import { closeCustomerDisplay, watchDisplayChanges } from "./customer-display";
 import { openDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc";
+import { startKotRelay, stopKotRelay } from "./kot-relay";
 import { expediteWorker, startSyncWorker, stopSyncWorker } from "./sync/manager";
 
 const isDev = !!process.env["ELECTRON_RENDERER_URL"];
@@ -185,6 +186,10 @@ void app.whenReady().then(() => {
   // Background subsystems — all non-fatal.
   safeStep("startSyncWorker", () => startSyncWorker({ dbPath, apiBase }));
   safeStep("startReachabilityMonitor", () => startReachabilityMonitor(apiBase));
+  // Prints orders fired from printer-less waiter tablets (polls the server for
+  // fired-but-unprinted KOTs and drives the kitchen printer). Harmless on tills
+  // with no waiter tablets — the unprinted feed is simply empty.
+  safeStep("startKotRelay", () => startKotRelay(apiBase));
   // Open customer-facing display on a secondary monitor when present;
   // re-attempts on display hot-plug. No-op for single-display setups.
   safeStep("watchDisplayChanges", () => watchDisplayChanges());
@@ -203,6 +208,7 @@ app.on("before-quit", () => {
     reachabilityTimer = null;
   }
   stopSyncWorker();
+  stopKotRelay();
   closeCustomerDisplay();
 });
 

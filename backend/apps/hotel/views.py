@@ -100,6 +100,22 @@ class RoomViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
         instance.is_active = False
         instance.save(update_fields=["deleted_at", "is_active", "updated_at"])
 
+    @action(
+        detail=True, methods=["post"], url_path="release",
+        permission_classes=[_HOTEL_GATE, HasRolePerm.with_perm(_CANCEL_PERM)],
+    )
+    def release(self, request, pk=None):
+        """Manager force-release a STUCK room back to available (refused if it
+        still has an open stay). Fixes the rare 'room won't accept a new check-in'
+        case caused by a folio closed outside the app."""
+        room = self.get_object()
+        try:
+            room = services.release_room(room=room, user=request.user)
+        except (DjangoValidationError, ValidationError) as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else exc.detail
+            raise ValidationError(detail)
+        return Response(RoomSerializer(room).data, status=status.HTTP_200_OK)
+
 
 class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.GenericViewSet):
     """Guest folios — open a stay, add charges, checkout, consolidated bill."""

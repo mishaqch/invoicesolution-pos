@@ -173,6 +173,63 @@ class TerminalViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
             "sdc_url": getattr(settings, "FBR_SDC_BASE_URL", "") or "http://localhost:8524",
         }, status=status.HTTP_200_OK)
 
+    @action(
+        detail=False, methods=["post"], url_path="roster",
+        permission_classes=[AllowAny], authentication_classes=[],
+    )
+    def roster(self, request):
+        """Public: a PAIRED device fetches its branch's order-taking staff so a
+        waiter can tap a name instead of typing an email before the PIN.
+
+        Trust model mirrors `pair`: the caller proves it is a paired device by
+        presenting its terminal_id + the device_fingerprint bound to it. We
+        return NO secrets — only display name + email + role, which the tablet
+        then pairs with the waiter's own PIN (the actual auth). Cashier identity
+        stays decoupled from device identity.
+        """
+        from apps.tenants.models import TenantMembership
+
+        terminal_id = (request.data.get("terminal_id") or "").strip()
+        fingerprint = (request.data.get("device_fingerprint") or "").strip()
+        if not terminal_id or not fingerprint:
+            raise ValidationError({"detail": "terminal_id and device_fingerprint are required."})
+
+        terminal = (
+            Terminal.objects.select_related("tenant", "branch")
+            .filter(pk=terminal_id, device_fingerprint=fingerprint, is_active=True)
+            .first()
+        )
+        if terminal is None:
+            # Same opaque error whether the id is wrong or the fingerprint doesn't
+            # match — don't leak which terminals exist.
+            raise ValidationError({"detail": "This device is not paired."})
+
+        # Only roles that actually take/close orders belong on the tablet's tap
+        # list: waiter (fires), plus cashier/manager/owner (can also fire + charge).
+        order_roles = ["waiter", "cashier", "manager", "owner"]
+        members = (
+            TenantMembership.objects.select_related("user")
+            .filter(
+                tenant_id=terminal.tenant_id, role__in=order_roles,
+                is_active=True, user__is_active=True,
+            )
+            .order_by("user__full_name")
+        )
+        staff = [
+            {
+                "name": m.user.full_name,
+                "email": m.user.email,
+                "role": m.role,
+                "has_pin": bool(getattr(m.user, "pin_hash", "")),
+            }
+            for m in members
+        ]
+        return Response({
+            "branch_id": str(terminal.branch_id),
+            "branch_name": terminal.branch.name,
+            "staff": staff,
+        }, status=status.HTTP_200_OK)
+
 
 class OnboardingStateView(APIView):
     """GET / PATCH the tenant's onboarding wizard progress.

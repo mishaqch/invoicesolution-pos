@@ -12,9 +12,18 @@ import { useToast } from "@/components/feedback/Toast";
 import { useSaleStore, type OrderType } from "@/stores/sale";
 import { OpenOrdersPanel } from "./OpenOrdersPanel";
 
-interface TableRow { id: string; name: string; seats: number }
+interface TableRow {
+  id: string;
+  name: string;
+  seats: number;
+}
 // The floor endpoint returns each table plus its open order (null = free).
-interface FloorTable { id: string; name: string; seats: number; order: unknown | null }
+interface FloorTable {
+  id: string;
+  name: string;
+  seats: number;
+  order: unknown | null;
+}
 
 const TYPES: { value: OrderType; label: string }[] = [
   { value: "dine_in", label: "Dine-in" },
@@ -75,7 +84,10 @@ export function OrderTypeBar({
   // For takeaway/delivery, mirror the typed name/phone/address onto the sale's
   // customer so it flows to the order + receipt. A walk-in (unregistered) buyer.
   function pushCustomer(name: string, phone: string, addr: string) {
-    if (!name && !phone && !addr) { setCustomer(null); return; }
+    if (!name && !phone && !addr) {
+      setCustomer(null);
+      return;
+    }
     setCustomer({
       id: "",
       name: name || "Walk-in",
@@ -104,9 +116,16 @@ export function OrderTypeBar({
       const rows: TableRow[] = available.map((t) => ({ id: t.id, name: t.name, seats: t.seats }));
       setTables(rows);
       if (all.length === 0) {
-        toast.show({ message: "No tables found for this account. Add tables in admin → Restaurant → Tables.", variant: "warning" });
+        toast.show({
+          message: "No tables found for this account. Add tables in admin → Restaurant → Tables.",
+          variant: "warning",
+        });
       } else if (rows.length === 0) {
-        toast.show({ message: "All tables are occupied right now. Free one from Open orders (charge/close it) to reuse it.", variant: "warning" });
+        toast.show({
+          message:
+            "All tables are occupied right now. Free one from Open orders (charge/close it) to reuse it.",
+          variant: "warning",
+        });
       }
     } catch (err) {
       // Surface the failure instead of silently showing an empty picker.
@@ -126,7 +145,9 @@ export function OrderTypeBar({
             type="button"
             onClick={() => setOrderContext({ orderType: t.value, tableId: null, tableName: null })}
             className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
-              orderType === t.value ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
+              orderType === t.value
+                ? "bg-primary text-primary-foreground"
+                : "bg-background hover:bg-muted"
             }`}
           >
             {t.label}
@@ -156,25 +177,36 @@ export function OrderTypeBar({
             // rendered transparent. Use defined tokens (bg-background/bg-muted).
             <div className="absolute left-0 top-full z-30 mt-1 grid max-h-64 w-72 grid-cols-4 gap-1.5 overflow-auto rounded-md border bg-background p-2 shadow-lg">
               {tables.length === 0 ? (
-                <span className="col-span-4 p-2 text-xs text-muted-foreground">No tables (or offline).</span>
-              ) : tables.map((t) => {
-                const active = tableId === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => { setOrderContext({ orderType: "dine_in", tableId: t.id, tableName: t.name }); setPicking(false); }}
-                    className={`rounded-md border px-3 py-2 text-center transition-colors ${
-                      active
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-input bg-muted hover:bg-primary/10 hover:border-primary"
-                    }`}
-                  >
-                    <div className="font-semibold">{t.name}</div>
-                    <div className={`text-[10px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}>{t.seats} seats</div>
-                  </button>
-                );
-              })}
+                <span className="col-span-4 p-2 text-xs text-muted-foreground">
+                  No tables (or offline).
+                </span>
+              ) : (
+                tables.map((t) => {
+                  const active = tableId === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setOrderContext({ orderType: "dine_in", tableId: t.id, tableName: t.name });
+                        setPicking(false);
+                      }}
+                      className={`rounded-md border px-3 py-2 text-center transition-colors ${
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-input bg-muted hover:bg-primary/10 hover:border-primary"
+                      }`}
+                    >
+                      <div className="font-semibold">{t.name}</div>
+                      <div
+                        className={`text-[10px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}
+                      >
+                        {t.seats} seats
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
           )}
         </div>
@@ -185,13 +217,19 @@ export function OrderTypeBar({
         <div className="ml-2 flex flex-1 items-center gap-2">
           <input
             value={custName}
-            onChange={(e) => { setCustName(e.target.value); pushCustomer(e.target.value, custPhone, custAddr); }}
+            onChange={(e) => {
+              setCustName(e.target.value);
+              pushCustomer(e.target.value, custPhone, custAddr);
+            }}
             placeholder="Customer name"
             className="h-8 w-36 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
           <input
             value={custPhone}
-            onChange={(e) => { setCustPhone(e.target.value); pushCustomer(custName, e.target.value, custAddr); }}
+            onChange={(e) => {
+              setCustPhone(e.target.value);
+              pushCustomer(custName, e.target.value, custAddr);
+            }}
             placeholder="Phone"
             inputMode="tel"
             className="h-8 w-32 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
@@ -199,7 +237,10 @@ export function OrderTypeBar({
           {orderType === "delivery" && (
             <input
               value={custAddr}
-              onChange={(e) => { setCustAddr(e.target.value); pushCustomer(custName, custPhone, e.target.value); }}
+              onChange={(e) => {
+                setCustAddr(e.target.value);
+                pushCustomer(custName, custPhone, e.target.value);
+              }}
               placeholder="Delivery address"
               className="h-8 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
             />

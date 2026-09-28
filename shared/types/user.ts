@@ -1,4 +1,4 @@
-export type Role = "owner" | "manager" | "cashier" | "accountant" | "auditor";
+export type Role = "owner" | "manager" | "cashier" | "waiter" | "accountant" | "auditor";
 
 export type Language = "en" | "ur";
 

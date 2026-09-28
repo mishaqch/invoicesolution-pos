@@ -34,8 +34,7 @@ export default function CsvImport() {
     const formData = new FormData();
     formData.append("file", file);
     const url =
-      `${API_BASE}/catalog/products/import/` +
-      (target === "dry-run" ? "?dry_run=true" : "");
+      `${API_BASE}/catalog/products/import/` + (target === "dry-run" ? "?dry_run=true" : "");
     const resp = await fetch(url, {
       method: "POST",
       body: formData,
@@ -100,11 +99,15 @@ export default function CsvImport() {
     }
   }
 
-  const canCommit = dryRun !== null && dryRun.counts.errored === 0 && (dryRun.counts.new + dryRun.counts.updated) > 0;
+  const canCommit =
+    dryRun !== null && dryRun.counts.errored === 0 && dryRun.counts.new + dryRun.counts.updated > 0;
 
   return (
     <div className="space-y-4">
-      <Link to="/catalog/products" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        to="/catalog/products"
+        className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+      >
         <ArrowLeft className="mr-1 h-4 w-4" /> Back to products
       </Link>
 
@@ -114,9 +117,9 @@ export default function CsvImport() {
         <CardHeader>
           <CardTitle>1. Download the template (recommended)</CardTitle>
           <CardDescription>
-            Not sure about the format? Download the template — it has the exact
-            column headers, a couple of example rows, and a short guide. Fill it in
-            and upload below (as CSV or Excel).
+            Not sure about the format? Download the template — it has the exact column headers, a
+            couple of example rows, and a short guide. Fill it in and upload below (as CSV or
+            Excel).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -130,14 +133,15 @@ export default function CsvImport() {
         <CardHeader>
           <CardTitle>2. Pick a CSV or Excel file</CardTitle>
           <CardDescription>
-            <strong>Required:</strong> <code>sku</code>, <code>name</code>, <code>uom_code</code>, <code>sale_price</code>.{" "}
-            <strong>Optional:</strong> barcode, name_ur, description, category, hs_code, tax_rate,
-            cost_price, retail_price, min_sale_price, max_discount_pct, reorder_level, is_active, is_taxable.
+            <strong>Required:</strong> <code>sku</code>, <code>name</code>, <code>uom_code</code>,{" "}
+            <code>sale_price</code>. <strong>Optional:</strong> barcode, name_ur, description,
+            category, hs_code, tax_rate, cost_price, retail_price, min_sale_price, max_discount_pct,
+            reorder_level, is_active, is_taxable.
             <br />
-            Column names are matched flexibly (e.g. “Sale Price” = <code>sale_price</code>, “Unit” = <code>uom_code</code>).
-            tax_rate accepts a rate name or a percentage like 16%. A new category name is created
-            automatically; uom, tax_rate and hs_code must already exist. Prices may include Rs / commas.
-            CSV (UTF-8) or Excel .xlsx.
+            Column names are matched flexibly (e.g. “Sale Price” = <code>sale_price</code>, “Unit” ={" "}
+            <code>uom_code</code>). tax_rate accepts a rate name or a percentage like 16%. A new
+            category name is created automatically; uom, tax_rate and hs_code must already exist.
+            Prices may include Rs / commas. CSV (UTF-8) or Excel .xlsx.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -151,7 +155,11 @@ export default function CsvImport() {
               setError(null);
             }}
           />
-          {file && <p className="text-sm text-muted-foreground">Selected: <strong>{file.name}</strong></p>}
+          {file && (
+            <p className="text-sm text-muted-foreground">
+              Selected: <strong>{file.name}</strong>
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -186,7 +194,9 @@ export default function CsvImport() {
               {dryRun.errors.length > 0 && (
                 <div className="mt-3 max-h-64 overflow-auto rounded-md border bg-background p-3 text-xs font-mono">
                   {dryRun.errors.slice(0, 100).map((err, i) => (
-                    <div key={i}>row {err.row}: <strong>{err.column}</strong> — {err.message}</div>
+                    <div key={i}>
+                      row {err.row}: <strong>{err.column}</strong> — {err.message}
+                    </div>
                   ))}
                   {dryRun.errors.length > 100 && (
                     <div className="mt-1 text-muted-foreground">

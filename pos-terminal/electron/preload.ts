@@ -66,6 +66,23 @@ export interface PosCashSessionRow {
   status: "open" | "closed";
 }
 
+/** End-of-day summary returned by GET /api/sales/cash-sessions/<id>/summary/. */
+export interface DailySummary {
+  date?: string;
+  session_id?: string;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  opening_cash?: string;
+  total_sales: string;
+  total_tax: string;
+  total_discount: string;
+  total_orders: number;
+  cancelled_orders: number;
+  cancelled_items: number;
+  /** method → { count, total } across cash / card / online / … */
+  payment_breakup: Record<string, { count: number; total: string }>;
+}
+
 export interface PosInvoiceRow {
   id: string;
   client_uuid: string;
@@ -257,6 +274,13 @@ const api = {
       ipcRenderer.invoke("session:current", terminal_id),
     totals: (session_id: string): Promise<{ total_sales: string }> =>
       ipcRenderer.invoke("session:totals", session_id),
+    /**
+     * Full end-of-day summary from the server for the daily report on Day-close
+     * / logout: total sales, total orders, cancelled items/orders, payment
+     * breakup (cash/card/online) and total discount. Null if offline / no token.
+     */
+    summary: (session_id: string): Promise<DailySummary | null> =>
+      ipcRenderer.invoke("session:summary", session_id),
     close: (
       id: string,
       args: {
@@ -281,6 +305,11 @@ const api = {
       payload: unknown,
     ): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
       ipcRenderer.invoke("printer:print-folio", payload),
+    /** Print the end-of-day daily summary (Z-report) + save a copy to disk. */
+    printDailyReport: (
+      payload: unknown,
+    ): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
+      ipcRenderer.invoke("printer:print-daily-report", payload),
     /** Print a diagnostic slip. Pass an interface string to test before saving. */
     test: (iface?: string): Promise<{ success: boolean; reason?: string; fallbackPath?: string }> =>
       ipcRenderer.invoke("printer:test", iface),
