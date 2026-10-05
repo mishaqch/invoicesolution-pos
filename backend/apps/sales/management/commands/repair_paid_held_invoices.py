@@ -119,6 +119,10 @@ class Command(BaseCommand):
                     order_status="sent_to_kitchen",
                 ),
             )
+            # A zero-value fired order has nothing to bill — the lines were
+            # all removed or voided before charge. Recovering it would put an
+            # empty invoice in the list.
+            qs = qs.exclude(Q(grand_total=0) & Q(n_completed=0))
         else:
             qs = qs.filter(n_completed__gt=0)
         if tenant_id:

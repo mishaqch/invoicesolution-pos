@@ -76,9 +76,12 @@ def test_void_refuses_order_with_completed_payment(scene):
 
 
 def test_void_still_removes_a_genuinely_unpaid_order(scene):
-    """The legitimate case must keep working: no payment -> void proceeds."""
+    """The legitimate case must keep working: an order abandoned BEFORE it was
+    fired to the kitchen is a draft and stays voidable."""
     tenant, branch, terminal, user = scene
     inv = _order(tenant, branch, terminal, user, number="KK-T2-2026-0000545")
+    inv.order_status = "open"
+    inv.save(update_fields=["order_status"])
 
     result = void_open_order(tenant_id=tenant.id, client_uuid=inv.client_uuid)
 
@@ -91,6 +94,8 @@ def test_void_ignores_a_failed_payment(scene):
     """A failed/declined tender is not money taken -- the order stays voidable."""
     tenant, branch, terminal, user = scene
     inv = _order(tenant, branch, terminal, user, number="KK-T2-2026-0000546")
+    inv.order_status = "open"   # not fired: the kitchen guard does not apply
+    inv.save(update_fields=["order_status"])
     Payment.objects.create(
         tenant=tenant, invoice=inv, payment_method="card",
         amount=Decimal("1000"), status="failed",
@@ -119,6 +124,10 @@ def test_charging_a_voided_order_restores_it(scene):
 
     tenant, branch, terminal, user = scene
     held = _order(tenant, branch, terminal, user, number="KK-T2-2026-0000534")
+    # Reproduce the race on an order the kitchen guard does not cover, so the
+    # void still lands and we can prove the CHARGE resurrects it.
+    held.order_status = "open"
+    held.save(update_fields=["order_status"])
     client_uuid = held.client_uuid
 
     # 2. the racing void wins (no payment yet, so the new guard allows it)
@@ -151,3 +160,23 @@ def test_charging_a_voided_order_restores_it(scene):
     assert invoice.deleted_at is None, "paid sale is still soft-deleted -- hidden from admin"
     assert invoice.is_held is False
     assert invoice.local_invoice_number == "KK-T2-2026-0000534", "number must be preserved"
+
+
+def test_void_refuses_a_fired_order_even_with_no_payment(scene):
+    """Stopgap for tills older than v0.0.48.
+
+    Those builds never enqueued the paid invoice, so the server sees no
+    payment for a restaurant sale and the completed-payment guard can never
+    fire. Food that reached the kitchen was cooked and served, so the order
+    must survive regardless of payment state -- otherwise this call deletes
+    a real sale, which is exactly what cost 46 invoices on 2026-10-04.
+    """
+    tenant, branch, terminal, user = scene
+    inv = _order(tenant, branch, terminal, user, number="KK-T2-2026-0000570")
+    assert inv.order_status == "sent_to_kitchen"
+
+    result = void_open_order(tenant_id=tenant.id, client_uuid=inv.client_uuid)
+
+    assert result is None, "a served order must not be voided"
+    inv.refresh_from_db()
+    assert inv.deleted_at is None

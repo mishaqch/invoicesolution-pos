@@ -285,6 +285,20 @@ def void_open_order(*, tenant_id, client_uuid, user=None, request=None) -> Invoi
     # NULL) then hid them from the client admin entirely.
     if invoice.payments.filter(status="completed").exists():
         return None
+
+    # STOPGAP for tills running a build older than v0.0.48.
+    #
+    # On those builds the paid invoice was never enqueued (persistInvoice hit
+    # an early-return before the enqueue block), so the server never receives
+    # a payment for a restaurant sale -- the completed-payment guard above can
+    # never fire, and this call would soft-delete a real sale.
+    #
+    # Food that reached the kitchen was cooked and served. Such an order is
+    # not a draft to be discarded, so refuse to void it regardless of payment
+    # state. An order the cashier genuinely abandons is voided BEFORE it is
+    # fired (order_status 'open'), which this still permits.
+    if invoice.order_status == "sent_to_kitchen":
+        return None
     invoice.deleted_at = timezone.now()
     invoice.save(update_fields=["deleted_at", "updated_at"])
     audit.log(
