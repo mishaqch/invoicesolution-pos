@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { MethodPicker } from "@/features/payment/MethodPicker";
-import { voidOpenOrder } from "@/features/restaurant/api";
 import {
   BankTransferSubFlow,
   CardSubFlow,
@@ -332,14 +331,19 @@ export default function PaymentRoute() {
       void window.api.sync.kick();
       void window.api?.sync?.expedite?.();
 
-      // Restaurant: remove the order from "Open orders" IMMEDIATELY via a direct
-      // call (same reliable path as Send-to-kitchen), instead of waiting for the
-      // checkout invoice to sync + finalize. This guarantees a charged order
-      // leaves Open orders even if the invoice sync is delayed/failing. No-op
-      // (voided=false) for a straight-through sale that was never an open order.
-      if (useSessionStore.getState().tenant?.vertical === "restaurant") {
-        void voidOpenOrder(clientUuid).catch(() => {});
-      }
+      // Restaurant: a charged order must leave "Open orders".
+      //
+      // This used to call voidOpenOrder() immediately, in parallel with the
+      // sync above. That raced: voidOpenOrder soft-deletes a row that is still
+      // is_held=True, and at that instant the paid invoice had not finished
+      // syncing, so the row WAS still held -- the call soft-deleted the sale
+      // the guest had just paid for, and it vanished from the client admin.
+      //
+      // The server is now the one that clears the order: finalizing the paid
+      // invoice sets is_held=False + order_status='served', which drops it from
+      // open_orders_qs. void_open_order also refuses any order carrying a
+      // completed payment, so even a stale call can no longer delete a sale.
+      // We no longer void from here at all -- the sync IS the removal.
 
       navigate("/success", {
         replace: true,

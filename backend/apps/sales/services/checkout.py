@@ -78,11 +78,24 @@ def create_invoice(
     # recreate — deleting would trip the DB-level DELETE grant on the append-only
     # fbr_submissions table that the Invoice FK points at.
     finalize_held: Invoice | None = None
-    existing = Invoice.objects.filter(client_uuid=client_uuid).first()
+    # Scope by tenant: client_uuid is a UUID so a cross-tenant hit is
+    # vanishingly unlikely, but every other lookup in this codebase is
+    # tenant-scoped and an unscoped one here would finalize another
+    # tenant's invoice if a client ever reused a uuid.
+    existing = Invoice.objects.filter(
+        tenant_id=tenant_id, client_uuid=client_uuid,
+    ).first()
     if existing is not None:
         if not existing.is_held:
             return existing  # already a finalized sale — true duplicate POST.
         finalize_held = existing
+        # The order may have been soft-deleted by a racing void_open_order()
+        # (the terminal fired it at Charge while this sync was still in
+        # flight). Payment is arriving NOW, which proves the order was
+        # charged, not abandoned — so un-delete it. Without this the paid
+        # sale is finalized but stays deleted_at != NULL and is hidden from
+        # the invoice list forever.
+        finalize_held.deleted_at = None
         finalize_held.items.all().delete()  # provisional snapshot, no payments/stock yet
 
     # Consistency: the terminal must belong to the invoice's branch. Otherwise

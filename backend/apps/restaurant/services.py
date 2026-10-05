@@ -276,6 +276,15 @@ def void_open_order(*, tenant_id, client_uuid, user=None, request=None) -> Invoi
     )
     if invoice is None:
         return None
+
+    # NEVER void an order that has taken money. The terminal fires this call
+    # immediately at Charge while the paid invoice is still syncing, so the row
+    # can legitimately still be is_held=True at this instant -- is_held alone is
+    # NOT proof the order is unpaid. Voiding here soft-deleted sales the guest
+    # had already paid for, and the invoice list (is_held=False, deleted_at IS
+    # NULL) then hid them from the client admin entirely.
+    if invoice.payments.filter(status="completed").exists():
+        return None
     invoice.deleted_at = timezone.now()
     invoice.save(update_fields=["deleted_at", "updated_at"])
     audit.log(

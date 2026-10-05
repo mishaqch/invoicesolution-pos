@@ -201,9 +201,66 @@ export function persistInvoice(args: PersistInvoiceArgs): void {
   // a partial failure). Return the existing id instead of throwing the raw
   // "UNIQUE constraint failed: invoices.client_uuid" SqliteError at the till.
   const existing = db
-    .prepare("SELECT id FROM invoices WHERE client_uuid = ?")
-    .get(args.invoice.client_uuid) as { id: string } | undefined;
+    .prepare("SELECT id, is_held FROM invoices WHERE client_uuid = ?")
+    .get(args.invoice.client_uuid) as { id: string; is_held: number } | undefined;
   if (existing) {
+    // A restaurant order reuses ONE client_uuid for its whole life: it is first
+    // persisted HELD (fired to the kitchen), then persisted again when the
+    // cashier charges it. Returning early on that second call skipped the
+    // enqueue block below, so the PAID invoice was never queued and never
+    // reached the server -- /api/sync/invoices/ was hit zero times in the
+    // entire log history, and the sale only existed as a held open order that
+    // was later voided. Finalize the held row in place and queue it now.
+    if (existing.is_held === 1 && !args.is_held) {
+      const payload = args.syncPayload ?? {
+        invoice: args.invoice, items: args.items, payments: args.payments,
+      };
+      const finalize = db.transaction(() => {
+        db.prepare(
+          `UPDATE invoices
+              SET is_held = 0, held_label = NULL,
+                  subtotal = @subtotal, discount_total = @discount_total,
+                  tax_total = @tax_total, grand_total = @grand_total,
+                  paid_total = @paid_total, change_given = @change_given,
+                  updated_at = @updated_at
+            WHERE id = @id`,
+        ).run({
+          id: existing.id,
+          subtotal: args.invoice.subtotal,
+          discount_total: args.invoice.discount_total,
+          tax_total: args.invoice.tax_total,
+          grand_total: args.invoice.grand_total,
+          paid_total: args.invoice.paid_total,
+          change_given: args.invoice.change_given,
+          updated_at: now,
+        });
+        // Replace the provisional (held) line snapshot with what was charged.
+        db.prepare(`DELETE FROM sale_items WHERE invoice_id = ?`).run(existing.id);
+        for (const item of args.items) {
+          insertItem.run({
+            ...item,
+            invoice_id: existing.id,
+            notes: item.notes ?? null,
+            batch_id: item.batch_id ?? null,
+            modifiers:
+              item.modifiers && item.modifiers.length
+                ? JSON.stringify(item.modifiers)
+                : null,
+            item_note: item.item_note ?? null,
+          });
+        }
+        for (const pmt of args.payments) {
+          insertPayment.run({ status: "completed", created_at: now, ...pmt,
+                              invoice_id: existing.id });
+        }
+        insertQueueRow.run(
+          args.invoice.client_uuid,
+          existing.id,
+          JSON.stringify(payload),
+        );
+      });
+      finalize();
+    }
     return;
   }
 

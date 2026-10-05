@@ -15,6 +15,7 @@ import { openDb } from "./db/client";
 import { registerIpcHandlers } from "./ipc";
 import { startKotRelay, stopKotRelay } from "./kot-relay";
 import { expediteWorker, startSyncWorker, stopSyncWorker } from "./sync/manager";
+import { backfillUnqueuedPaidSales } from "./db/backfill";
 
 const isDev = !!process.env["ELECTRON_RENDERER_URL"];
 
@@ -184,6 +185,13 @@ void app.whenReady().then(() => {
   safeStep("registerIpcHandlers", () => registerIpcHandlers({ apiBase }));
   safeStep("createWindow", () => createWindow());
   // Background subsystems — all non-fatal.
+  // One-time: re-queue PAID sales the old early-return never enqueued, so a
+  // till updating to this build uploads its backlog instead of losing it.
+  // Must run BEFORE the worker starts so the rows are picked up immediately.
+  safeStep("backfillUnqueuedPaidSales", () => {
+    const r = backfillUnqueuedPaidSales();
+    if (r.queued) logStartup(`backfill: re-queued ${r.queued} paid sale(s) for sync`);
+  });
   safeStep("startSyncWorker", () => startSyncWorker({ dbPath, apiBase }));
   safeStep("startReachabilityMonitor", () => startReachabilityMonitor(apiBase));
   // Prints orders fired from printer-less waiter tablets (polls the server for
