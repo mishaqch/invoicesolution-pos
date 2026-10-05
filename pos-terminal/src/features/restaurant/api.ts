@@ -25,6 +25,10 @@ export interface OpenOrderDetail extends OpenOrderSummary {
   client_uuid: string;
   customer_id: string | null;
   cart_lines: {
+    /** SaleItem id — needed to ack a KOT print via markKotPrinted(). */
+    id?: string;
+    /** True once some terminal has printed this line's KOT. */
+    kot_printed?: boolean;
     product: string;
     product_name: string;
     product_sku: string;
@@ -76,6 +80,28 @@ export interface FireOrderPayload {
     // never un-fires a line that already went to the kitchen.
     sent_to_kitchen?: boolean;
   }[];
+}
+
+/**
+ * Ack a KOT print: stamp kot_printed_at on exactly these lines.
+ *
+ * The firing till must call this after printing its own slip. The server's
+ * unprinted feed is (sent_to_kitchen AND kot_printed_at IS NULL), so a line
+ * left unacked is re-served to the KOT relay and printed a second time.
+ * Server-side the UPDATE is conditional on IS NULL, so retries are safe.
+ */
+export function markKotPrinted(
+  invoiceId: string,
+  itemIds: string[],
+  terminalId?: string | null,
+): Promise<{ marked: number }> {
+  return api(`/restaurant/orders/${invoiceId}/mark-printed/`, {
+    method: "POST",
+    body: JSON.stringify({
+      item_ids: itemIds,
+      ...(terminalId ? { terminal_id: terminalId } : {}),
+    }),
+  });
 }
 
 /** Create/update the server-side open order (fire kitchen). Idempotent on client_uuid. */

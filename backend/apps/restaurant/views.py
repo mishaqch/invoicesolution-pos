@@ -363,6 +363,11 @@ def _order_detail_payload(inv: Invoice) -> dict:
     base = _order_payload(inv)
     base["cart_lines"] = [
         {
+            # Line id + print state let the firing till ack its OWN KOT print
+            # via mark-printed/. Without them kot_printed_at stayed NULL, the
+            # relay saw the lines as unprinted and printed a SECOND slip.
+            "id": str(it.id),
+            "kot_printed": it.kot_printed_at is not None,
             "product": str(it.product_id),
             "product_name": it.product_name,
             "product_sku": it.product_sku,

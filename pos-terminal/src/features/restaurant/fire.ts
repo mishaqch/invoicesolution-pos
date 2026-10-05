@@ -16,7 +16,7 @@
 
 import { useSaleStore, type CartLine } from "@/stores/sale";
 import { pkDate, pkTimeHHMM } from "@/lib/pk-time";
-import { fireOpenOrder, voidOpenOrder } from "./api";
+import { fireOpenOrder, markKotPrinted, voidOpenOrder, type OpenOrderDetail } from "./api";
 
 /**
  * Return this order's INVOICE NUMBER (e.g. "KK-T3-2026-0000123"), minted once
@@ -84,11 +84,13 @@ export async function fireUnsentToKitchen(opts: {
   // 1) Server open order (full snapshot so KDS shows everything).
   let serverOk = false;
   let serverErr: string | null = null;
+  // Captured so we can ack our OWN print via mark-printed/ below.
+  let fired: OpenOrderDetail | null = null;
   if (!opts.branchId || !opts.terminalId) {
     serverErr = "terminal not paired to a branch";
   } else {
     try {
-      await fireOpenOrder({
+      fired = await fireOpenOrder({
         client_uuid: st.clientUuid,
         terminal: opts.terminalId,
         branch: opts.branchId,
@@ -151,7 +153,33 @@ export async function fireUnsentToKitchen(opts: {
     /* printer error — KOT goes to disk via the main-process fallback */
   }
 
-  // 3) Mark fired only when the kitchen actually got them.
+  // 3) Tell the server WE printed these lines.
+  //
+  // Without this kot_printed_at stayed NULL forever, so the KOT relay — which
+  // polls for sent_to_kitchen lines that are NOT yet printed — saw this order
+  // as unprinted and printed a SECOND slip at the kitchen. It also broke
+  // incremental fires: upsert_open_order carries kot_printed_at across its
+  // delete+recreate to decide which lines are new, and with every line
+  // unprinted an "add 2 more items" re-fire reprinted the WHOLE order.
+  //
+  // Ack only the lines we actually printed, and only on a successful print.
+  // The endpoint is conditional on kot_printed_at IS NULL, so this is safe to
+  // retry and cannot clobber a line the relay already acked.
+  if (printOk && fired?.id) {
+    const printedIds = (fired.cart_lines ?? [])
+      .filter((l) => !l.kot_printed && l.id)
+      .map((l) => l.id as string);
+    if (printedIds.length) {
+      try {
+        await markKotPrinted(fired.id, printedIds, opts.terminalId ?? null);
+      } catch {
+        // Best-effort: a lost ack just means the relay may print a duplicate
+        // once. Never block the cashier on it.
+      }
+    }
+  }
+
+  // 4) Mark fired only when the kitchen actually got them.
   if (serverOk || printOk) {
     const update = useSaleStore.getState().updateLine;
     unsent.forEach((l) => update(l.id, { sent_to_kitchen: true }));
