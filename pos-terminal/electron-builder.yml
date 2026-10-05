@@ -103,6 +103,12 @@ linux:
     - deb
   category: Office
   maintainer: support@pakistanpos.example.com
+  # Explicit, or electron-builder falls back to ${name} — which is the SCOPED
+  # package name "@pos/pos-terminal". fpm then reads the "@pos/" part as a
+  # directory that doesn't exist and dies with:
+  #   Parent directory does not exist: .../release/<ver>/@pos
+  # That failed the Linux leg and cancelled the Windows .exe with it.
+  artifactName: InvoiceSolution-${version}-${arch}.${ext}
 
 # Auto-update — SELF-HOSTED "generic" feed on our own VPS (no GitHub dependency,
 # works with a private repo). electron-builder writes latest.yml + the .exe +

@@ -28,6 +28,9 @@ on:
 jobs:
   build:
     strategy:
+      # The Windows .exe is what the tills install. Don't let a failure in the
+      # Linux leg cancel it — that is exactly what happened on v0.0.48.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
