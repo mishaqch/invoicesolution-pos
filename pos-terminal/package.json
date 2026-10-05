@@ -1,8 +1,8 @@
 {
   "name": "@pos/pos-terminal",
   "private": true,
-  "version": "0.0.47",
-  "description": "Invoice Solution POS terminal — offline-first FBR/PRA-compliant point of sale.",
+  "version": "0.0.48",
+  "description": "Invoice Solution POS terminal \u2014 offline-first FBR/PRA-compliant point of sale.",
   "homepage": "https://client.invoicesolution.pk",
   "author": "Invoice Solution",
   "type": "module",
@@ -27,7 +27,7 @@
     "pngjs": "^7.0.0",
     "qrcode": "~1.5.4"
   },
-  "//deps": "ONLY packages the main/preload processes require() at runtime live in dependencies — those are externalized (not bundled) so electron-builder must ship them as node_modules inside the installer. Everything the RENDERER imports (react, react-dom, react-router-dom, lucide-react, i18next, react-i18next, zod, react-hook-form, @hookform/resolvers, @radix-ui/*, zustand, clsx, class-variance-authority, tailwind-merge, tailwindcss-animate) is bundled into out/renderer by Vite, so it belongs in devDependencies — that keeps electron-builder from shipping those node_modules trees a SECOND time, which roughly halves the unpacked app size and speeds packaging.",
+  "//deps": "ONLY packages the main/preload processes require() at runtime live in dependencies \u2014 those are externalized (not bundled) so electron-builder must ship them as node_modules inside the installer. Everything the RENDERER imports (react, react-dom, react-router-dom, lucide-react, i18next, react-i18next, zod, react-hook-form, @hookform/resolvers, @radix-ui/*, zustand, clsx, class-variance-authority, tailwind-merge, tailwindcss-animate) is bundled into out/renderer by Vite, so it belongs in devDependencies \u2014 that keeps electron-builder from shipping those node_modules trees a SECOND time, which roughly halves the unpacked app size and speeds packaging.",
   "devDependencies": {
     "@hookform/resolvers": "~3.9.0",
     "@radix-ui/react-label": "~2.1.0",
