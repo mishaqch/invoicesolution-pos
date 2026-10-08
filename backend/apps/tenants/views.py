@@ -8,6 +8,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+
+from apps.audit import services as audit
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import HasModule, HasRolePerm
@@ -81,6 +83,68 @@ class TerminalViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
         # must survive. Deactivated terminals stop being usable for sales.
         instance.is_active = False
         instance.save(update_fields=["is_active", "updated_at"])
+
+    @action(detail=True, methods=["delete"], url_path="purge")
+    def purge(self, request, pk=None):
+        """Permanently delete a terminal that NEVER traded.
+
+        DELETE /terminals/<id>/ deactivates (soft delete) because invoices,
+        cash sessions, returns and sync logs all reference the terminal with
+        on_delete=PROTECT and the numbering history must survive. That leaves
+        a never-used terminal — created by mistake, or for a till that never
+        arrived — stuck on the list forever.
+
+        This removes ONLY such a row. The guards are deliberately strict:
+
+          - must already be deactivated (so purging is a two-step, considered
+            action, never a single mis-click), and
+          - must have NO invoices, cash sessions, returns or sync logs.
+
+        Anything with history is refused — that data is legally retained for
+        six years and a terminal is how an invoice is attributed to a till.
+        """
+        terminal = self.get_object()
+
+        if terminal.is_active:
+            raise ValidationError({
+                "detail": "Deactivate the terminal first, then delete it.",
+            })
+
+        from apps.returns.models import Return
+        from apps.sales.models import Invoice
+
+        blockers = {
+            "invoices": Invoice.objects.filter(terminal=terminal).count(),
+            "cash sessions": terminal.cash_sessions.count(),
+            "returns": Return.objects.filter(terminal=terminal).count(),
+            "sync logs": terminal.sync_logs.count(),
+        }
+        used = {k: v for k, v in blockers.items() if v}
+        if used:
+            detail = ", ".join(f"{v} {k}" for k, v in used.items())
+            raise ValidationError({
+                "detail": (
+                    f"{terminal.name} has history ({detail}) and cannot be "
+                    "deleted. It stays deactivated so its records keep their "
+                    "terminal reference."
+                ),
+            })
+
+        name = terminal.name
+        audit.log(
+            tenant_id=request.tenant_id, user=request.user,
+            entity_type="terminal", entity_id=terminal.id,
+            action="terminal_purged",
+            before={
+                "name": name,
+                "terminal_index": terminal.terminal_index,
+                "branch_id": str(terminal.branch_id),
+            },
+            after={"deleted": True},
+            request=request,
+        )
+        terminal.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=["post"], url_path="issue-code")
     def issue_code(self, request, pk=None):

@@ -23,6 +23,7 @@ import {
   useCreateTerminal,
   useDeactivateTerminal,
   useIssuePairingCode,
+  usePurgeTerminal,
   useReactivateTerminal,
   useRenameTerminal,
   useTerminals,
@@ -203,6 +204,7 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
   const deactivate = useDeactivateTerminal();
   const reactivate = useReactivateTerminal();
   const rename = useRenameTerminal();
+  const purge = usePurgeTerminal();
   const toast = useToast();
 
   const copy = async (code: string) => {
@@ -337,6 +339,40 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
             >
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
               Reactivate
+            </Button>
+          )}
+          {/* Permanent delete — deactivated rows only. The server refuses
+              anything with invoices, cash sessions, returns or sync logs, so
+              this can only ever clear a terminal created by mistake. Typed
+              confirmation because it cannot be undone. */}
+          {!t.is_active && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const typed = window.prompt(
+                  `Permanently delete "${t.name}"?\n\n` +
+                    "This cannot be undone. It is allowed only because the " +
+                    "terminal has no invoices, cash sessions or returns — if " +
+                    "it has any, the server will refuse.\n\n" +
+                    `Type the terminal name to confirm:`,
+                );
+                if (typed === null) return;
+                if (typed.trim() !== t.name) {
+                  window.alert("Name did not match — nothing was deleted.");
+                  return;
+                }
+                purge.mutate(t.id, {
+                  onError: (e: unknown) =>
+                    window.alert(
+                      e instanceof Error ? e.message : "Could not delete this terminal.",
+                    ),
+                });
+              }}
+              loading={purge.isPending}
+              title="Permanently delete this terminal"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-destructive" />
             </Button>
           )}
           <Button

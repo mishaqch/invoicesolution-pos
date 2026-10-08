@@ -339,6 +339,23 @@ export function useRenameTerminal() {
   });
 }
 
+/**
+ * PERMANENTLY delete a terminal that never traded.
+ *
+ * Separate from useDeactivateTerminal (DELETE /terminals/<id>/), which only
+ * soft-deletes. The server refuses this unless the terminal is already
+ * deactivated AND has no invoices, cash sessions, returns or sync logs — so
+ * it can only ever clear a row created by mistake.
+ */
+export function usePurgeTerminal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<void>(`/terminals/${id}/purge/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["terminals"] }),
+  });
+}
+
 export function useDeactivateTerminal() {
   const qc = useQueryClient();
   return useMutation({
