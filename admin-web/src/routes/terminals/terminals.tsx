@@ -235,7 +235,10 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
         )}
       </TableCell>
       <TableCell>
-        {t.is_paired ? (
+        {/* A LIVE code wins over the paired badge: after a Re-pair the owner
+            must be able to read the new code, and the terminal still shows as
+            paired until the till redeems it. */}
+        {t.is_paired && !t.pairing_code ? (
           <span className="text-xs text-muted-foreground">
             Paired {t.paired_at ? new Date(t.paired_at).toLocaleDateString() : ""}
           </span>
@@ -254,16 +257,40 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
       </TableCell>
       <TableCell className="text-right">
         <div className="flex items-center justify-end gap-2">
-          {!t.is_paired && t.is_active && (
+          {t.is_active && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => issue.mutate(t.id)}
+              onClick={() => {
+                // Re-pairing an ALREADY-paired terminal is the recovery path
+                // when a till loses its local pairing (pos.sqlite replaced or
+                // reset) and asks for a code again while admin still shows it
+                // paired. The server redeems onto the SAME terminal row — the
+                // terminal keeps its index and every invoice attached to it —
+                // so this must never require deleting and re-creating the
+                // terminal, which would renumber it (KK-T2 -> KK-T5).
+                if (
+                  t.is_paired &&
+                  !window.confirm(
+                    `${t.name} is already paired.\n\n` +
+                      "Issue a new code only if this till has lost its pairing " +
+                      "and is asking for a code again. The terminal keeps its " +
+                      "number and all its invoices.\n\nIssue a new code?",
+                  )
+                ) {
+                  return;
+                }
+                issue.mutate(t.id);
+              }}
               loading={issue.isPending}
-              title="Generate a fresh pairing code"
+              title={
+                t.is_paired
+                  ? "Re-pair this terminal (e.g. after a reinstall)"
+                  : "Generate a fresh pairing code"
+              }
             >
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              {t.pairing_code ? "New code" : "Issue code"}
+              {t.is_paired ? "Re-pair" : t.pairing_code ? "New code" : "Issue code"}
             </Button>
           )}
           {t.is_active && (
