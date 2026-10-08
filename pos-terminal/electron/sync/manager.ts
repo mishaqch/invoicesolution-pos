@@ -10,7 +10,7 @@ import { utilityProcess, type UtilityProcess } from "electron";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { getDb } from "../db/client";
+import { getDb, getMeta } from "../db/client";
 
 interface WorkerStatus {
   counts: { pending: number; ok: number; failed: number };
@@ -90,6 +90,34 @@ export function startSyncWorker(opts: { dbPath: string; apiBase: string }) {
     apiBase: opts.apiBase,
     schemaPath,
   });
+
+  // RESTORE the auth tokens from kv_meta.
+  //
+  // The renderer only pushes tokens on sign-in (session.ts), and it keeps
+  // them in memory ONLY — partialize() deliberately persists just
+  // user/tenant/role, never access/refresh. So after every app restart the
+  // cashier still LOOKS signed in (user restored from disk) while the sync
+  // worker holds no token at all: processRow() logs "no access token;
+  // skipping" and never POSTs.
+  //
+  // That is why a charged sale was enqueued locally and then sat in
+  // outbound_queue forever, leaving the paid order on the Open Orders screen:
+  // /api/sync/invoices/ was never called ONCE in the entire nginx history,
+  // while /api/restaurant/orders/ (renderer, live in-memory token) worked fine.
+  //
+  // setAuthTokens() already persists both tokens to kv_meta at login, so they
+  // are here on disk — the worker just never read them back. Hand them over
+  // now; if the access token has expired the worker's own 401 handler
+  // refreshes it with the refresh token.
+  try {
+    const access = getMeta("access_token");
+    const refresh = getMeta("refresh_token");
+    if (access || refresh) {
+      worker.postMessage({ type: "auth", accessToken: access, refreshToken: refresh });
+    }
+  } catch {
+    // A missing kv_meta row is not fatal — the next sign-in supplies tokens.
+  }
 }
 
 /**

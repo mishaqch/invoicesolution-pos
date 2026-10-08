@@ -151,6 +151,33 @@ function init(m: InitMessage) {
   // makes the re-send safe.
   db.prepare(`UPDATE outbound_queue SET status = 'pending' WHERE status = 'sent'`).run();
 
+  // One-time rescue of INVOICE rows parked as 'failed'. Before the startup
+  // token restore, a terminal could run for days with no token; anything that
+  // reached MAX_ATTEMPTS in that window was marked permanently failed even
+  // though the sale itself is perfectly valid. A paid sale must never be
+  // abandoned, and the server ingest is idempotent on client_uuid, so a
+  // re-send is safe: a duplicate simply returns sync_status "duplicate".
+  // Guarded by a kv_meta flag so it runs once, not on every launch.
+  const RESCUE_FLAG = "rescue.failed_invoice_queue.v1";
+  const alreadyRescued = db
+    .prepare("SELECT value FROM kv_meta WHERE key = ?")
+    .get(RESCUE_FLAG) as { value: string } | undefined;
+  if (!alreadyRescued) {
+    const res = db
+      .prepare(
+        `UPDATE outbound_queue
+            SET status = 'pending', attempt_count = 0,
+                next_attempt_at = datetime('now'), last_error = NULL
+          WHERE status = 'failed' AND entity_type = 'invoice'`,
+      )
+      .run();
+    db.prepare(
+      `INSERT INTO kv_meta(key, value, updated_at) VALUES(?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`,
+    ).run(RESCUE_FLAG, new Date().toISOString());
+    if (res.changes) log("info", `rescued ${res.changes} failed invoice row(s)`);
+  }
+
   log("info", "worker initialized");
   void runForever();
 }
