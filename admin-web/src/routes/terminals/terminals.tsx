@@ -1,4 +1,4 @@
-import { Copy, Download, Loader2, Monitor, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, Download, Loader2, Monitor, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,8 @@ import {
   useCreateTerminal,
   useDeactivateTerminal,
   useIssuePairingCode,
+  useReactivateTerminal,
+  useRenameTerminal,
   useTerminals,
   type AdminTerminal,
 } from "@/lib/queries";
@@ -199,6 +201,8 @@ export default function TerminalsList() {
 function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }) {
   const issue = useIssuePairingCode();
   const deactivate = useDeactivateTerminal();
+  const reactivate = useReactivateTerminal();
+  const rename = useRenameTerminal();
   const toast = useToast();
 
   const copy = async (code: string) => {
@@ -308,6 +312,47 @@ function TerminalRow({ t, branchName }: { t: AdminTerminal; branchName: string }
               <Trash2 className="h-3.5 w-3.5 text-destructive" />
             </Button>
           )}
+          {/* A deactivated terminal used to render with NO actions at all —
+              a dead row the owner could neither revive, rename nor remove.
+              Deactivation is a soft delete (the row must outlive its invoices),
+              so Reactivate is the way back. */}
+          {!t.is_active && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Bring ${t.name} back into service?\n\n` +
+                      "It keeps its terminal number" +
+                      (t.terminal_index ? ` (T${t.terminal_index})` : "") +
+                      " and any history. You can then issue a pairing code for it.",
+                  )
+                ) {
+                  reactivate.mutate(t.id);
+                }
+              }}
+              loading={reactivate.isPending}
+              title="Bring this terminal back into service"
+            >
+              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+              Reactivate
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const next = window.prompt(`Rename terminal`, t.name);
+              if (next && next.trim() && next.trim() !== t.name) {
+                rename.mutate({ id: t.id, name: next.trim() });
+              }
+            }}
+            loading={rename.isPending}
+            title="Rename terminal"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
         </div>
       </TableCell>
     </TableRow>

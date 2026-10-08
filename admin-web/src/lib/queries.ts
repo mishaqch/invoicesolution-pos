@@ -303,6 +303,42 @@ export function useIssuePairingCode() {
   });
 }
 
+/**
+ * Bring a DEACTIVATED terminal back into service.
+ *
+ * Deactivation is a soft delete (terminals have no deleted_at — their
+ * invoices must survive), so the row stays forever. Without this the admin
+ * had no way back: every action button was gated on is_active, leaving a
+ * deactivated terminal frozen on screen with no options at all.
+ *
+ * is_active is a writable field on TerminalSerializer, so a plain PATCH does
+ * it — no backend change needed.
+ */
+export function useReactivateTerminal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<{ id: string }>(`/terminals/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: true }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["terminals"] }),
+  });
+}
+
+/** Rename a terminal. terminal_index is read-only, so the number never moves. */
+export function useRenameTerminal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      api<{ id: string }>(`/terminals/${id}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["terminals"] }),
+  });
+}
+
 export function useDeactivateTerminal() {
   const qc = useQueryClient();
   return useMutation({
