@@ -104,6 +104,28 @@ export function markKotPrinted(
   });
 }
 
+/**
+ * POST the PAID invoice straight to the server from the renderer.
+ *
+ * The charge path used to rely solely on the background sync worker. That is
+ * fragile: the worker runs in a utility process with its OWN copy of the auth
+ * token, and if it has none it silently skips every row — which is exactly how
+ * paid orders ended up stranded on the Open orders screen while the cashier
+ * saw no error at all.
+ *
+ * This renderer path uses the live in-memory token — the same one that fires
+ * orders to the kitchen all day — so the sale reaches the server immediately
+ * and the open order clears at once. The worker queue stays as the offline
+ * fallback; the server is idempotent on client_uuid, so both arriving is a
+ * no-op ("duplicate").
+ */
+export function syncInvoiceNow(payload: unknown): Promise<{ sync_status?: string }> {
+  return api("/sync/invoices/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 /** Create/update the server-side open order (fire kitchen). Idempotent on client_uuid. */
 export function fireOpenOrder(payload: FireOrderPayload): Promise<OpenOrderDetail> {
   return api<OpenOrderDetail>("/restaurant/orders/", {

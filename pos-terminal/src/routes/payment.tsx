@@ -16,6 +16,7 @@ import {
 } from "@/features/payment/SubFlows";
 import { TenderList } from "@/features/payment/TenderList";
 import { usePaymentMethods } from "@/features/payment/usePaymentMethods";
+import { syncInvoiceNow } from "@/features/restaurant/api";
 import { usePosContext } from "@/features/sale/usePosContext";
 import { Money } from "@/lib/money";
 import { pkDate } from "@/lib/pk-time";
@@ -328,6 +329,28 @@ export default function PaymentRoute() {
       });
 
       // Push the paid invoice to the server ASAP (checkout finalization).
+      //
+      // TWO paths, deliberately:
+      //
+      //  1. DIRECT, from the renderer, using the live in-memory token — the
+      //     same token that fires orders to the kitchen all day. This is the
+      //     one that actually clears the open order, immediately.
+      //
+      //  2. The worker queue, as the OFFLINE fallback.
+      //
+      // Relying on the worker alone was the bug: it runs in a utility process
+      // with its own copy of the token, and with none it silently skips every
+      // row. /api/sync/invoices/ was never called ONCE while the renderer's
+      // /api/restaurant/orders/ worked 49 times the same day. The cashier saw
+      // no error — the enqueue is a local SQLite write — so paid orders simply
+      // stayed on the Open orders screen.
+      //
+      // The server is idempotent on client_uuid: whichever arrives second is a
+      // no-op returning "duplicate". Never block the cashier on this — if the
+      // direct POST fails (offline, 401), the queued row still carries the sale.
+      void syncInvoiceNow(syncPayload).catch(() => {
+        /* offline or auth issue — the outbound_queue row is the safety net */
+      });
       void window.api.sync.kick();
       void window.api?.sync?.expedite?.();
 
