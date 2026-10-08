@@ -79,6 +79,16 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--closed-days", action="store_true",
+            help=(
+                "With --served-no-payment, ALSO recover served orders that "
+                "were never voided — but only on dates before today, where "
+                "service has ended. Today's fired orders are left alone "
+                "because a held, not-deleted order is indistinguishable from "
+                "a table still eating."
+            ),
+        )
+        parser.add_argument(
             "--served-no-payment", action="store_true",
             help=(
                 "ALSO recover orders that were SENT TO KITCHEN and then "
@@ -112,13 +122,31 @@ class Command(BaseCommand):
             # Paid rows, OR orders the kitchen actually cooked and served that
             # the void race soft-deleted before their payment could sync.
             # order_status='open' is excluded on purpose: never fired => draft.
-            qs = qs.filter(
-                Q(n_completed__gt=0)
-                | Q(
-                    deleted_at__isnull=False,
-                    order_status="sent_to_kitchen",
-                ),
-            )
+            # A served order needs recovering whether or not it was voided:
+            #   - BEFORE 3 Oct the charge path called voidOpenOrder(), so the
+            #     lost sales are soft-DELETED and held.
+            #   - AFTER that call was removed nothing deletes them — they are
+            #     simply left HELD when the sync never lands.
+            #
+            # But a fired, not-deleted order is ALSO what a table mid-meal
+            # looks like, so recovering those needs --closed-days: only dates
+            # strictly BEFORE today, where service is over and nothing can
+            # still be eating. Without the flag the old (deleted-only) rule
+            # stands, so a live table is never booked as a sale.
+            served = Q(deleted_at__isnull=False, order_status="sent_to_kitchen")
+            if opts["closed_days"]:
+                from django.utils import timezone
+                # --date pins the run to one day the operator has confirmed
+                # is over, so the "before today" cut-off would wrongly exclude
+                # it. Day-close is the operator's call; respect it.
+                if opts["date"]:
+                    served = served | Q(order_status="sent_to_kitchen")
+                else:
+                    served = served | Q(
+                        order_status="sent_to_kitchen",
+                        invoice_date__lt=timezone.localdate(),
+                    )
+            qs = qs.filter(Q(n_completed__gt=0) | served)
             # A zero-value fired order has nothing to bill — the lines were
             # all removed or voided before charge. Recovering it would put an
             # empty invoice in the list.

@@ -60,14 +60,26 @@ export default function SyncPendingRoute() {
 
   const pending = rows.filter((r) => r.status !== "failed").length;
   const failed = rows.filter((r) => r.status === "failed").length;
+  // An INVOICE is never written off — it parks as 'pending' and retries
+  // hourly instead of becoming 'failed'. That protects the money, but it also
+  // means a sale the server keeps rejecting would otherwise hide inside the
+  // ordinary pending count. Surface those separately so someone acts on them.
+  const stuck = rows.filter(
+    (r) => r.status !== "failed" && !!r.last_error,
+  ).length;
 
-  function chip(status: string) {
+  function isStuck(r: { status: string; last_error?: string | null }) {
+    return r.status !== "failed" && !!r.last_error;
+  }
+  function chip(status: string, stuckRow = false) {
     if (status === "failed") return "bg-destructive-soft text-destructive-soft-foreground";
+    if (stuckRow) return "bg-destructive-soft text-destructive-soft-foreground";
     if (status === "sent") return "bg-warning-soft text-warning-soft-foreground";
     return "bg-warning-soft text-warning-soft-foreground";
   }
-  function chipLabel(status: string) {
+  function chipLabel(status: string, stuckRow = false) {
     if (status === "failed") return t("sync.status_failed", "Failed");
+    if (stuckRow) return t("sync.status_retrying", "Retrying");
     if (status === "sent") return t("sync.status_sending", "Sending");
     return t("sync.status_pending", "Pending");
   }
@@ -93,6 +105,11 @@ export default function SyncPendingRoute() {
         <span className={failed > 0 ? "text-destructive" : ""}>
           {t("sync.failed_count", "Failed")}: <span className="font-mono">{failed}</span>
         </span>
+        {stuck > 0 && (
+          <span className="text-destructive">
+            {t("sync.retrying_count", "Retrying")}: <span className="font-mono">{stuck}</span>
+          </span>
+        )}
       </div>
 
       <main className="min-h-0 flex-1 overflow-y-auto">
@@ -116,7 +133,7 @@ export default function SyncPendingRoute() {
                     {r.grand_total && <span className="font-mono text-sm">Rs {rs(r.grand_total)}</span>}
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className={`rounded-full px-1.5 py-0.5 ${chip(r.status)}`}>{chipLabel(r.status)}</span>
+                    <span className={`rounded-full px-1.5 py-0.5 ${chip(r.status, isStuck(r))}`}>{chipLabel(r.status, isStuck(r))}</span>
                     {r.attempt_count > 0 && (
                       <span>{t("sync.attempts", "Attempts")}: {r.attempt_count}</span>
                     )}

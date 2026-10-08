@@ -1,7 +1,7 @@
 {
   "name": "@pos/pos-terminal",
   "private": true,
-  "version": "0.0.52",
+  "version": "0.0.53",
   "description": "Invoice Solution POS terminal \u2014 offline-first FBR/PRA-compliant point of sale.",
   "homepage": "https://client.invoicesolution.pk",
   "author": "Invoice Solution",

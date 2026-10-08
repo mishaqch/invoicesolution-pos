@@ -316,7 +316,40 @@ function finalizeSent(row: QueueRow, kind: "ok" | "duplicate") {
   log("info", `synced ${row.entity_type} ${row.entity_id} (${kind})`);
 }
 
+/** Longest wait between retries for a sale that refuses to go through (1h). */
+const INVOICE_RETRY_FLOOR_S = 3600;
+
 function permanentFailure(row: QueueRow, message: string) {
+  // AN INVOICE IS MONEY. It must never be written off.
+  //
+  // Everything else may fail permanently, but a sale the customer has already
+  // paid for is the one thing this terminal cannot lose: it is the business's
+  // record of income and a legally retained document. A 4xx here is almost
+  // always something transient and fixable at the other end — a product not
+  // yet in the server catalog, a cash session that has not synced, a branch
+  // mid-rename — not a reason to discard the sale.
+  //
+  // So an invoice NEVER reaches 'failed'. It parks as 'pending' on a 1-hour
+  // cycle, keeps its error visible for the /sync screen, and retries until it
+  // lands. Worst case it waits for someone to fix the catalog; it is never
+  // silently dropped.
+  if (row.entity_type === "invoice") {
+    const next_at = new Date(Date.now() + INVOICE_RETRY_FLOOR_S * 1000).toISOString();
+    getDb()
+      .prepare(
+        `UPDATE outbound_queue
+            SET status = 'pending', next_attempt_at = ?, last_error = ?
+          WHERE id = ?`,
+      )
+      .run(next_at, `will keep retrying — ${message}`, row.id);
+    lastError = message;
+    log(
+      "error",
+      `invoice ${row.entity_id} rejected (${message}); NOT abandoned — retrying hourly`,
+    );
+    return;
+  }
+
   getDb()
     .prepare(
       `UPDATE outbound_queue SET status = 'failed', last_error = ? WHERE id = ?`,
