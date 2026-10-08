@@ -14,7 +14,7 @@
 import { app, ipcMain, type IpcMainInvokeEvent, BrowserWindow } from "electron";
 
 import { getDb, getMeta, setMeta } from "./db/client";
-import { nextInvoiceNumber, nextKitchenOrderNumber } from "./db/numbering";
+import { nextInvoiceNumber, nextKitchenOrderNumber, releaseInvoiceNumber } from "./db/numbering";
 import {
   checkSdcHealth,
   fiscalizeInvoice,
@@ -361,4 +361,11 @@ export function registerIpcHandlers(opts: { apiBase: string }) {
   );
   // Short daily kitchen order number (001, 002, …) for the KOT + Open orders.
   ipcMain.handle("numbering:next-kitchen-order", () => nextKitchenOrderNumber());
+  // Hand a number back when its order is abandoned, so a void does not leave
+  // a permanent hole in the daily sequence.
+  ipcMain.handle(
+    "numbering:release",
+    (_e: IpcMainInvokeEvent, args: { branchCode: string; terminalIndex: number; number: string }) =>
+      releaseInvoiceNumber(args),
+  );
 }

@@ -75,6 +75,13 @@ export default function HeldSalesRoute() {
         lines,
         customer: null, // customer block isn't carried in V1 hold
         cartDiscountPct: "0",
+        // CARRY THE NUMBER BACK. A held sale is given its real invoice number
+        // at hold time, and the local counter has already advanced past it.
+        // Dropping it here orphaned that number for good: the next charge
+        // minted a FRESH one, so every recalled hold burned a number and left
+        // a permanent gap in the daily sequence. (OpenOrdersPanel already did
+        // this correctly for restaurant orders — the held-sale path did not.)
+        orderNumber: row.local_invoice_number,
       });
       // Delete the placeholder while it is STILL held (is_held=1) — the delete
       // guard requires that. This removes the row so it can never surface as an

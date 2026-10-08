@@ -349,6 +349,28 @@ export async function voidOrderAndNotifyKitchen(): Promise<VoidResult> {
     await voidOpenOrder(openUuid).catch(() => {}); // best-effort; panel auto-refreshes
   }
 
+  // Hand the invoice number back. It was minted at fire/hold time so the KOT,
+  // the open-order card and the bill would all match — but nothing ever
+  // returned it, so every abandoned order burned a number and left a
+  // permanent hole in the daily sequence. release() only rolls back when this
+  // was the LAST number issued, so a number already printed on another
+  // ticket can never be re-used.
+  const burned = st.orderNumber;
+  if (burned) {
+    try {
+      const s = await window.api.pairing.status();
+      if (s.identity) {
+        await window.api.numbering.release?.({
+          branchCode: s.identity.branchCode,
+          terminalIndex: s.identity.terminalIndex,
+          number: burned,
+        });
+      }
+    } catch {
+      /* best-effort: a gap is cosmetic, never block the cashier */
+    }
+  }
+
   // 2) Kitchen cancellation ticket — ONLY if something was already fired.
   if (hadFired) {
     try {
