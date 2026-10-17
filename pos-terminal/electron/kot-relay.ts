@@ -29,7 +29,7 @@
 
 import { getMeta } from "./db/client";
 import { deviceFingerprint, getPairedIdentity, isPaired } from "./pairing";
-import { printKOT } from "./printer";
+import { pkDate, pkTimeHHMM, printKOT } from "./printer";
 
 const POLL_MS = 8_000;
 
@@ -83,9 +83,9 @@ async function fetchWithTimeout(
   }
 }
 
-function hhmm(d: Date = new Date()): string {
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-}
+// Kitchen slips are timestamped in PAKISTAN time, never the host PC's zone —
+// a terminal left on a wrong/UTC clock would otherwise print a time the
+// kitchen cannot reconcile with the order it is holding.
 
 async function tick(base: string): Promise<void> {
   if (inFlight) return; // never overlap ticks
@@ -120,7 +120,8 @@ async function tick(base: string): Promise<void> {
       order_type: order.order_type || "dine_in",
       table_name: order.table_name ?? null,
       covers: order.covers ?? null,
-      time: hhmm(),
+      date: pkDate(),
+      time: pkTimeHHMM(),
       items: order.items,
       width: 48,
       reference: order.reference ?? null,

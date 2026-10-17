@@ -820,7 +820,11 @@ function renderKotText(input: KotInput): string {
     : input.reference?.trim() || input.order_type.toUpperCase();
   lines.push(center(dest));
   lines.push(`Order ${input.order_number}`);
-  lines.push(`${input.date ? input.date + "  " : ""}${input.time}`);
+  // Date AND time, always. The kitchen uses this to sequence tickets and to
+  // settle "when was this fired?" disputes, so it must never be blank — a
+  // caller that omits the date (the KOT relay used to) falls back to today
+  // in Pakistan rather than printing a bare time.
+  lines.push(`${input.date || pkDate()}  ${input.time}`);
   if (input.reference && input.table_name) lines.push(`Ref: ${input.reference}`);
   if (input.covers) lines.push(`Covers: ${input.covers}`);
   lines.push(rule);
