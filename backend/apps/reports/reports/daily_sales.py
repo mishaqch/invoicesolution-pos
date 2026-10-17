@@ -40,6 +40,15 @@ class DailySalesReport(EnsuresDailySales, Report):
     chart_spec = ChartSpec(type="line", x_key="date", y_keys=("gross", "net"))
 
     def query(self):
+        # The materialized aggregate is keyed (tenant, branch, date) — it has
+        # no terminal dimension, so it cannot answer "just Terminal 2". When a
+        # terminal is selected, compute the same shape live from invoices
+        # instead. Slightly slower, but correct; without a terminal the fast
+        # aggregate path is unchanged.
+        if getattr(self.filters, "terminal_id", None):
+            yield from self._query_live()
+            return
+
         qs = DailySalesSummary.objects.for_tenant(self.tenant_id).select_related("branch")
         if self.filters.branch_id:
             qs = qs.filter(branch_id=self.filters.branch_id)
@@ -57,6 +66,48 @@ class DailySalesReport(EnsuresDailySales, Report):
                 "net": row.net,
                 "refund_count": row.refund_count,
                 "refund_amount": row.refund_amount,
+            }
+
+    def _query_live(self):
+        """Per-day totals straight from invoices, scoped to one terminal."""
+        from django.db.models import Count, Sum
+
+        from apps.sales.models import Invoice
+
+        qs = Invoice.objects.filter(
+            tenant_id=self.tenant_id, is_held=False, deleted_at__isnull=True,
+        ).exclude(status="cancelled")
+        if self.filters.branch_id:
+            qs = qs.filter(branch_id=self.filters.branch_id)
+        qs = qs.filter(terminal_id=self.filters.terminal_id)
+        if self.filters.date_from:
+            qs = qs.filter(invoice_date__gte=self.filters.date_from)
+        if self.filters.date_to:
+            qs = qs.filter(invoice_date__lte=self.filters.date_to)
+
+        rows = (
+            qs.values("invoice_date", "branch__name")
+            .annotate(
+                invoice_count=Count("id"),
+                gross=Sum("grand_total"),
+                tax=Sum("tax_total"),
+            )
+            .order_by("invoice_date", "branch__name")
+        )
+        for r in rows:
+            gross = r["gross"] or Decimal("0")
+            tax = r["tax"] or Decimal("0")
+            yield {
+                "date": r["invoice_date"],
+                "branch_name": r["branch__name"],
+                "invoice_count": r["invoice_count"],
+                "gross": gross,
+                "tax": tax,
+                "net": gross - tax,
+                # Returns are not terminal-scoped in V1; shown as 0 rather
+                # than mis-attributing a branch refund to one till.
+                "refund_count": 0,
+                "refund_amount": Decimal("0"),
             }
 
     def totals(self, rows):

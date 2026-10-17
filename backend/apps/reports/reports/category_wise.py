@@ -37,6 +37,8 @@ class CategoryWiseReport(EnsuresProductVelocity, Report):
         qs = ProductVelocity.objects.for_tenant(self.tenant_id)
         if self.filters.branch_id:
             qs = qs.filter(branch_id=self.filters.branch_id)
+        if getattr(self.filters, "terminal_id", None):
+            qs = qs.filter(terminal_id=self.filters.terminal_id)
         if self.filters.date_from:
             qs = qs.filter(date__gte=self.filters.date_from)
         if self.filters.date_to:

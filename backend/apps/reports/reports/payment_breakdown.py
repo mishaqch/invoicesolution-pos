@@ -41,6 +41,8 @@ class PaymentBreakdownReport(Report):
         )
         if self.filters.branch_id:
             qs = qs.filter(invoice__branch_id=self.filters.branch_id)
+        if getattr(self.filters, "terminal_id", None):
+            qs = qs.filter(invoice__terminal_id=self.filters.terminal_id)
         if self.filters.date_from:
             qs = qs.filter(invoice__invoice_date__gte=self.filters.date_from)
         if self.filters.date_to:

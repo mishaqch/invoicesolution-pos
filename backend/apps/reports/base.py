@@ -48,6 +48,11 @@ class BaseFilters:
     """Subclasses extend with the report's specific filter fields."""
 
     branch_id: str | None = None
+    # Which TILL the figures came from. TDCP runs several terminals in one
+    # branch (reception, two restaurant tills), and "how did Terminal 2 do
+    # today" was unanswerable because every report aggregated the whole
+    # branch. None = all terminals, preserving the previous behaviour.
+    terminal_id: str | None = None
     date_from: date | None = None
     date_to: date | None = None
 

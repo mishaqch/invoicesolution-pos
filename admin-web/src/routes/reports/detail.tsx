@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { useAuthStore } from "@/stores/auth";
 import {
   useBranches,
+  useTerminals,
   useReportPreview,
   useReportRegistry,
   useSaveFavorite,
@@ -42,18 +43,26 @@ export default function ReportDetail() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [branchId, setBranchId] = useState("");
+  const [terminalId, setTerminalId] = useState("");
   const [favLabel, setFavLabel] = useState("");
 
   const preview = useReportPreview();
   const saveFavorite = useSaveFavorite();
   const { data: branchesPage } = useBranches();
   const branches = branchesPage?.results ?? [];
+  const { data: terminalsPage } = useTerminals();
+  // Only offer tills that belong to the chosen branch — picking a terminal
+  // from another branch would always return an empty report.
+  const terminals = (terminalsPage?.results ?? []).filter(
+    (x) => !branchId || x.branch === branchId,
+  );
 
   function buildFilters(): Record<string, unknown> {
     const filters: Record<string, unknown> = {};
     if (dateFrom) filters.date_from = dateFrom;
     if (dateTo) filters.date_to = dateTo;
     if (branchId) filters.branch_id = branchId;
+    if (terminalId) filters.terminal_id = terminalId;
     return filters;
   }
 
@@ -108,6 +117,9 @@ export default function ReportDetail() {
   const filterSummary = [
     dateFrom || dateTo ? `Period: ${dateFrom || "…"} to ${dateTo || "…"}` : "Period: all time",
     branchId ? `Branch: ${branches.find((b) => b.id === branchId)?.name ?? branchId}` : "All branches",
+    terminalId
+      ? `Terminal: ${terminals.find((x) => x.id === terminalId)?.name ?? terminalId}`
+      : "All terminals",
   ].join("   ·   ");
 
   return (
@@ -164,10 +176,27 @@ export default function ReportDetail() {
           </div>
           <div>
             <Label>Branch</Label>
-            <Select value={branchId} onChange={(e) => setBranchId(e.target.value)}>
+            <Select
+              value={branchId}
+              onChange={(e) => {
+                setBranchId(e.target.value);
+                // A terminal belongs to one branch — changing branch would
+                // leave a stale selection that returns nothing.
+                setTerminalId("");
+              }}
+            >
               <option value="">All branches</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <Label>Terminal</Label>
+            <Select value={terminalId} onChange={(e) => setTerminalId(e.target.value)}>
+              <option value="">All terminals</option>
+              {terminals.map((x) => (
+                <option key={x.id} value={x.id}>{x.name}</option>
               ))}
             </Select>
           </div>
@@ -185,9 +214,9 @@ export default function ReportDetail() {
         </CardContent>
       </Card>
 
-      {meta && meta.filter_fields.some((f) => !["branch_id", "date_from", "date_to"].includes(f)) && (
+      {meta && meta.filter_fields.some((f) => !["branch_id", "terminal_id", "date_from", "date_to"].includes(f)) && (
         <p className="text-xs text-muted-foreground">
-          This report supports additional filters: {meta.filter_fields.filter((f) => !["branch_id", "date_from", "date_to"].includes(f)).join(", ")}.
+          This report supports additional filters: {meta.filter_fields.filter((f) => !["branch_id", "terminal_id", "date_from", "date_to"].includes(f)).join(", ")}.
         </p>
       )}
 
