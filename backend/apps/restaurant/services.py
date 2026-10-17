@@ -310,6 +310,81 @@ def void_open_order(*, tenant_id, client_uuid, user=None, request=None) -> Invoi
     return invoice
 
 
+def close_paid_order(*, tenant_id, invoice, payment_method="cash", amount=None,
+                     user=None, request=None):
+    """Close a served open order that the CUSTOMER HAS ALREADY PAID FOR.
+
+    Normally an open order is closed by Charge: the terminal syncs the paid
+    invoice and create_invoice() flips is_held=False on the same row. That is
+    the correct path and nothing here replaces it.
+
+    But it makes closing an order depend entirely on the till reaching the
+    server. When a terminal cannot sync — an old build, a lost auth token, a
+    machine that was reinstalled — the guest pays, walks out, and the order
+    stays on the Open orders screen forever. At TDCP that stranded 170 orders
+    worth PKR 424k across a single week, with no way to clear them from the
+    admin side.
+
+    This closes such an order server-side, and crucially RECORDS THE PAYMENT
+    while doing so. Un-holding alone would be worse than leaving it: a later
+    sync would see is_held=False, treat the row as an already-finalized
+    duplicate and return early — skipping payments, stock and FBR, so the sale
+    would be permanently unpaid.
+
+    Idempotent: an order that already carries a completed payment is returned
+    untouched, so a retry (or the till's own sync arriving later) is safe.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+
+    from apps.sales.models import Payment
+
+    if not invoice.is_held:
+        return invoice  # already closed by the normal path
+
+    if invoice.payments.filter(status="completed").exists():
+        return invoice  # already paid — nothing to do
+
+    amount = invoice.grand_total if amount is None else amount
+
+    with transaction.atomic():
+        Payment.objects.create(
+            tenant_id=tenant_id,
+            invoice=invoice,
+            customer=invoice.customer,
+            payment_method=payment_method,
+            amount=amount,
+            status="completed",
+            received_by=user,
+        )
+        before = {
+            "is_held": True,
+            "order_status": invoice.order_status,
+            "paid_total": str(invoice.paid_total),
+        }
+        invoice.is_held = False
+        invoice.held_label = None
+        invoice.paid_total = amount
+        if invoice.order_status:
+            invoice.order_status = "served"
+        if invoice.status == "pending_sync":
+            invoice.status = "finalized"
+        invoice.save(update_fields=[
+            "is_held", "held_label", "paid_total", "order_status", "status",
+            "updated_at",
+        ])
+        audit.log(
+            tenant_id=tenant_id, user=user, entity_type="invoice",
+            entity_id=invoice.id, action="close_paid_order",
+            before=before,
+            after={"is_held": False, "order_status": invoice.order_status,
+                   "paid_total": str(invoice.paid_total),
+                   "payment_method": payment_method},
+            request=request,
+        )
+    return invoice
+
+
 def open_orders_qs(tenant_id, *, branch_id=None, terminal_id=None):
     """Held (open) restaurant orders for a tenant, optionally one branch.
 

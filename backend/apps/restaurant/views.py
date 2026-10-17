@@ -6,6 +6,8 @@ endpoints over held sales.Invoices (orders are invoices, not a separate model).
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -352,6 +354,20 @@ class OrderActionView(APIView):
             services.send_to_kitchen(invoice, user=request.user, request=request)
         elif op in ("ready", "served"):
             services.set_order_status(invoice, op, user=request.user, request=request)
+        elif op == "close-paid":
+            # Close an order the guest has ALREADY PAID FOR, from the admin,
+            # without waiting for the till to sync. Records the payment as it
+            # closes — un-holding alone would make a later sync mistake the row
+            # for a finalized duplicate and skip payments/stock entirely.
+            method = (request.data.get("payment_method") or "cash").strip()
+            raw_amount = request.data.get("amount")
+            amount = Decimal(str(raw_amount)) if raw_amount is not None else None
+            services.close_paid_order(
+                tenant_id=request.tenant_id, invoice=invoice,
+                payment_method=method, amount=amount,
+                user=request.user, request=request,
+            )
+            invoice.refresh_from_db()
         else:
             raise ValidationError({"op": "Unknown action."})
         return Response(_order_payload(invoice), status=status.HTTP_200_OK)
