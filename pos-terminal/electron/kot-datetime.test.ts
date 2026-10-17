@@ -24,8 +24,8 @@ function headerLines(input: {
   order_number: string; date?: string; time: string;
 }): string[] {
   return [
-    `Order ${input.order_number}`,
-    `${input.date || pkDate()}  ${input.time}`,
+    `Order #: ${input.order_number}`,
+    `Date: ${input.date || pkDate()}   Time: ${input.time}`,
   ];
 }
 
@@ -34,16 +34,16 @@ describe("KOT date/time stamp", () => {
     const [, stamp] = headerLines({
       order_number: "KK-T2-2026-0000648", date: "2026-10-17", time: "21:46",
     });
-    expect(stamp).toBe("2026-10-17  21:46");
+    expect(stamp).toBe("Date: 2026-10-17   Time: 21:46");
   });
 
   it("falls back to today in Pakistan when a caller omits the date", () => {
     const [, stamp] = headerLines({
       order_number: "KK-T2-2026-0000648", time: "21:46",
     });
-    expect(stamp).toBe(`${pkDate()}  21:46`);
-    expect(stamp).not.toBe("  21:46");       // the old relay behaviour
-    expect(stamp).toMatch(/^\d{4}-\d{2}-\d{2}  \d{2}:\d{2}$/);
+    expect(stamp).toBe(`Date: ${pkDate()}   Time: 21:46`);
+    expect(stamp).not.toContain("Date:  ");  // never a blank date
+    expect(stamp).toMatch(/^Date: \d{4}-\d{2}-\d{2}   Time: \d{2}:\d{2}$/);
   });
 
   it("uses Pakistan time, not the host PC's zone", () => {

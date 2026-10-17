@@ -819,14 +819,18 @@ function renderKotText(input: KotInput): string {
     ? `TABLE ${input.table_name}`
     : input.reference?.trim() || input.order_type.toUpperCase();
   lines.push(center(dest));
-  lines.push(`Order ${input.order_number}`);
+  // Explicit labels: a kitchen slip is read at speed, often by someone who
+  // did not take the order, so every field says what it is.
+  lines.push(`Order #: ${input.order_number}`);
   // Date AND time, always. The kitchen uses this to sequence tickets and to
   // settle "when was this fired?" disputes, so it must never be blank — a
   // caller that omits the date (the KOT relay used to) falls back to today
   // in Pakistan rather than printing a bare time.
-  lines.push(`${input.date || pkDate()}  ${input.time}`);
+  lines.push(`Date: ${input.date || pkDate()}   Time: ${input.time}`);
   if (input.reference && input.table_name) lines.push(`Ref: ${input.reference}`);
-  if (input.covers) lines.push(`Covers: ${input.covers}`);
+  // "Covers" is the trade term for party size; spell it out so new kitchen
+  // staff are not guessing.
+  if (input.covers) lines.push(`Guests: ${input.covers}`);
   lines.push(rule);
   for (const it of input.items) {
     if (it.cancelled) {
