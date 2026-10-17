@@ -104,7 +104,7 @@ function BillModal({ order, onClose }: { order: OrderView; onClose: () => void }
             </Badge>
           </CardTitle>
           <p className="text-xs text-muted-foreground">
-            #{order.local_invoice_number}{order.covers ? ` · ${order.covers} covers` : ""}
+            #{order.local_invoice_number}{order.covers ? ` · ${order.covers} guests` : ""}
           </p>
         </CardHeader>
         <CardContent className="space-y-3">

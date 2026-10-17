@@ -86,7 +86,7 @@ function OrderTicket({
       <div className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
         <Clock className="h-3 w-3" />
         #{o.local_invoice_number}
-        {o.covers ? ` · ${o.covers} covers` : ""}
+        {o.covers ? ` · ${o.covers} guests` : ""}
       </div>
 
       <ul className="mt-2 flex-1 space-y-1.5 text-sm">
