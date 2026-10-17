@@ -115,6 +115,9 @@ export interface FolioBill {
   grand_total: string;
   paid_total: string;
   balance: string;
+  /** The ONE real invoice number for the whole stay (room + food), minted at
+   *  checkout. Null while the folio is still open. */
+  settlement_invoice_number?: string | null;
 }
 
 export interface OpenStayBody {

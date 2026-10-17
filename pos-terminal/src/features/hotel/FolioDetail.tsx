@@ -557,6 +557,9 @@ export function FolioDetail({
           {/* Guest + stay summary */}
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-lg border bg-muted/30 p-4 text-sm sm:grid-cols-3">
             <Info label="Folio" value={bill.folio_number} mono />
+            {bill.settlement_invoice_number && (
+              <Info label="Invoice" value={bill.settlement_invoice_number} mono />
+            )}
             <Info
               label={bill.rooms.length > 1 ? "Rooms" : "Room"}
               value={

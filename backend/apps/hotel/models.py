@@ -131,6 +131,24 @@ class GuestFolio(TenantScopedModel):
 
     status = models.CharField(max_length=15, choices=FOLIO_STATUSES, default="open")
 
+    # THE guest-facing invoice for the whole stay, minted at checkout.
+    #
+    # The per-charge FOL-… rows (room nights, each day's food) are internal
+    # line items, not sales — they carry a random tag, never a sequential
+    # number, and must stay held so they never reach the invoice list. The
+    # guest settles ONE bill covering room + food, and that bill needs a real
+    # terminal invoice number (KK-T2-2026-…) like any other sale.
+    #
+    # Before this field the settlement had nowhere to live: checkout un-held
+    # every charge (leaking 237 internal rows worth PKR 2.0M into the invoice
+    # list as if each were a sale) and dumped the whole payment onto one
+    # arbitrary "anchor" room, so 26 invoices carried PKR 321k of payment they
+    # had not earned.
+    settlement_invoice = models.OneToOneField(
+        "sales.Invoice", on_delete=models.PROTECT,
+        blank=True, null=True, related_name="settled_folio",
+    )
+
     opened_by = models.ForeignKey(
         "accounts.User", on_delete=models.SET_NULL, blank=True, null=True,
         related_name="opened_folios",

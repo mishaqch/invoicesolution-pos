@@ -543,6 +543,8 @@ interface FolioBillInput {
   is_fiscal?: boolean; // resort tenants → false (plain, no FBR block)
   folio: {
     folio_number: string;
+    /** The stay's real invoice number (room + food on one bill). */
+    settlement_invoice_number?: string | null;
     guest: { name: string; cnic: string; phone: string };
     room: { number: string; type: string } | null;
     check_in: string | null;
@@ -718,6 +720,10 @@ function renderFolioText(input: FolioBillInput): string {
   L.push(center("GUEST BILL"));
   L.push(rule);
   L.push(row("Folio", f.folio_number));
+  // The guest quotes THIS number afterwards, not the internal folio tag.
+  if (f.settlement_invoice_number) {
+    L.push(row("Invoice", f.settlement_invoice_number));
+  }
   L.push(row("Guest", f.guest.name));
   L.push(row("CNIC", f.guest.cnic));
   L.push(row("Phone", f.guest.phone));

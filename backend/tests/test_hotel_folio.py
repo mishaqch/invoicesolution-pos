@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from io import StringIO
 from decimal import Decimal
 
 import pytest
@@ -503,3 +504,186 @@ def test_release_room_refuses_when_open_stay():
     )
     with pytest.raises(ValidationError):
         services.release_room(room=room, user=cashier)
+
+
+# --- ONE invoice per stay -------------------------------------------------
+# A stay used to produce no invoice of its own. Checkout un-held every FOL-
+# charge, so each internal line item (room night, each day's food) surfaced in
+# the admin invoice list as if it were a separate sale — 237 rows worth
+# PKR 2.0M at TDCP — and the whole settlement was recorded against one
+# arbitrary "anchor" room, leaving 26 invoices carrying PKR 321k of payment
+# they had not earned.
+#
+# Now the guest gets ONE real terminal invoice covering room + food, and the
+# FOL- charges stay held and internal.
+
+def test_checkout_mints_one_real_invoice_for_the_stay():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}],
+    )
+
+    inv = folio.settlement_invoice
+    assert inv is not None, "the stay must have its own invoice"
+    # A REAL terminal number, not a FOL- tag.
+    assert not inv.local_invoice_number.startswith("FOL-")
+    assert inv.is_held is False
+    assert inv.buyer_name == "Ali", "the bill belongs to the guest, not the room"
+    assert inv.paid_total == Decimal("10500")
+    assert inv.grand_total == Decimal("10500")
+    assert inv.items.count() >= 1, "charge lines must be copied onto the bill"
+
+
+def test_folio_charges_stay_hidden_from_the_invoice_list():
+    """The whole point: internal line items must not look like sales."""
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}],
+    )
+
+    for ch in folio.charges.select_related("invoice").all():
+        assert ch.invoice.is_held is True, (
+            f"{ch.invoice.local_invoice_number} leaked into the invoice list"
+        )
+        assert ch.invoice.paid_total == Decimal("0"), (
+            "a charge row must never carry the settlement payment"
+        )
+
+
+def test_stay_revenue_is_counted_exactly_once():
+    """Sum what the invoice list would show; it must equal the stay's value."""
+    from apps.sales.models import Invoice
+
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}],
+    )
+
+    visible = Invoice.objects.filter(
+        tenant_id=tenant.id, is_held=False, deleted_at__isnull=True,
+    )
+    assert visible.count() == 1, "exactly one invoice per stay"
+    assert sum(i.grand_total for i in visible) == Decimal("10500")
+
+
+def test_bill_reports_the_settlement_invoice_number():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}],
+    )
+
+    bill = services.consolidated_bill(folio)
+    assert bill["settlement_invoice_number"] == folio.settlement_invoice.local_invoice_number
+    assert bill["paid_total"] == "10500.0000"
+    assert bill["balance"] == "0.0000"
+
+
+def test_backfill_repairs_a_legacy_closed_folio():
+    """A stay closed by the OLD code: charges un-held, payment on an anchor.
+
+    The backfill must mint the missing invoice, move the payment onto it, and
+    make the charges internal again — without destroying the original
+    Payment row (its tender and proof fields are real history).
+    """
+    from decimal import Decimal as D
+
+    from django.core.management import call_command
+
+    from apps.sales.models import Invoice, Payment
+
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+
+    # Recreate the LEGACY end-state by hand.
+    charge = folio.charges.select_related("invoice").first()
+    anchor = charge.invoice
+    anchor.is_held = False
+    anchor.paid_total = D("10500")
+    anchor.save(update_fields=["is_held", "paid_total"])
+    original = Payment.objects.create(
+        tenant_id=tenant.id, invoice=anchor, payment_method="card",
+        amount=D("10500"), status="completed", card_last4="4242",
+    )
+    folio.status = "closed"
+    folio.save(update_fields=["status"])
+
+    call_command("backfill_folio_settlements", "--apply", stdout=StringIO())
+
+    folio.refresh_from_db()
+    assert folio.settlement_invoice is not None
+    inv = folio.settlement_invoice
+    assert not inv.local_invoice_number.startswith("FOL-")
+    assert inv.paid_total == D("10500")
+
+    # The ORIGINAL payment moved — not a copy, so the card proof survives.
+    original.refresh_from_db()
+    assert original.invoice_id == inv.id
+    assert original.card_last4 == "4242"
+    assert Payment.objects.filter(tenant_id=tenant.id).count() == 1, "must not duplicate"
+
+    # The charge is internal again and carries no payment.
+    anchor.refresh_from_db()
+    assert anchor.is_held is True
+    assert anchor.paid_total == D("0")
+
+    # And the invoice list shows exactly one row for the stay.
+    visible = Invoice.objects.filter(
+        tenant_id=tenant.id, is_held=False, deleted_at__isnull=True,
+    )
+    assert visible.count() == 1
+    assert visible.first().id == inv.id
+
+
+def test_backfill_is_idempotent():
+    from django.core.management import call_command
+
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "10500"}],
+    )
+    first = folio.settlement_invoice_id
+
+    call_command("backfill_folio_settlements", "--apply", stdout=StringIO())
+
+    folio.refresh_from_db()
+    assert folio.settlement_invoice_id == first, "must skip an already-settled folio"

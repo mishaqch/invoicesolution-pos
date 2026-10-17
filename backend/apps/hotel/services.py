@@ -735,33 +735,23 @@ def checkout_stay(
     if not charges:
         raise ValidationError({"folio": "Folio has no charges to settle."})
 
-    # Un-hold every charge-invoice so they become finalized records (each keeps
-    # its own number + items; they stay non-fiscal for TDCP). Payment is recorded
-    # against the anchor (room) invoice to represent the single settlement.
-    from apps.payments.adapters import get_adapter
-
-    anchor = None
-    for ch in charges:
-        inv = ch.invoice
-        inv.is_held = False
-        inv.held_label = None
-        inv.save(update_fields=["is_held", "held_label", "updated_at"])
-        if ch.kind == "room" and anchor is None:
-            anchor = inv
-    anchor = anchor or charges[0].invoice
-
-    # Record settlement payments on the anchor invoice. The adapter creates the
-    # Payment rows; we also bump the anchor's denormalized paid_total so the
-    # consolidated bill reflects what was settled (the adapter doesn't do this).
-    settled = Decimal("0")
-    for p in payments or []:
-        amount = Decimal(str(p["amount"]))
-        adapter = get_adapter(p["payment_method"])
-        adapter.record_payment(invoice=anchor, amount=amount, data=p, user=cashier)
-        settled += amount
-    if settled:
-        anchor.paid_total = (anchor.paid_total or Decimal("0")) + settled
-        anchor.save(update_fields=["paid_total", "updated_at"])
+    # ONE invoice for the stay.
+    #
+    # The per-charge FOL-… rows stay HELD — they are internal line items (room
+    # nights, each day's food), not sales. Un-holding them, as this used to do,
+    # pushed every one into the admin invoice list as a standalone sale and
+    # double-counted the stay's revenue; and recording the whole settlement
+    # against one arbitrary "anchor" room left invoices carrying a payment far
+    # larger than their own value.
+    #
+    # Instead the guest gets a real terminal invoice (KK-T2-2026-…) covering
+    # room + food together, with every charge line copied onto it. That is the
+    # document they pay, it is what the invoice list and reports count, and it
+    # is the single number the guest can quote afterwards.
+    settlement = _build_settlement_invoice(
+        folio=folio, charges=charges, cashier=cashier, payments=payments,
+    )
+    folio.settlement_invoice = settlement
 
     # Free ALL booked rooms (multi-room folios) + close the folio.
     booked_rooms = list(folio.rooms_booked.select_related("room").all())
@@ -776,8 +766,108 @@ def checkout_stay(
     folio.status = "closed"
     folio.check_out = check_out
     folio.closed_at = timezone.now()
-    folio.save(update_fields=["status", "check_out", "closed_at", "updated_at"])
+    folio.save(update_fields=[
+        "status", "check_out", "closed_at", "settlement_invoice", "updated_at",
+    ])
     return folio
+
+
+def _build_settlement_invoice(*, folio, charges, cashier, payments):
+    """Mint THE guest-facing invoice for a whole stay.
+
+    One real terminal invoice (KK-T2-2026-…) carrying every live line from
+    every folio charge — room nights and food together — plus the settlement
+    payments. The FOL-… charge rows stay held and internal; this is the only
+    document that reaches the invoice list, reports and the guest.
+
+    Cancelled lines are skipped: the consolidated bill shows them struck
+    through for the guest's benefit, but a voided item is not revenue.
+    """
+    from apps.payments.adapters import get_adapter
+    from apps.sales.models import Invoice, SaleItem
+    from apps.sales.services.numbering import next_invoice_number
+
+    source = charges[0].invoice
+    terminal = source.terminal
+    branch = source.branch
+
+    subtotal = tax_total = grand_total = Decimal("0")
+    lines: list[SaleItem] = []
+    for ch in charges:
+        for it in ch.invoice.items.all():
+            if it.is_cancelled:
+                continue
+            lines.append(it)
+            line_total = it.line_total or Decimal("0")
+            line_tax = it.tax_amount or Decimal("0")
+            grand_total += line_total
+            tax_total += line_tax
+            subtotal += line_total - line_tax
+
+    invoice = Invoice.objects.create(
+        tenant_id=folio.tenant_id,
+        branch=branch,
+        terminal=terminal,
+        cashier=cashier,
+        cash_session=source.cash_session,
+        customer=source.customer,
+        client_uuid=uuid4(),
+        local_invoice_number=next_invoice_number(terminal=terminal),
+        invoice_date=timezone.localdate(),
+        status="finalized",
+        # The guest, not the room — this is their bill.
+        buyer_name=folio.guest_name,
+        buyer_phone=folio.guest_phone or None,
+        buyer_ntn_cnic=folio.guest_cnic or None,
+        buyer_registration_type="Unregistered",
+        subtotal=subtotal,
+        discount_total=Decimal("0"),
+        tax_total=tax_total,
+        grand_total=grand_total,
+        paid_total=Decimal("0"),
+        change_given=Decimal("0"),
+        is_held=False,
+        notes=f"Folio {folio.folio_number} — {folio.guest_name}",
+    )
+
+    # Copy the charge lines onto the settlement invoice so it is a complete,
+    # self-contained document (the FOL- rows remain as the folio's own detail).
+    for n, it in enumerate(lines, start=1):
+        # SaleItem is tenant-scoped through its invoice — it has no tenant_id.
+        SaleItem.objects.create(
+            invoice=invoice, line_number=n,
+            product=it.product, product_name=it.product_name,
+            product_sku=it.product_sku, hs_code=it.hs_code, uom_code=it.uom_code,
+            quantity=it.quantity, unit_price=it.unit_price,
+            cost_price=it.cost_price,
+            discount_pct=it.discount_pct, discount_amount=it.discount_amount,
+            tax_rate=it.tax_rate, tax_amount=it.tax_amount,
+            line_total=it.line_total,
+            modifiers=it.modifiers, item_note=it.item_note,
+        )
+
+    settled = Decimal("0")
+    for pay in payments or []:
+        amount = Decimal(str(pay["amount"]))
+        get_adapter(pay["payment_method"]).record_payment(
+            invoice=invoice, amount=amount, data=pay, user=cashier,
+        )
+        settled += amount
+    if settled:
+        invoice.paid_total = settled
+        invoice.save(update_fields=["paid_total", "updated_at"])
+
+    from apps.audit.services import log as audit_log
+
+    audit_log(
+        tenant_id=folio.tenant_id, user=cashier, entity_type="invoice",
+        entity_id=invoice.id, action="folio_settlement_invoice",
+        before=None,
+        after={"folio": folio.folio_number,
+               "invoice": invoice.local_invoice_number,
+               "grand_total": str(grand_total), "paid_total": str(settled)},
+    )
+    return invoice
 
 
 def consolidated_bill(folio: GuestFolio) -> dict:
@@ -858,12 +948,34 @@ def consolidated_bill(folio: GuestFolio) -> dict:
         subtotal += ch_sub
         tax_total += ch_tax
         grand_total += ch_total
-        paid_total += inv.paid_total or Decimal("0")
+        # NOTE: payment is NOT summed from the charge rows. The guest settles
+        # ONE invoice for the stay (folio.settlement_invoice) and that is
+        # where the money lives; the FOL- charges are internal line items and
+        # stay unpaid by design. Summing them here would report 0 after
+        # checkout, or double-count on a legacy folio whose settlement was
+        # dumped onto an arbitrary "anchor" room.
+
+    # What the guest actually paid, from the stay's own invoice.
+    settlement = folio.settlement_invoice
+    if settlement is not None:
+        paid_total = settlement.paid_total or Decimal("0")
+    else:
+        # LEGACY folio (closed before settlement invoices existed): the
+        # payment sits on whichever charge the old code picked as anchor.
+        # Take the max rather than the sum — the anchor carried the WHOLE
+        # settlement, so adding the others would double-count.
+        paid_total = max(
+            [(ch.invoice.paid_total or Decimal("0")) for ch in charges] or [Decimal("0")],
+        )
 
     return {
         "id": str(folio.id),
         "folio_number": folio.folio_number,
         "status": folio.status,
+        # The guest-facing invoice number for the whole stay (room + food).
+        "settlement_invoice_number": (
+            settlement.local_invoice_number if settlement else None
+        ),
         "guest": {
             "name": folio.guest_name,
             "cnic": folio.guest_cnic,
