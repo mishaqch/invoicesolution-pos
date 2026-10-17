@@ -109,6 +109,9 @@ def open_stay(
     partner_name: str = "",
     partner_cnic: str = "",
     notes: str = "",
+    # Optional room add-ons chosen at check-in, e.g. an extra mattress:
+    # [{"product": <uuid>, "quantity": "1"}]
+    extras: list[dict] | None = None,
     client_uuid=None,
 ) -> GuestFolio:
     """Open a folio for ONE guest booking one OR MANY rooms.
@@ -183,7 +186,54 @@ def open_stay(
             folio=folio, room=rm, nights=n, terminal=terminal,
             cashier=cashier, cash_session=cash_session,
         )
+
+    # Optional room EXTRAS requested at check-in (an extra mattress is the
+    # common one). These are add-ons to a room, not rooms: posting them as a
+    # misc charge keeps them on the guest's one consolidated bill without
+    # occupying a room or needing a fake Room record. Staff had been creating
+    # rooms named "mattress" to work around the gap — those have no linked
+    # product and crash check-in with "has no linked product".
+    if extras:
+        add_extras(
+            folio=folio, extras=extras, terminal=terminal,
+            cashier=cashier, cash_session=cash_session,
+        )
     return folio
+
+
+def add_extras(*, folio, extras: list[dict], terminal, cashier, cash_session,
+               room: "Room | None" = None, charge_date=None):
+    """Post optional room add-ons (extra mattress, etc.) onto a folio.
+
+    `extras` is [{"product": <uuid>, "quantity": "1"}, ...]. The price comes
+    from the product, so a rate change never has to be duplicated here.
+    Returns the FolioInvoice, or None when nothing was requested.
+    """
+    from apps.catalog.models import Product
+
+    lines = []
+    for e in extras or []:
+        qty = Decimal(str(e.get("quantity") or "1"))
+        if qty <= 0:
+            continue
+        product = Product.objects.for_tenant(folio.tenant_id).get(pk=e["product"])
+        lines.append({
+            "product": str(product.id),
+            "quantity": str(qty),
+            "unit_price": str(product.sale_price),
+            "tax_rate": "0",
+            "is_taxable": False,
+            "discount_pct": 0,
+            "discount_amount": 0,
+        })
+    if not lines:
+        return None
+
+    return add_charge(
+        folio=folio, terminal=terminal, cashier=cashier,
+        cash_session=cash_session, cart_lines=lines,
+        kind="misc", room=room, charge_date=charge_date,
+    )
 
 
 def _folio_charge_tag() -> str:

@@ -6,7 +6,14 @@ import { useToast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/button";
 import { rs } from "@/lib/money";
 
-import { listRooms, mirrorFolioInvoices, openStay, type Room } from "@/features/hotel/api";
+import {
+  listRoomExtras,
+  listRooms,
+  mirrorFolioInvoices,
+  openStay,
+  type Room,
+  type RoomExtra,
+} from "@/features/hotel/api";
 import {
   cnicMask,
   phoneMask,
@@ -119,6 +126,22 @@ export function OpenStayForm({
   );
   const roomsTotal = selectedRooms.reduce((acc, r) => acc + Number(r.nightly_total) * nights, 0);
 
+  // Optional room add-ons (extra mattress, …). Offered from the catalog so
+  // the resort can reprice or add one without a terminal release. Staff used
+  // to create fake Room records named "mattress" to charge for these — those
+  // rooms have no linked product and crash check-in.
+  const [extras, setExtras] = useState<RoomExtra[]>([]);
+  const [extraQty, setExtraQty] = useState<Record<string, number>>({});
+  useEffect(() => {
+    void listRoomExtras()
+      .then((r) => setExtras(r.results ?? []))
+      .catch(() => setExtras([]));   // never block check-in on this
+  }, []);
+  const extrasTotal = extras.reduce(
+    (acc, x) => acc + Number(x.unit_price) * (extraQty[x.id] ?? 0),
+    0,
+  );
+
   function validate(): boolean {
     const e: Record<string, string> = {};
     // Primary guest name, CNIC, phone are MANDATORY.
@@ -158,6 +181,9 @@ export function OpenStayForm({
         partner_cnic: form.partner_cnic.trim() ? formatCnic(form.partner_cnic) : undefined,
         check_in: new Date(form.check_in).toISOString(),
         expected_check_out: new Date(form.expected_check_out).toISOString(),
+        extras: Object.entries(extraQty)
+          .filter(([, q]) => q > 0)
+          .map(([product, q]) => ({ product, quantity: String(q) })),
       });
       // Mirror the new folio's room-charge invoice into local SQLite so it
       // shows in "Today's invoices" immediately (offline-safe cache).
@@ -393,9 +419,52 @@ export function OpenStayForm({
                     <span className="font-mono">Rs {rs(Number(r.nightly_total) * nights)}</span>
                   </div>
                 ))}
+                {/* Optional add-ons — only billed if the guest asks. */}
+                {extras.length > 0 && (
+                  <div className="mt-2 border-t pt-2">
+                    <div className="mb-1 text-xs font-medium text-muted-foreground">
+                      Extras (optional)
+                    </div>
+                    {extras.map((x) => {
+                      const q = extraQty[x.id] ?? 0;
+                      return (
+                        <div key={x.id} className="flex items-center justify-between py-1">
+                          <span className="text-sm">
+                            {x.name}
+                            <span className="ml-1 text-xs text-muted-foreground">
+                              Rs {rs(Number(x.unit_price))} each
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              aria-label={`Remove one ${x.name}`}
+                              className="h-7 w-7 rounded-md border text-sm disabled:opacity-40"
+                              disabled={q === 0}
+                              onClick={() =>
+                                setExtraQty((m) => ({ ...m, [x.id]: Math.max(0, q - 1) }))
+                              }
+                            >
+                              −
+                            </button>
+                            <span className="w-6 text-center font-mono text-sm">{q}</span>
+                            <button
+                              type="button"
+                              aria-label={`Add one ${x.name}`}
+                              className="h-7 w-7 rounded-md border text-sm"
+                              onClick={() => setExtraQty((m) => ({ ...m, [x.id]: q + 1 }))}
+                            >
+                              +
+                            </button>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="mt-2 flex justify-between border-t pt-2 text-base font-semibold">
-                  <span>Room charges on open</span>
-                  <span className="font-mono">Rs {rs(roomsTotal)}</span>
+                  <span>Charges on open</span>
+                  <span className="font-mono">Rs {rs(roomsTotal + extrasTotal)}</span>
                 </div>
                 <p className="mt-2 text-xs text-muted-foreground">
                   Food &amp; other charges are added during the stay; everything settles in one bill

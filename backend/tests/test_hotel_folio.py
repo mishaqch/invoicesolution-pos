@@ -687,3 +687,116 @@ def test_backfill_is_idempotent():
 
     folio.refresh_from_db()
     assert folio.settlement_invoice_id == first, "must skip an already-settled folio"
+
+
+# --- Optional room extras (extra mattress) --------------------------------
+# A mattress is an ADD-ON to a room, not a room. With no way to charge one,
+# staff created fake Room records named "mattress" / "STANDARD MATTRESS" —
+# neither has a linked product, so checking a guest into one fails with
+# "Room mattress has no linked product." right in front of the guest.
+
+def _mattress(tenant):
+    from apps.catalog.models import Category, Product, UnitOfMeasure
+
+    cat, _ = Category.objects.get_or_create(tenant=tenant, name="Room Extras")
+    return Product.objects.create(
+        tenant=tenant, category=cat, name="Extra Mattress",
+        sku=f"EXTRA-MATTRESS-{uuid.uuid4().hex[:6]}",
+        uom=UnitOfMeasure.objects.get(code="PCS"),
+        sale_price=Decimal("1000"), cost_price=Decimal("0"),
+    )
+
+
+def test_mattress_can_be_added_at_check_in():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    mattress = _mattress(tenant)
+
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+        extras=[{"product": str(mattress.id), "quantity": "1"}],
+    )
+
+    bill = services.consolidated_bill(folio)
+    names = [
+        it["name"]
+        for day in bill["days"] for ch in day["charges"] for it in ch["items"]
+    ]
+    assert "Extra Mattress" in names, names
+    # Room 10500 + mattress 1000.
+    assert bill["grand_total"] == "11500.0000"
+
+
+def test_two_mattresses_charge_twice():
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    mattress = _mattress(tenant)
+
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+        extras=[{"product": str(mattress.id), "quantity": "2"}],
+    )
+
+    assert services.consolidated_bill(folio)["grand_total"] == "12500.0000"
+
+
+def test_no_extras_means_no_extra_charge():
+    """The guest who does not want one must not be billed for one."""
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    _mattress(tenant)
+
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+        extras=[],
+    )
+
+    assert services.consolidated_bill(folio)["grand_total"] == "10500.0000"
+    assert folio.charges.filter(kind="misc").count() == 0
+
+
+def test_mattress_can_be_added_later_to_an_open_folio():
+    """A guest asks at 11pm — it must go on the same bill, not a new sale."""
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    mattress = _mattress(tenant)
+
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+    )
+    services.add_extras(
+        folio=folio, extras=[{"product": str(mattress.id), "quantity": "1"}],
+        terminal=terminal, cashier=cashier, cash_session=None,
+    )
+
+    assert services.consolidated_bill(folio)["grand_total"] == "11500.0000"
+
+
+def test_mattress_is_settled_on_the_one_stay_invoice():
+    """It must land on the guest's single invoice, not a separate sale."""
+    tenant, branch, terminal, cashier, room, _ = _setup()
+    mattress = _mattress(tenant)
+
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, guest_name="Ali", guest_cnic="111", guest_phone="0300",
+        room=room, check_in=timezone.now(),
+        expected_check_out=timezone.now() + dt.timedelta(days=1),
+        extras=[{"product": str(mattress.id), "quantity": "1"}],
+    )
+    folio = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "11500"}],
+    )
+
+    inv = folio.settlement_invoice
+    assert inv.grand_total == Decimal("11500")
+    assert "Extra Mattress" in [i.product_name for i in inv.items.all()]

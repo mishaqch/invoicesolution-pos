@@ -140,6 +140,18 @@ function RoomForm({
     setError(null);
     if (!roomNumber.trim()) return setError("Room number is required.");
     if (!roomType.trim()) return setError("Room type is required.");
+    // An add-on is NOT a room. Staff created rooms called "mattress" and
+    // "STANDARD MATTRESS" to charge for an extra mattress — neither has a
+    // linked product, so checking a guest into one fails at the counter with
+    // "has no linked product". Extras belong in the Room Extras catalog
+    // category, where the terminal offers them at check-in.
+    if (/mattress|extra bed|bedding/i.test(roomNumber + " " + roomType)) {
+      return setError(
+        "That looks like a room EXTRA, not a room. Add it as a product in " +
+          'the "Room Extras" category instead — the terminal then offers it ' +
+          "at check-in and bills it on the guest's one invoice.",
+      );
+    }
     if (!branch) return setError("Pick a branch.");
     try {
       await save.mutateAsync({

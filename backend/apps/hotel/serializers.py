@@ -78,6 +78,11 @@ class OpenStaySerializer(serializers.Serializer):
     check_in = serializers.DateTimeField(required=False)
     expected_check_out = serializers.DateTimeField(required=False)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
+    # Optional room add-ons at check-in, e.g. an extra mattress:
+    #   [{"product": "<uuid>", "quantity": "1"}]
+    extras = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list,
+    )
     # Optional terminal context (falls back to implicit defaults server-side).
     terminal = serializers.UUIDField(required=False)
 

@@ -69,6 +69,12 @@ def _resolve_context(request, terminal_id=None):
     return branch, terminal, cash_session
 
 
+# Catalog category that holds chargeable room add-ons (extra mattress, …).
+# A category rather than a hard-coded product id: the resort can add another
+# extra, or reprice one, without a release.
+ROOM_EXTRAS_CATEGORY = "Room Extras"
+
+
 class RoomViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
     """Manage bookable rooms + see availability."""
 
@@ -84,6 +90,38 @@ class RoomViewSet(_TenantQuerySetMixin, viewsets.ModelViewSet):
         if (s := params.get("status")):
             qs = qs.filter(status=s)
         return qs
+
+    @action(detail=False, methods=["get"], url_path="extras")
+    def extras(self, request):
+        """GET /api/hotel/rooms/extras/ — optional room add-ons.
+
+        Products in the "Room Extras" category: an extra mattress and anything
+        else chargeable alongside a room. The terminal offers these at check-in
+        and on an open folio, so the guest's single consolidated bill carries
+        them without anyone inventing a fake Room record to hold the charge.
+
+        Price comes from the product, so changing the mattress rate is a
+        catalog edit — no code or terminal update.
+        """
+        from apps.catalog.models import Product
+
+        rows = (
+            Product.objects.for_tenant(request.tenant_id)
+            .filter(
+                category__name__iexact=ROOM_EXTRAS_CATEGORY,
+                is_active=True, deleted_at__isnull=True,
+            )
+            .order_by("name")
+        )
+        return Response({"results": [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "sku": p.sku,
+                "unit_price": str(p.sale_price),
+            }
+            for p in rows
+        ]})
 
     def get_permissions(self):
         # Reads open to any member; writes need the inventory/admin perm.
@@ -183,6 +221,8 @@ class FolioViewSet(_TenantQuerySetMixin, mixins.ListModelMixin, viewsets.Generic
                 partner_name=v.get("partner_name", ""),
                 partner_cnic=v.get("partner_cnic", ""),
                 notes=v.get("notes", ""),
+                # Optional room add-ons (extra mattress, etc.) chosen at check-in.
+                extras=v.get("extras") or [],
             )
         except DjangoValidationError as e:
             raise ValidationError(getattr(e, "message_dict", {"detail": e.messages}))

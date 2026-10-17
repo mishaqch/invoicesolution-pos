@@ -134,6 +134,8 @@ export interface OpenStayBody {
   expected_check_out?: string;
   notes?: string;
   terminal?: string;
+  /** Optional room add-ons chosen at check-in (extra mattress, …). */
+  extras?: { product: string; quantity: string }[];
 }
 
 export interface ChargeLine {
@@ -349,6 +351,20 @@ export async function mirrorFolioInvoices(bill: FolioBill): Promise<void> {
       }
     }
   }
+}
+
+export interface RoomExtra {
+  id: string;
+  name: string;
+  sku: string;
+  unit_price: string;
+}
+
+/** Chargeable room add-ons (extra mattress, …) from the "Room Extras"
+ *  catalog category. Priced from the product, so a rate change is a catalog
+ *  edit — no terminal update. */
+export function listRoomExtras(): Promise<{ results: RoomExtra[] }> {
+  return api("/hotel/rooms/extras/");
 }
 
 export function addCharge(
