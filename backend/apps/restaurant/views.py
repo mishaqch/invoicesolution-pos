@@ -297,9 +297,24 @@ class KdsUnprintedView(APIView):
         branch_id = request.query_params.get("branch")
         if not branch_id:
             raise ValidationError({"branch": "Required."})
+        # A KITCHEN TICKET IS ONLY USEFUL WHILE THE FOOD IS STILL BEING COOKED.
+        #
+        # This feed had no date boundary: any order ever fired whose lines were
+        # not acked still qualified. kot_printed_at only started being set when
+        # the firing till learned to ack its own print, so every order from
+        # before that carried NULLs forever — a 950-order, 2,655-line backlog
+        # going back to June. The moment a till with a working relay came up it
+        # began draining that queue at one ticket per 8s poll and the kitchen
+        # printer ran away with months of stale orders.
+        #
+        # Re-printing a ticket from yesterday can only mislead the kitchen, so
+        # the feed is now bounded to the CURRENT SERVICE DAY (Asia/Karachi).
+        # Anything older is history, not a pending ticket.
+        today = timezone.localdate()
         orders = (
             services.open_orders_qs(tenant_id, branch_id=branch_id)
             .filter(order_status__in=["sent_to_kitchen", "ready"])
+            .filter(invoice_date__gte=today)
             .filter(
                 items__sent_to_kitchen=True,
                 items__kot_printed_at__isnull=True,

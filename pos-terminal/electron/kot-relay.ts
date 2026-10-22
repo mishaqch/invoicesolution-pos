@@ -32,6 +32,9 @@ import { deviceFingerprint, getPairedIdentity, isPaired } from "./pairing";
 import { pkDate, pkTimeHHMM, printKOT } from "./printer";
 
 const POLL_MS = 8_000;
+/** Above this many pending orders the feed is a backlog, not live service.
+ *  A busy dinner service runs a handful of unprinted tickets at a time. */
+const MAX_BACKLOG = 25;
 
 let relayTimer: ReturnType<typeof setInterval> | null = null;
 let inFlight = false;
@@ -109,6 +112,26 @@ async function tick(base: string): Promise<void> {
     const data = (await res.json()) as { orders?: UnprintedOrder[] };
     const orders = data.orders ?? [];
     if (orders.length === 0) return;
+
+    // RUNAWAY GUARD — belt and braces for the server's date bound.
+    //
+    // A relay that finds a large backlog will happily print it one ticket per
+    // poll until the paper runs out. That is what happened when a till with a
+    // working relay met 950 un-acked orders going back months: the kitchen
+    // printer ran away with stale tickets nobody was cooking.
+    //
+    // A real service never has dozens of unprinted orders at once, so an
+    // unexpectedly large feed means something is wrong UPSTREAM, not that the
+    // kitchen is owed 50 tickets. Refuse to print and say so, loudly, rather
+    // than burn a roll of paper. Legitimate same-day volume is far below this.
+    if (orders.length > MAX_BACKLOG) {
+      console.error(
+        `[kot-relay] REFUSING to print: ${orders.length} unprinted orders ` +
+          `(limit ${MAX_BACKLOG}). This is a backlog, not live service — ` +
+          `check the KDS feed before clearing it.`,
+      );
+      return;
+    }
 
     // Print ONE order per tick — keeps the printer sane and lets each ack land
     // before the next order is pulled.
