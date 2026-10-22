@@ -59,6 +59,17 @@ app.conf.beat_schedule = {
         # 02:00 PKT — finalize yesterday so late-arriving syncs land.
         "schedule": crontab(hour=2, minute=0),
     },
+    # Restaurant housekeeping — clear orders the tills never closed.
+    #
+    # An open order normally closes when the till syncs the paid invoice, so a
+    # till that cannot sync leaves the sale on the Open orders screen forever.
+    # Without this sweep they accumulate daily on every terminal. 04:00 PKT is
+    # after the latest service and after the 02:00 aggregate rebuild, so the
+    # payments this records land in the following rebuild.
+    "restaurant-close-stale-open-orders": {
+        "task": "restaurant.close_stale_open_orders",
+        "schedule": crontab(hour=4, minute=0),
+    },
 }
 
 
