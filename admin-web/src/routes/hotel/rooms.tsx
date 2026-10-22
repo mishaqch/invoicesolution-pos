@@ -1,5 +1,6 @@
-import { DoorOpen, Plus } from "lucide-react";
+import { BedDouble, DoorOpen, Plus } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,27 @@ export default function RoomsAdmin() {
           </Button>
         }
       />
+
+      {/* Where add-ons live. Staff previously created fake rooms named
+          "mattress" to charge for one, because nothing on this page said
+          otherwise. */}
+      <div className="flex items-start gap-2 rounded-md border border-dashed bg-muted/30 p-3 text-sm">
+        <BedDouble className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="text-muted-foreground">
+          <span className="font-medium text-foreground">Room add-ons</span> —
+          an extra mattress and similar charges are <em>not</em> rooms. They
+          live in the{" "}
+          <Link
+            to="/catalog/products?search=Extra%20Mattress"
+            className="font-medium text-primary underline-offset-2 hover:underline"
+          >
+            Room&nbsp;Extras
+          </Link>{" "}
+          product category, where the cashier can tick them at check-in or add
+          them to an open stay. Change a price there and the terminal picks it
+          up — no update needed.
+        </div>
+      </div>
 
       <div className="rounded-md border">
         <Table>

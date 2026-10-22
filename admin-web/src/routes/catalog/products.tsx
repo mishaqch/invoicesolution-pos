@@ -1,6 +1,6 @@
 import { Plus, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,11 @@ function useDebounced<T>(value: T, ms = 300): T {
 }
 
 export default function ProductsList() {
-  const [search, setSearch] = useState("");
+  // Seed the box from ?search= so another page can deep-link into a filtered
+  // list (e.g. Rooms → "Room Extras" add-ons). Read once on mount; typing
+  // afterwards is the user's own, so we don't fight it.
+  const [searchParams] = useSearchParams();
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const debouncedSearch = useDebounced(search.trim());
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
