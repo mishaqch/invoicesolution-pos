@@ -33,6 +33,8 @@ export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal
   // Category quick-filter chips (e.g. "Rooms" pinned first for the resort).
   // Shown only when the search box is empty — typing/scanning takes over.
   const [categories, setCategories] = useState<PosCategoryRow[]>([]);
+  /** Category ids whose products must never appear on the sale page. */
+  const [hiddenCatIds, setHiddenCatIds] = useState<Set<string>>(new Set());
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [catProducts, setCatProducts] = useState<PosProductSqliteRow[]>([]);
 
@@ -52,11 +54,22 @@ export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal
       // "Room Extras" category leaked the mattress into the restaurant menu
       // grid — a cashier could ring one up as a standalone food sale instead
       // of charging it to the stay.
-      .then((cats) =>
+      .then((cats) => {
         setCategories(
           cats.filter((c) => !ROOM_CATEGORIES.has(c.name.trim().toLowerCase())),
-        ),
-      )
+        );
+        // Remember WHICH ids are room categories so their products can be
+        // kept out of the grid too — hiding the chip alone is not enough,
+        // because search and the default recent list bypass categories
+        // entirely (a cashier typing "mattress" would still find it).
+        setHiddenCatIds(
+          new Set(
+            cats
+              .filter((c) => ROOM_CATEGORIES.has(c.name.trim().toLowerCase()))
+              .map((c) => c.id),
+          ),
+        );
+      })
       .catch(() => setCategories([]));
   }, []);
 
@@ -88,7 +101,13 @@ export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal
   // What the grid shows: search results if searching, else the picked
   // category's products, else the default recent list.
   const searching = !!query.trim();
-  const grid = searching ? results : activeCat ? catProducts : results;
+  const rawGrid = searching ? results : activeCat ? catProducts : results;
+  // Room add-ons belong to the Stays flow (ticked at check-in, or added from
+  // the folio's own "Room add-ons" row) — never sellable here. Filtering the
+  // GRID, not just the chips, closes the search/recent-list path too.
+  const grid = rawGrid.filter(
+    (p) => !p.category_id || !hiddenCatIds.has(p.category_id),
+  );
 
   return (
     <div className="flex h-full flex-col gap-3">

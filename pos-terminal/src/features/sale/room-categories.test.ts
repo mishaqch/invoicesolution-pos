@@ -66,3 +66,31 @@ describe("tapping an add-on twice", () => {
     expect(cart).toEqual([{ product_id: "mattress", quantity: "3" }]);
   });
 });
+
+
+describe("search and the recent list must not leak add-ons either", () => {
+  /** Mirrors the grid filter: hide products whose category is a room one. */
+  const hiddenIds = new Set(["cat-rooms", "cat-room-extras"]);
+  const grid = (rows: { name: string; category_id: string | null }[]) =>
+    rows.filter((p) => !p.category_id || !hiddenIds.has(p.category_id));
+
+  it('a cashier typing "mattress" on the sale page finds nothing', () => {
+    // Hiding the CHIP was not enough: search bypasses categories entirely,
+    // so the mattress was still sellable as a food item.
+    const results = [{ name: "Extra Mattress", category_id: "cat-room-extras" }];
+    expect(grid(results)).toEqual([]);
+  });
+
+  it("the default recent list never shows a room add-on", () => {
+    const recent = [
+      { name: "Extra Mattress", category_id: "cat-room-extras" },
+      { name: "VIP Room / night", category_id: "cat-rooms" },
+      { name: "Biryani", category_id: "cat-bbq" },
+    ];
+    expect(grid(recent).map((p) => p.name)).toEqual(["Biryani"]);
+  });
+
+  it("an uncategorised product is still sellable", () => {
+    expect(grid([{ name: "Misc item", category_id: null }])).toHaveLength(1);
+  });
+});
