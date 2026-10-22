@@ -21,6 +21,10 @@ interface Props {
   clearSignal?: number;
 }
 
+/** Categories that belong to the Stays flow and must never appear as
+ *  sellable items on the sale page. */
+const ROOM_CATEGORIES = new Set(["rooms", "room extras"]);
+
 export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal }: Props) {
   const [query, setQuery] = useState("");
   const { results, loading } = useProductSearch(query);
@@ -39,9 +43,20 @@ export function ProductGrid({ onAdd, onAddProduct, branchId, onWarn, clearSignal
     inputRef.current?.focus();
     void window.api.catalog
       .categories()
-      // Rooms are booked via the Stays / Rooms (Open Stay) flow, not sold as
-      // cart items — hide the "Rooms" category chip from the sale page.
-      .then((cats) => setCategories(cats.filter((c) => c.name.trim().toLowerCase() !== "rooms")))
+      // Rooms and their ADD-ONS belong to the Stays flow, not the sale page.
+      // A room is booked via Open Stay; an extra mattress is ticked on the
+      // check-in form and billed to the guest's folio. Neither is a cart
+      // item, so both category chips are hidden here.
+      //
+      // Previously only the exact name "rooms" was filtered, so the separate
+      // "Room Extras" category leaked the mattress into the restaurant menu
+      // grid — a cashier could ring one up as a standalone food sale instead
+      // of charging it to the stay.
+      .then((cats) =>
+        setCategories(
+          cats.filter((c) => !ROOM_CATEGORIES.has(c.name.trim().toLowerCase())),
+        ),
+      )
       .catch(() => setCategories([]));
   }, []);
 

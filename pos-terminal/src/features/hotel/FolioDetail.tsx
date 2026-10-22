@@ -11,6 +11,7 @@ import { useSessionStore } from "@/stores/session";
 
 import {
   addCharge,
+  listRoomExtras,
   mirrorFolioInvoices,
   addRoom,
   cancelStay,
@@ -25,6 +26,7 @@ import {
   type FolioBill,
   type Room,
   type UpdateStayBody,
+  type RoomExtra,
 } from "@/features/hotel/api";
 import {
   cnicMask,
@@ -83,6 +85,14 @@ export function FolioDetail({
 
   // Local add-charge cart (kept separate from the main till's sale store).
   const [cart, setCart] = useState<CartLine[]>([]);
+  // Room add-ons (extra mattress, …). Hidden from the product grid because a
+  // mattress is not a menu item, so they get their own row on this screen.
+  const [roomExtras, setRoomExtras] = useState<RoomExtra[]>([]);
+  useEffect(() => {
+    void listRoomExtras()
+      .then((r) => setRoomExtras(r.results ?? []))
+      .catch(() => setRoomExtras([]));   // never block adding charges
+  }, []);
   const [busy, setBusy] = useState(false);
   const [payMethod, setPayMethod] = useState<string>("cash");
   // Cash tendered by the guest (typed string, e.g. "5000"). Only meaningful
@@ -454,8 +464,50 @@ export function FolioDetail({
           </Button>
         </header>
         <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px]">
-          <div className="min-h-0 overflow-hidden border-r p-3">
-            <ProductGrid onAdd={addToCart} />
+          <div className="flex min-h-0 flex-col border-r">
+            {/* Room add-ons first. They are hidden from the product grid (a
+                mattress is not a menu item), so a guest who asks for one
+                mid-stay is charged from here — onto this same folio, never
+                as a separate sale. */}
+            {roomExtras.length > 0 && (
+              <div className="shrink-0 border-b bg-muted/30 p-3">
+                <div className="mb-2 text-xs font-medium text-muted-foreground">
+                  Room add-ons
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {roomExtras.map((x) => (
+                    <button
+                      key={x.id}
+                      type="button"
+                      onClick={() =>
+                        addToCart({
+                          product_id: x.id,
+                          product_name: x.name,
+                          product_sku: x.sku,
+                          uom_code: "PCS",
+                          hs_code: null,
+                          quantity: "1",
+                          unit_price: x.unit_price,
+                          discount_pct: "0",
+                          discount_amount: "0",
+                          tax_rate: "0",
+                          is_taxable: false,
+                        })
+                      }
+                      className="rounded-md border bg-background px-3 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      <div className="font-medium">{x.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        Rs {rs(Number(x.unit_price))}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-hidden p-3">
+              <ProductGrid onAdd={addToCart} />
+            </div>
           </div>
           <div className="flex min-h-0 flex-col">
             <div className="flex-1 overflow-auto p-3">
