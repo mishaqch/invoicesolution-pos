@@ -118,6 +118,17 @@ export interface FolioBill {
   /** The ONE real invoice number for the whole stay (room + food), minted at
    *  checkout. Null while the folio is still open. */
   settlement_invoice_number?: string | null;
+  /** What the stay costs if settled FULLY BY CARD, at the tenant's reduced
+   *  services rate (rooms keep their declared tax). Computed by the server with
+   *  the SAME rule it applies at checkout, so the quote and the final invoice
+   *  cannot drift. Null when already settled or the tenant has no card rate. */
+  card_rate_preview?: {
+    rate: string;
+    standard_rate: string;
+    subtotal: string;
+    tax_total: string;
+    grand_total: string;
+  } | null;
 }
 
 export interface OpenStayBody {

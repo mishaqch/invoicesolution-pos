@@ -822,6 +822,42 @@ def checkout_stay(
     return folio
 
 
+def _settlement_line_amounts(item, *, tenant, fully_card: bool, is_room: bool):
+    """(tax_rate, tax_amount, line_total) for one line on the settlement bill.
+
+    Re-rates a services line to the payment-driven rate and recomputes its tax
+    from the line's NET value, so the printed tax column and the total always
+    reconcile with the rate shown beside them.
+
+    Returns the stored figures untouched for a room night (declared fixed tax),
+    a non-taxable line, a tenant with no card rate configured, or a custom rate
+    that is neither of the tenant's two — see sales/services/tax_rules.py.
+    """
+    from apps.sales.services.tax_rules import resolve_services_rate
+
+    tax_rate = item.tax_rate or Decimal("0")
+    tax_amount = item.tax_amount or Decimal("0")
+    line_total = item.line_total or Decimal("0")
+
+    # SaleItem has no is_taxable flag — a zero rate IS the exempt case.
+    if is_room or tax_rate <= 0:
+        return tax_rate, tax_amount, line_total
+
+    # NET is what the tax applies to: the stored line_total already includes
+    # the old tax, so strip it before re-rating (never re-tax a taxed amount).
+    net = line_total - tax_amount
+    resolved = resolve_services_rate(
+        [{"tax_rate": str(tax_rate), "is_taxable": True}],
+        tenant=tenant, fully_card=fully_card,
+    )[0]
+    new_rate = Decimal(str(resolved["tax_rate"]))
+    if new_rate == tax_rate:
+        return tax_rate, tax_amount, line_total
+
+    new_tax = (net * new_rate / Decimal("100")).quantize(Decimal("0.0001"))
+    return new_rate, new_tax, net + new_tax
+
+
 def _build_settlement_invoice(*, folio, charges, cashier, payments):
     """Mint THE guest-facing invoice for a whole stay.
 
@@ -836,23 +872,43 @@ def _build_settlement_invoice(*, folio, charges, cashier, payments):
     from apps.payments.adapters import get_adapter
     from apps.sales.models import Invoice, SaleItem
     from apps.sales.services.numbering import next_invoice_number
+    from apps.sales.services.tax_rules import is_fully_card
 
     source = charges[0].invoice
     terminal = source.terminal
     branch = source.branch
 
+    # The payment method decides the services tax rate (PRA card rule: a
+    # fully-card bill is taxed at the tenant's reduced rate, any cash at the
+    # standard one). Charges were posted BEFORE the guest chose how to pay, so
+    # they carry the standard rate — it is only resolvable here, at checkout.
+    # Without this the folio ignored the rule entirely: the terminal promised
+    # 8% and the bill charged 16%.
+    #
+    # Room nights are EXEMPT. Their tax is a FIXED declared amount from the
+    # resort's tariff (VIP 8820 + 1680 = 10500/night), not a percentage we may
+    # recompute — re-rating it would change the advertised room price.
+    kind_by_invoice = {ch.invoice_id: ch.kind for ch in charges}
+    fully_card = is_fully_card(payments)
+
     subtotal = tax_total = grand_total = Decimal("0")
     lines: list[SaleItem] = []
+    rerated: dict = {}
     for ch in charges:
         for it in ch.invoice.items.all():
             if it.is_cancelled:
                 continue
             lines.append(it)
-            line_total = it.line_total or Decimal("0")
-            line_tax = it.tax_amount or Decimal("0")
+            tax_rate, tax_amount, line_total = _settlement_line_amounts(
+                it,
+                tenant=folio.tenant,
+                fully_card=fully_card,
+                is_room=kind_by_invoice.get(it.invoice_id) == "room",
+            )
+            rerated[it.id] = (tax_rate, tax_amount, line_total)
             grand_total += line_total
-            tax_total += line_tax
-            subtotal += line_total - line_tax
+            tax_total += tax_amount
+            subtotal += line_total - tax_amount
 
     invoice = Invoice.objects.create(
         tenant_id=folio.tenant_id,
@@ -891,8 +947,8 @@ def _build_settlement_invoice(*, folio, charges, cashier, payments):
             quantity=it.quantity, unit_price=it.unit_price,
             cost_price=it.cost_price,
             discount_pct=it.discount_pct, discount_amount=it.discount_amount,
-            tax_rate=it.tax_rate, tax_amount=it.tax_amount,
-            line_total=it.line_total,
+            tax_rate=rerated[it.id][0], tax_amount=rerated[it.id][1],
+            line_total=rerated[it.id][2],
             modifiers=it.modifiers, item_note=it.item_note,
         )
 
@@ -923,6 +979,7 @@ def _build_settlement_invoice(*, folio, charges, cashier, payments):
 def consolidated_bill(folio: GuestFolio) -> dict:
     """Structured consolidated bill for the whole stay — guest, room, nights,
     every charge grouped by date, and totals (room + restaurant tax split)."""
+    from apps.sales.services.tax_rules import is_fully_card
     charges = (
         folio.charges.select_related("invoice", "room")
         .prefetch_related("invoice__items")
@@ -935,6 +992,20 @@ def consolidated_bill(folio: GuestFolio) -> dict:
     grand_total = Decimal("0")
     paid_total = Decimal("0")
 
+    # A settled stay was taxed by the method the guest actually paid with, which
+    # may differ from the rate the charges were posted at. The line detail below
+    # is what the receipt prints, so it must be shown on the SAME basis as the
+    # totals — otherwise a guest adding up the lines lands on a different number
+    # from the one they were charged.
+    _settled_inv = folio.settlement_invoice
+    _settled_card = (
+        _settled_inv is not None
+        and is_fully_card([
+            {"payment_method": p.payment_method, "amount": p.amount}
+            for p in _settled_inv.payments.filter(status="completed")
+        ])
+    )
+
     for ch in charges:
         inv = ch.invoice
         day = ch.charge_date.isoformat()
@@ -945,18 +1016,27 @@ def consolidated_bill(folio: GuestFolio) -> dict:
         for it in inv.items.all():
             if it.is_cancelled:
                 continue
+            if _settled_inv is not None:
+                _rate, _tax, _total = _settlement_line_amounts(
+                    it, tenant=folio.tenant, fully_card=_settled_card,
+                    is_room=ch.kind == "room",
+                )
+            else:
+                _tax, _total = (
+                    it.tax_amount or Decimal("0"), it.line_total or Decimal("0"),
+                )
             items.append({
                 "id": str(it.id),
                 "name": it.product_name,
                 "quantity": str(it.quantity),
                 "unit_price": str(it.unit_price),
-                "tax_amount": str(it.tax_amount),
-                "line_total": str(it.line_total),
+                "tax_amount": str(_tax),
+                "line_total": str(_total),
                 "note": it.item_note or "",
             })
-            ch_tax += it.tax_amount or Decimal("0")
-            ch_total += it.line_total or Decimal("0")
-            ch_sub += (it.line_total or Decimal("0")) - (it.tax_amount or Decimal("0"))
+            ch_tax += _tax
+            ch_total += _total
+            ch_sub += _total - _tax
         # Skip a charge whose every item was voided (nothing left to show/bill).
         if not items:
             continue
@@ -1009,6 +1089,16 @@ def consolidated_bill(folio: GuestFolio) -> dict:
     settlement = folio.settlement_invoice
     if settlement is not None:
         paid_total = settlement.paid_total or Decimal("0")
+        # ONCE SETTLED, the settlement invoice is the authority on the money.
+        #
+        # Checkout may have re-rated the services tax: the charges above were
+        # posted before the guest chose how to pay, so they still carry the
+        # standard rate, while a fully-card bill is taxed at the reduced one.
+        # Summing the charge rows here would print 16% on a receipt whose
+        # invoice says 8% — the guest's bill must match their invoice exactly.
+        subtotal = settlement.subtotal or Decimal("0")
+        tax_total = settlement.tax_total or Decimal("0")
+        grand_total = settlement.grand_total or Decimal("0")
     else:
         # LEGACY folio (closed before settlement invoices existed): the
         # payment sits on whichever charge the old code picked as anchor.
@@ -1072,4 +1162,44 @@ def consolidated_bill(folio: GuestFolio) -> dict:
         "grand_total": str(grand_total.quantize(Decimal("0.0001"))),
         "paid_total": str(paid_total.quantize(Decimal("0.0001"))),
         "balance": str((grand_total - paid_total).quantize(Decimal("0.0001"))),
+        # What the stay would cost if settled FULLY BY CARD, at the tenant's
+        # reduced services rate (rooms keep their declared tax). The terminal
+        # shows this the moment the cashier picks a card so the quoted total is
+        # the one the server will actually charge — the cashier never has to
+        # recompute the discount by hand, and the two can't drift apart.
+        # NULL once settled, or when the tenant has no card rate configured.
+        "card_rate_preview": _card_rate_preview(folio, charges),
+    }
+
+
+def _card_rate_preview(folio, charges) -> dict | None:
+    """Totals for a fully-card settlement of an OPEN stay, or None.
+
+    Uses the same re-rating the checkout itself applies, so the preview and the
+    final invoice agree by construction rather than by two copies of the rule.
+    """
+    tenant = folio.tenant
+    if folio.settlement_invoice_id is not None:
+        return None  # already settled — the invoice is the authority
+    if tenant.services_tax_rate_card is None:
+        return None  # feature off for this tenant
+
+    subtotal = tax_total = grand_total = Decimal("0")
+    for ch in charges:
+        for it in ch.invoice.items.all():
+            if it.is_cancelled:
+                continue
+            _rate, tax, total = _settlement_line_amounts(
+                it, tenant=tenant, fully_card=True, is_room=ch.kind == "room",
+            )
+            tax_total += tax
+            grand_total += total
+            subtotal += total - tax
+
+    return {
+        "rate": str(tenant.services_tax_rate_card),
+        "standard_rate": str(tenant.services_tax_rate_standard),
+        "subtotal": str(subtotal.quantize(Decimal("0.0001"))),
+        "tax_total": str(tax_total.quantize(Decimal("0.0001"))),
+        "grand_total": str(grand_total.quantize(Decimal("0.0001"))),
     }

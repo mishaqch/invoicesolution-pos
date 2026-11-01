@@ -800,3 +800,273 @@ def test_mattress_is_settled_on_the_one_stay_invoice():
     inv = folio.settlement_invoice
     assert inv.grand_total == Decimal("11500")
     assert "Extra Mattress" in [i.product_name for i in inv.items.all()]
+
+
+# --- Card vs cash services tax at folio checkout -------------------------
+#
+# TDCP's rule: a bill paid entirely by card is taxed at the reduced rate (8%),
+# any cash at the standard one (16%). The folio checkout has its own payment
+# picker and never applied it, so a card-paying guest was promised 8% on the
+# terminal and charged 16% on the bill.
+#
+# Room nights are exempt: VIP 8820 + 1680 = 10500/night is the resort's
+# declared tariff, not a percentage we may recompute.
+
+def _card(amount: str) -> dict:
+    """A card tender. The POS requires the slip details, so supply them."""
+    return {
+        "payment_method": "card_credit", "amount": amount,
+        "card_last4": "4242", "card_auth_code": "123456",
+    }
+
+
+def _card_tenant(tenant):
+    tenant.services_tax_rate_standard = Decimal("16.00")
+    tenant.services_tax_rate_card = Decimal("8.00")
+    tenant.save(update_fields=[
+        "services_tax_rate_standard", "services_tax_rate_card",
+    ])
+    return tenant
+
+
+def _stay_with_food(tenant, branch, terminal, cashier, room, biryani, *, qty="1"):
+    """One night (VIP 8820+1680) plus one Rs 500 biryani charged to the folio."""
+    check_in = timezone.make_aware(dt.datetime(2026, 6, 30, 18, 0))
+    folio = services.open_stay(
+        tenant_id=tenant.id, branch=branch, terminal=terminal, cashier=cashier,
+        cash_session=None, room=room,
+        guest_name="Card Guest", guest_cnic="3520111111111",
+        guest_phone="03001234567",
+        check_in=check_in,
+        expected_check_out=check_in + dt.timedelta(days=1),  # 1 night
+    )
+    services.add_charge(
+        folio=folio, terminal=terminal, cashier=cashier, cash_session=None,
+        cart_lines=[{
+            "product": str(biryani.id), "quantity": qty,
+            "unit_price": "500.00", "tax_rate": "16.00", "is_taxable": True,
+        }],
+        kind="restaurant",
+    )
+    return GuestFolio.objects.get(pk=folio.pk)
+
+
+def test_folio_paid_by_card_taxes_food_at_the_reduced_rate():
+    """THE reported bug: 8% shown on the terminal, 16% actually charged."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    bill_total = services.consolidated_bill(folio)["grand_total"]
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[_card(str(bill_total))],
+    )
+    inv = settled.settlement_invoice
+
+    # Room: 8820 + 1680 declared = 10500, untouched.
+    # Food: 500 @ 8% = 40  (was 80 at 16%).
+    assert inv.tax_total == Decimal("1720.0000"), (
+        f"expected room 1680 + food 40, got {inv.tax_total}"
+    )
+    assert inv.grand_total == Decimal("11040.0000")
+
+
+def test_folio_paid_by_cash_keeps_the_standard_rate():
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    bill_total = services.consolidated_bill(folio)["grand_total"]
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": str(bill_total)}],
+    )
+    inv = settled.settlement_invoice
+
+    # Room 1680 + food 500 @ 16% = 80.
+    assert inv.tax_total == Decimal("1760.0000")
+    assert inv.grand_total == Decimal("11080.0000")
+
+
+def test_folio_part_cash_part_card_uses_the_standard_rate():
+    """Any cash in the tender → standard rate on the whole bill."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[
+            _card("10000.00"),
+            {"payment_method": "cash", "amount": "1080.00"},
+        ],
+    )
+    assert settled.settlement_invoice.tax_total == Decimal("1760.0000")
+
+
+def test_room_night_tax_is_never_re_rated_by_the_payment_method():
+    """The declared tariff must survive a card payment untouched."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[_card("11040.00")],
+    )
+    rooms = [
+        it for it in settled.settlement_invoice.items.all()
+        if "Room" in (it.product_name or "")
+    ]
+    assert rooms, "expected a room line on the settlement invoice"
+    assert sum(it.tax_amount for it in rooms) == Decimal("1680.0000"), (
+        "the room's declared fixed tax must not change with the payment method"
+    )
+
+
+def test_settlement_totals_match_the_sum_of_its_own_lines():
+    """The printed receipt reads these columns — they must reconcile exactly."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[_card("11040.00")],
+    )
+    inv = settled.settlement_invoice
+    items = list(inv.items.all())
+
+    assert sum(it.tax_amount for it in items) == inv.tax_total
+    assert sum(it.line_total for it in items) == inv.grand_total
+    assert inv.subtotal + inv.tax_total == inv.grand_total
+
+
+def test_a_tenant_without_a_card_rate_is_unaffected():
+    """Every non-TDCP resort must behave exactly as before."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    tenant.services_tax_rate_card = None
+    tenant.save(update_fields=["services_tax_rate_card"])
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[_card("11080.00")],
+    )
+    # Food stays at 16% → 80, room 1680.
+    assert settled.settlement_invoice.tax_total == Decimal("1760.0000")
+
+
+def test_the_printed_bill_matches_the_settlement_invoice_after_a_card_checkout():
+    """The receipt is printed from consolidated_bill — it must not show 16%
+    while the invoice the guest pays says 8%."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier, payments=[_card("11040.00")],
+    )
+    bill = services.consolidated_bill(settled)
+    inv = settled.settlement_invoice
+
+    assert bill["tax_total"] == str(inv.tax_total), (
+        f"receipt {bill['tax_total']} vs invoice {inv.tax_total}"
+    )
+    assert bill["grand_total"] == str(inv.grand_total)
+    assert bill["subtotal"] == str(inv.subtotal)
+    # And it is the reduced-rate figure, not the standard one.
+    assert bill["tax_total"] == "1720.0000"
+    assert bill["balance"] == "0.0000", "a fully-paid stay must show no balance"
+
+
+def test_the_printed_bill_still_matches_on_a_cash_checkout():
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[{"payment_method": "cash", "amount": "11080.00"}],
+    )
+    bill = services.consolidated_bill(settled)
+
+    assert bill["tax_total"] == str(settled.settlement_invoice.tax_total)
+    assert bill["tax_total"] == "1760.0000"
+
+
+def test_an_open_folio_still_quotes_the_standard_rate():
+    """Before checkout nothing is settled, so the running tab shows 16% —
+    the guest is never promised a total we then have to raise."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    bill = services.consolidated_bill(folio)
+
+    assert bill["settlement_invoice_number"] is None
+    assert bill["tax_total"] == "1760.0000", "room 1680 + food 80 @ 16%"
+
+
+def test_the_card_preview_equals_what_a_card_checkout_actually_charges():
+    """The cashier's quote must be the number the server then bills."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    preview = services.consolidated_bill(folio)["card_rate_preview"]
+    assert preview is not None
+    assert preview["rate"] == "8.00"
+    assert preview["tax_total"] == "1720.0000"
+    assert preview["grand_total"] == "11040.0000"
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier,
+        payments=[_card(preview["grand_total"])],
+    )
+    inv = settled.settlement_invoice
+    assert preview["tax_total"] == str(inv.tax_total)
+    assert preview["grand_total"] == str(inv.grand_total)
+
+
+def test_no_card_preview_once_the_stay_is_settled():
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier, payments=[_card("11040.00")],
+    )
+    assert services.consolidated_bill(settled)["card_rate_preview"] is None
+
+
+def test_no_card_preview_when_the_tenant_has_no_card_rate():
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    tenant.services_tax_rate_card = None
+    tenant.save(update_fields=["services_tax_rate_card"])
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+    assert services.consolidated_bill(folio)["card_rate_preview"] is None
+
+
+def test_the_printed_line_items_add_up_to_the_printed_total():
+    """The receipt lists per-charge amounts and then a Tax/Total block. A guest
+    adding up the lines must reach the total they are asked to pay."""
+    tenant, branch, terminal, cashier, room, biryani = _setup()
+    _card_tenant(tenant)
+    folio = _stay_with_food(tenant, branch, terminal, cashier, room, biryani)
+
+    settled = services.checkout_stay(
+        folio=folio, cashier=cashier, payments=[_card("11040.00")],
+    )
+    bill = services.consolidated_bill(settled)
+
+    charge_total = sum(
+        Decimal(c["total"]) for d in bill["days"] for c in d["charges"]
+    )
+    charge_tax = sum(
+        Decimal(c["tax"]) for d in bill["days"] for c in d["charges"]
+    )
+    assert charge_total == Decimal(bill["grand_total"]), (
+        f"lines sum to {charge_total} but the bill says {bill['grand_total']}"
+    )
+    assert charge_tax == Decimal(bill["tax_total"])

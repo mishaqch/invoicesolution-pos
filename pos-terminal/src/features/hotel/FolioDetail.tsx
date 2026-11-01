@@ -172,7 +172,10 @@ export function FolioDetail({
     setBusy(true);
     try {
       const settled = await checkoutFolio(folioId, [
-        { payment_method: payMethod, amount: bill.grand_total },
+        // Send the amount the cashier is looking at. The server re-resolves the
+        // tax from the method anyway, so these agree; sending the standard-rate
+        // total on a card bill would over-collect.
+        { payment_method: payMethod, amount: dueText },
       ]);
       // Mirror the settled folio's invoices into local SQLite so they appear in
       // "Today's invoices" and can be reprinted offline.
@@ -405,7 +408,16 @@ export function FolioDetail({
   // cash method collects a physical amount and returns change; other methods
   // are settled for the exact total, so tendered/change don't apply.
   const isCash = payMethod === "cash";
-  const dueMoney = bill ? Money.fromStr(bill.grand_total) : Money.zero();
+  // Card payments are taxed at the tenant's reduced services rate (TDCP: 8%
+  // card / 16% otherwise; rooms keep their declared tax). The server owns that
+  // rule and sends the card figures on the bill, so the total shown here is the
+  // one it will actually charge — the cashier never recomputes the discount,
+  // and the terminal can't disagree with the invoice.
+  const CARD_METHODS = new Set(["card_credit", "card_debit"]);
+  const cardPreview = bill?.card_rate_preview ?? null;
+  const onCardRate = !!cardPreview && CARD_METHODS.has(payMethod);
+  const dueText = onCardRate ? cardPreview!.grand_total : (bill?.grand_total ?? "0");
+  const dueMoney = Money.fromStr(dueText);
   let tenderedMoney: Money | null = null;
   if (isCash && tendered.trim() !== "") {
     try {
@@ -936,6 +948,57 @@ export function FolioDetail({
                 ))}
               </div>
 
+              {/* The tax the chosen method attracts, with the figures spelled
+                  out. The cashier can read the bill to the guest instead of
+                  working out the card discount by hand. */}
+              {cardPreview && (
+                <div
+                  className={`mb-3 rounded-md border p-3 text-xs ${
+                    onCardRate
+                      ? "border-success/40 bg-success-soft text-success-soft-foreground"
+                      : "border-primary/30 bg-primary/5 text-muted-foreground"
+                  }`}
+                >
+                  <div className="mb-1.5 font-medium">
+                    {onCardRate
+                      ? `Card payment — services taxed at ${Number(cardPreview.rate)}%`
+                      : `Standard ${Number(cardPreview.standard_rate)}% services tax`}
+                  </div>
+                  <div className="space-y-0.5 font-mono">
+                    <div className="flex justify-between">
+                      <span>Subtotal</span>
+                      <span>Rs {rs(onCardRate ? cardPreview.subtotal : bill.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>
+                        Tax{" "}
+                        {onCardRate
+                          ? `@ ${Number(cardPreview.rate)}%`
+                          : `@ ${Number(cardPreview.standard_rate)}%`}
+                      </span>
+                      <span>Rs {rs(onCardRate ? cardPreview.tax_total : bill.tax_total)}</span>
+                    </div>
+                    <div className="flex justify-between border-t pt-0.5 font-semibold">
+                      <span>Total</span>
+                      <span>Rs {rs(dueText)}</span>
+                    </div>
+                  </div>
+                  {!onCardRate && (
+                    <div className="mt-1.5 border-t pt-1.5">
+                      Pay the full bill by card to charge{" "}
+                      {Number(cardPreview.rate)}% instead — total Rs{" "}
+                      {rs(cardPreview.grand_total)}.
+                    </div>
+                  )}
+                  {/* Rooms are billed at the resort's declared per-night tax,
+                      which the card rate does not change. */}
+                  <div className="mt-1.5 text-[10px] opacity-75">
+                    Room nights keep their declared tariff tax; the card rate
+                    applies to food and other services.
+                  </div>
+                </div>
+              )}
+
               {/* Cash-only: tendered amount + change due. Other methods settle
                   for the exact total, so no tender/change is shown. */}
               {isCash && (
@@ -953,7 +1016,7 @@ export function FolioDetail({
                         autoFocus
                         value={tendered}
                         onChange={(e) => setTendered(e.target.value.replace(/[^\d.]/g, ""))}
-                        placeholder={rs(bill.grand_total)}
+                        placeholder={rs(dueText)}
                         className="h-9 w-36 rounded-md border border-input bg-background px-2 text-right font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       />
                     </div>
@@ -961,7 +1024,7 @@ export function FolioDetail({
                   <div className="mb-2 flex flex-wrap gap-1.5">
                     <button
                       type="button"
-                      onClick={() => setTendered(Money.fromStr(bill.grand_total).display())}
+                      onClick={() => setTendered(dueMoney.display())}
                       className="rounded border px-2 py-1 text-xs hover:bg-muted"
                     >
                       Exact
@@ -987,7 +1050,7 @@ export function FolioDetail({
                   )}
                   {cashShort && (
                     <div className="border-t pt-2 text-xs font-medium text-destructive">
-                      Tendered is less than the total. Collect at least Rs {rs(bill.grand_total)}.
+                      Tendered is less than the total. Collect at least Rs {rs(dueText)}.
                     </div>
                   )}
                 </div>

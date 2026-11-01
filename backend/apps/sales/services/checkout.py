@@ -109,6 +109,21 @@ def create_invoice(
             f"under its own branch."
         )
 
+    # The payment method decides the services tax rate (PRA card rule: a
+    # fully-card bill is taxed at the tenant's reduced rate, any cash at the
+    # standard one). Resolve it HERE, on the server, before pricing: the
+    # clients each used to do their own swap, so a path that forgot — the hotel
+    # folio checkout — or a terminal on an older build silently charged the
+    # standard rate while promising the reduced one. See services/tax_rules.py.
+    from apps.sales.services.tax_rules import is_fully_card, resolve_services_rate
+    from apps.tenants.models import Tenant
+
+    _tenant = Tenant.objects.filter(pk=tenant_id).first()
+    if _tenant is not None:
+        cart_lines = resolve_services_rate(
+            cart_lines, tenant=_tenant, fully_card=is_fully_card(payments),
+        )
+
     quote = quote_cart(cart_lines, cart_discount_pct=cart_discount_pct)
     paid_total = sum(Decimal(str(p["amount"])) for p in payments)
 
